@@ -243,7 +243,7 @@ All routes are open in every edition, except that creating a heartbeat monitor i
 A heartbeat has `id`, `ping_token` (the secret of its ping URL, distinct from the id), `name`, `status` (`new`, `up`, `down`, `started` or `paused`), `alert_state`, `interval_seconds`, `grace_seconds`, the last ping and deadline fields, the consecutive counters and timestamps. The deadline is the last ping plus the interval plus the grace period.
 
 - `POST /api/v1/heartbeats` body: `name` (required, 1 to 255 characters), `interval_seconds` (required, 60 to 604800) and `grace_seconds` (0 to the interval, default 0). Answers `201` with the heartbeat object. The cap counts every heartbeat, paused and agent-relayed ones included.
-- `PUT /api/v1/heartbeats/{id}` takes the same fields, all optional.
+- `PUT /api/v1/heartbeats/{id}` takes the same fields, all optional; the grace period must not exceed the resulting interval. When `interval_seconds` or `grace_seconds` is given and the heartbeat is `up` or `started`, `next_deadline_at` moves by the difference between the new and the old interval plus grace; other statuses keep their deadline. The `id` and the `ping_token` never change.
 - `GET /api/v1/heartbeats`: query parameters `status` and `agent_id`; answers `{ "heartbeats", "total" }`.
 - `GET /api/v1/heartbeats/{id}` answers `{ "heartbeat", "snippets" }`; `snippets` holds ready-to-paste `curl`, `wget`, `python`, `go`, `bash` and `docker_healthcheck` snippets once `MAINTENANT_BASE_URL` is set.
 - `executions` (`limit` default 20, at most 500, and `offset`) answers `{ "executions", "total" }`, newest first; each has an `outcome` of `success`, `failure`, `timeout` or `in_progress`. `pings` (`limit` default 50, at most 500, and `offset`) answers `{ "pings", "total" }` with `expected_at` and `grace_deadline` computed for each ping.
@@ -878,6 +878,7 @@ The SSE `event:` field is the event type, and `data:` holds the JSON payload onl
 | `endpoint.recovery` | An alerting endpoint reaches its recovery threshold | `endpoint_id`, `container_name`, `target`, `consecutive_successes`, `threshold`, `timestamp` |
 | `endpoint.config_error` | An endpoint label cannot be parsed | `endpoint_id` (`null`), `container_name`, `label_key`, `error`, `timestamp`, plus `agent_id` for an agent's container |
 | `heartbeat.created` | A heartbeat monitor is created | `heartbeat_id`, `name`, `status` |
+| `heartbeat.updated` | A heartbeat monitor is edited | `heartbeat_id`, `name`, `interval_seconds`, `grace_seconds`, plus `next_deadline_at` when the heartbeat has a deadline |
 | `heartbeat.ping_received` | A ping arrives (`ping_type`: `success`, `start` or `exit_code`) | `heartbeat_id`, `ping_type`, `status`, plus `exit_code` or `agent_id` |
 | `heartbeat.status_changed` | A heartbeat changes status (ping, missed deadline, pause, resume) | `heartbeat_id`, `old_status`, `new_status`, `agent_id` on a ping |
 | `heartbeat.alert` | A deadline is missed or a ping carries a non-zero exit code | `heartbeat_id`, `name`, `alert_type`, `details` |

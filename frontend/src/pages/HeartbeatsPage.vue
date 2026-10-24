@@ -9,8 +9,9 @@ import { useHeartbeatsStore } from '@/stores/heartbeats'
 import { usePreferencesStore } from '@/stores/preferences'
 import { useEdition } from '@/composables/useEdition'
 import { useListFilter } from '@/composables/useListFilter'
-import { createHeartbeat, type Heartbeat } from '@/services/heartbeatApi'
+import { createHeartbeat, type CreateHeartbeatInput, type Heartbeat } from '@/services/heartbeatApi'
 import HeartbeatCard from '@/components/HeartbeatCard.vue'
+import HeartbeatForm from '@/components/HeartbeatForm.vue'
 import HeartbeatRow from '@/components/HeartbeatRow.vue'
 import HeartbeatStatusBadge from '@/components/HeartbeatStatusBadge.vue'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
@@ -28,10 +29,7 @@ import { docUrl } from '@/utils/docs'
 import QuotaRefusal from '@/components/QuotaRefusal.vue'
 import CountBadge from '@/components/ui/CountBadge.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import FormField from '@/components/ui/FormField.vue'
-import TextInput from '@/components/ui/TextInput.vue'
 import SelectInput from '@/components/ui/SelectInput.vue'
-import SegmentedToggle from '@/components/ui/SegmentedToggle.vue'
 import CheckboxInput from '@/components/ui/CheckboxInput.vue'
 
 const { getQuota, reload } = useEdition()
@@ -43,23 +41,6 @@ const quota = getQuota('heartbeats')
 
 const showCreateForm = ref(false)
 const createError = ref<unknown>(null)
-
-const form = ref({
-  name: '',
-  interval_seconds: 300,
-  grace_seconds: 60,
-})
-
-const intervalPresets = [
-  { label: '1m', value: 60 },
-  { label: '5m', value: 300 },
-  { label: '15m', value: 900 },
-  { label: '1h', value: 3600 },
-  { label: '6h', value: 21600 },
-  { label: '12h', value: 43200 },
-  { label: '24h', value: 86400 },
-  { label: '7d', value: 604800 },
-]
 
 const view = computed(() => prefs.listView('heartbeats'))
 
@@ -159,12 +140,11 @@ onUnmounted(() => {
   store.disconnectSSE()
 })
 
-async function handleCreate() {
+async function handleCreate(data: CreateHeartbeatInput) {
   createError.value = null
   try {
-    await createHeartbeat(form.value)
+    await createHeartbeat(data)
     showCreateForm.value = false
-    form.value = { name: '', interval_seconds: 300, grace_seconds: 60 }
     store.fetchHeartbeats()
     reload()
   } catch (e) {
@@ -234,46 +214,7 @@ async function handleCreate() {
     >
       <h3 class="mb-3 text-sm font-semibold" :style="{ color: 'var(--mnt-text-primary)' }">Create Heartbeat Monitor</h3>
       <QuotaRefusal v-if="createError" :error="createError" />
-      <form class="flex flex-col gap-3" @submit.prevent="handleCreate">
-        <FormField label="Name">
-          <template #default="{ id, describedBy, invalid }">
-            <TextInput
-              :id="id"
-              v-model="form.name"
-              placeholder="e.g., Nightly Backup"
-              :aria-describedby="describedBy"
-              :invalid="invalid"
-              required
-            />
-          </template>
-        </FormField>
-        <div>
-          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Expected Interval</label>
-          <SegmentedToggle
-            :model-value="String(form.interval_seconds)"
-            :options="intervalPresets.map((p) => ({ value: String(p.value), label: p.label }))"
-            ariaLabel="Expected interval"
-            @update:model-value="(v) => (form.interval_seconds = Number(v))"
-          />
-        </div>
-        <FormField label="Grace Period (seconds)">
-          <template #default="{ id, describedBy, invalid }">
-            <TextInput
-              :id="id"
-              :model-value="form.grace_seconds"
-              type="number"
-              min="0"
-              :max="form.interval_seconds"
-              :aria-describedby="describedBy"
-              :invalid="invalid"
-              @update:model-value="(v) => (form.grace_seconds = typeof v === 'number' ? v : 0)"
-            />
-          </template>
-        </FormField>
-        <UiButton type="submit" variant="primary" class="self-start">
-          Create
-        </UiButton>
-      </form>
+      <HeartbeatForm submit-label="Create" @submit="handleCreate" @cancel="showCreateForm = false" />
     </div>
 
     <ListToolbar
