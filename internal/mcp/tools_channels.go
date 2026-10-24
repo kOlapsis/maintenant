@@ -72,7 +72,7 @@ type createChannelInput struct {
 	URL     string `json:"url" jsonschema:"Destination: an HTTPS webhook URL, an email address, or a Telegram chat id"`
 	Headers string `json:"headers,omitempty" jsonschema:"Extra HTTP headers as a JSON object of strings, webhook types only"`
 	Secret  string `json:"secret,omitempty" jsonschema:"Channel credential, a Telegram bot token today. Write-only: it is never read back."`
-	Config  string `json:"config,omitempty" jsonschema:"Non-secret per-type settings as a JSON object, e.g. {\"thread_id\":\"42\"} for Telegram"`
+	Config  string `json:"config,omitempty" jsonschema:"Non-secret per-type settings as a JSON object, e.g. {\"thread_id\":\"42\"} for Telegram, {\"subject_label\":\"prod\"} for email"`
 	Enabled *bool  `json:"enabled,omitempty" jsonschema:"Whether the channel accepts deliveries, default true"`
 }
 
@@ -83,7 +83,7 @@ type updateChannelInput struct {
 	URL     *string `json:"url,omitempty" jsonschema:"New destination"`
 	Headers *string `json:"headers,omitempty" jsonschema:"New extra HTTP headers as a JSON object of strings. Omit to keep the stored ones; {} clears them."`
 	Secret  *string `json:"secret,omitempty" jsonschema:"New credential. Omit to keep the stored one; it cannot be set to empty."`
-	Config  *string `json:"config,omitempty" jsonschema:"New non-secret per-type settings as a JSON object"`
+	Config  *string `json:"config,omitempty" jsonschema:"New non-secret per-type settings as a JSON object, e.g. {\"subject_label\":\"prod\"} for email"`
 	Enabled *bool   `json:"enabled,omitempty" jsonschema:"Whether the channel accepts deliveries"`
 }
 

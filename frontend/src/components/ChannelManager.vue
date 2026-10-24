@@ -33,19 +33,22 @@ const form = ref({
   // server never sends it back, so there is nothing to prefill.
   secret: '',
   threadId: '',
+  subjectLabel: '',
   enabled: true,
 })
 const editingHasSecret = ref(false)
 const editingHasHeaders = ref(false)
 const HEADERS_EXAMPLE = '{"Authorization": "Bearer ..."}'
 const editingUrlOnFile = ref('')
+const submitError = ref('')
 const testResult = ref<{ id: string; status: string; response_code?: number; error?: string } | null>(null)
 
 function resetForm() {
-  form.value = { name: '', type: 'webhook', url: '', headers: '', secret: '', threadId: '', enabled: true }
+  form.value = { name: '', type: 'webhook', url: '', headers: '', secret: '', threadId: '', subjectLabel: '', enabled: true }
   editingHasSecret.value = false
   editingHasHeaders.value = false
   editingUrlOnFile.value = ''
+  submitError.value = ''
   editingId.value = null
   showForm.value = false
 }
@@ -53,10 +56,14 @@ function resetForm() {
 function startEdit(ch: NotificationChannel) {
   editingId.value = ch.id
   let threadId = ''
+  let subjectLabel = ''
   try {
-    threadId = ch.config ? (JSON.parse(ch.config).thread_id ?? '') : ''
+    const cfg = ch.config ? JSON.parse(ch.config) : {}
+    threadId = cfg.thread_id ?? ''
+    subjectLabel = cfg.subject_label ?? ''
   } catch {
     threadId = ''
+    subjectLabel = ''
   }
   form.value = {
     name: ch.name,
@@ -65,6 +72,7 @@ function startEdit(ch: NotificationChannel) {
     headers: '',
     secret: '',
     threadId,
+    subjectLabel,
     enabled: ch.enabled,
   }
   editingHasSecret.value = ch.has_secret ?? false
@@ -75,6 +83,7 @@ function startEdit(ch: NotificationChannel) {
 }
 
 const isTelegram = computed(() => form.value.type === 'telegram')
+const isEmail = computed(() => form.value.type === 'email')
 
 const destinationLabel = computed(() => {
   if (form.value.type === 'email') return 'Email Address'
@@ -105,8 +114,15 @@ async function submitForm() {
     // Omitted when left empty, so the stored token survives an edit (FR-006).
     ...(isTelegram.value && form.value.secret ? { secret: form.value.secret } : {}),
     ...(isTelegram.value ? { config: { thread_id: form.value.threadId } } : {}),
+    ...(isEmail.value ? { config: { subject_label: form.value.subjectLabel.trim() } } : {}),
   }
-  await updateChannel(editingId.value, payload)
+  submitError.value = ''
+  try {
+    await updateChannel(editingId.value, payload)
+  } catch (e) {
+    submitError.value = e instanceof Error ? e.message : 'Failed to update channel'
+    return
+  }
   resetForm()
   store.fetchChannels()
 }
@@ -219,6 +235,22 @@ function editionLabel(edition?: string): string {
             </template>
           </FormField>
         </template>
+        <FormField
+          v-if="isEmail"
+          label="Subject label (optional)"
+          hint="Replaces “maintenant” in the subject, e.g. [prod-paris] ALERT: …"
+        >
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="form.subjectLabel"
+              maxlength="64"
+              placeholder="maintenant"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+            />
+          </template>
+        </FormField>
         <FormField v-if="!isTelegram" label="Custom Headers (JSON)">
           <template #default="{ id, describedBy, invalid }">
             <TextInput
@@ -231,6 +263,7 @@ function editionLabel(edition?: string): string {
           </template>
         </FormField>
         <CheckboxInput v-model="form.enabled" label="Enabled" />
+        <p v-if="submitError" class="text-xs" style="color: var(--mnt-status-down-text)">{{ submitError }}</p>
         <div class="flex gap-2">
           <UiButton type="submit" variant="primary">Save</UiButton>
           <UiButton type="button" variant="secondary" @click="resetForm">Cancel</UiButton>
