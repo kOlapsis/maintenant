@@ -50,6 +50,7 @@ export interface ActiveAlertsResponse {
 /** Non-secret per-type settings. Telegram uses it for the optional forum topic. */
 export interface ChannelConfig {
   thread_id?: string
+  subject_label?: string
 }
 
 /**
