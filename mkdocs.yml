@@ -98,6 +98,7 @@ nav:
       - Scaleway Deployment: guides/scaleway.md
       - OVHcloud Deployment: guides/ovhcloud.md
       - Vultr Deployment: guides/vultr.md
+      - Coolify Deployment: guides/coolify.md
       - Docker Swarm Deployment: guides/swarm.md
       - PostgreSQL Storage: guides/postgresql.md
       - AI Agents: guides/ai-agents.md
