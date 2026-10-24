@@ -261,7 +261,9 @@ Email goes through your own SMTP server, set with environment variables. The cha
 
 On a port other than 465, maintenant upgrades the connection with STARTTLS and gives up the delivery if the upgrade fails. A server that does not announce STARTTLS gets nothing: the send fails with `smtp: <host> does not offer STARTTLS; set MAINTENANT_SMTP_ALLOW_PLAINTEXT=true to send in clear`. With `MAINTENANT_SMTP_ALLOW_PLAINTEXT=true` such a server receives the mail in clear, and with credentials set the send still fails unless the server is `localhost`, because the credentials would travel in clear. Server certificates are checked against the system roots plus `MAINTENANT_CA_CERT`. A send gives up after 30 seconds.
 
-The subject reads `[maintenant] ALERT: <message>`, `RESOLVED` or `TEST`, and the body is plain text. The same SMTP server sends the status page mails.
+The subject reads `[maintenant] ALERT: <message>` or `[maintenant] RESOLVED: <message>`, and the test email reads `[maintenant] TEST: Test notification`. The body is plain text.
+
+To tell several instances apart, set a subject label on the channel (the **Subject label** field, or `config` `{"subject_label": "prod-paris"}` through the API and MCP). It replaces `maintenant` between the brackets: `[prod-paris] ALERT: <message>`. Surrounding spaces are dropped, and an empty label brings back `maintenant`. A label holds at most 64 characters and no line break or other control character; anything else is refused with `400 VALIDATION_ERROR`. The same SMTP server sends the status page mails.
 
 ### Telegram :material-star-four-points:{ title="Personal" }
 

@@ -195,7 +195,7 @@ func TestSendTestWebhook_Email(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 200, code)
 	assert.Equal(t, []string{"<ops@example.com>"}, *rcpt)
-	assert.Contains(t, data.String(), "Subject: maintenant Test Notification")
+	assert.Contains(t, data.String(), "Subject: [maintenant] TEST: Test notification")
 }
 
 func TestSendNow_Email(t *testing.T) {
@@ -223,9 +223,9 @@ func TestEmailFormat(t *testing.T) {
 	a.Source = "update"
 	a.Details = `{"update_command":"docker pull x","rollback_command":"docker pull y"}`
 
-	assert.Equal(t, "[maintenant] ALERT: Connection refused after 3 attempts", formatEmailSubject("alert.fired", a))
-	assert.Equal(t, "[maintenant] RESOLVED: Connection refused after 3 attempts", formatEmailSubject("alert.resolved", a))
-	assert.Equal(t, "[maintenant] TEST: Connection refused after 3 attempts", formatEmailSubject("test", a))
+	assert.Equal(t, "[maintenant] ALERT: Connection refused after 3 attempts", formatEmailSubject("maintenant", "alert.fired", a.Message))
+	assert.Equal(t, "[maintenant] RESOLVED: Connection refused after 3 attempts", formatEmailSubject("maintenant", "alert.resolved", a.Message))
+	assert.Equal(t, "[maintenant] TEST: Connection refused after 3 attempts", formatEmailSubject("maintenant", "test", a.Message))
 
 	body := formatEmailBody("alert.fired", a)
 	assert.Contains(t, body, "Update command:\n  docker pull x")
