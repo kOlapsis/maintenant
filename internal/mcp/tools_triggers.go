@@ -26,29 +26,32 @@ import (
 func registerTriggerTools(server *gomcp.Server, svc *Services) {
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_triggers",
-		Description: "List all alert triggers (filter rules + channel destinations).",
+		Description: "List all alert triggers, oldest first, each with its filters, enabled and notify_on_resolve flags and channel_ids. A trigger sends every alert matching all its non-empty filters to its channels at once; use get_trigger for a single one.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listTriggersHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_trigger",
-		Description: "Get a single alert trigger by ID.",
+		Description: "Get one alert trigger by id (from list_triggers) with its filters, flags and channel_ids. An unknown id returns \"trigger not found\". Use get_channel to inspect a channel it routes to.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getTriggerHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "create_trigger",
-		Description: "Create a new alert trigger, notifying recoveries by default." + scopeFiltersRequire(),
+		Description: "Create an alert trigger and return it with its id: every new alert matching all its non-empty filters is sent at once to each enabled channel in channel_ids (from list_channels). It is enabled and relays recoveries by default; the name must be unique and every channel must exist. Use update_trigger to change an existing one, create_escalation_policy for delayed follow-ups." + scopeFiltersRequire(),
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(false), OpenWorldHint: new(false)},
 	}, createTriggerHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "update_trigger",
-		Description: "Update an existing alert trigger (last-write-wins)." + scopeFiltersRequire(),
+		Description: "Replace an alert trigger by id (from list_triggers): name, the three filters and channel_ids are overwritten, so send them all, and an empty filter matches everything. enabled and notify_on_resolve keep their stored value when omitted. Every channel must exist; concurrent updates are last-write-wins." + scopeFiltersRequire(),
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true, OpenWorldHint: new(false)},
 	}, updateTriggerHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "delete_trigger",
-		Description: "Delete an alert trigger. The linked channels are not deleted.",
+		Description: "Permanently delete an alert trigger by id (from list_triggers); its channels are kept, and alerts stop being routed through it. An unknown id returns \"trigger not found\". To silence it without deleting, use update_trigger with enabled false.",
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true, OpenWorldHint: new(false)},
 	}, deleteTriggerHandler(svc))
 }
 
@@ -62,12 +65,12 @@ type getTriggerInput struct {
 
 type triggerInput struct {
 	Name             string   `json:"name" jsonschema:"Trigger name (1-120 chars)"`
-	FilterSeverities string   `json:"filter_severities" jsonschema:"CSV severity filter (e.g. 'critical,warning'). Empty matches everything."`
+	FilterSeverities string   `json:"filter_severities" jsonschema:"CSV severity filter: info, warning, critical (e.g. 'critical,warning'). Empty matches everything."`
 	FilterSources    string   `json:"filter_sources" jsonschema:"CSV source filter (e.g. 'container,endpoint'). Empty matches everything."`
-	FilterScopes     string   `json:"filter_scopes" jsonschema:"CSV scope filter (e.g. 'container:42,endpoint:7'). Needs the advanced filters capability. Empty matches everything."`
+	FilterScopes     string   `json:"filter_scopes" jsonschema:"CSV scope filter of entity_type:entity_id pairs, as found on alerts from list_alerts (e.g. 'container:<entity_id>'). Needs the advanced filters capability. Empty matches everything."`
 	Enabled          *bool    `json:"enabled,omitempty" jsonschema:"Whether the trigger is active. Defaults to true on creation; omitted on update, the current value is kept."`
 	NotifyOnResolve  *bool    `json:"notify_on_resolve,omitempty" jsonschema:"Relay recovery (resolved) notifications, default true"`
-	ChannelIDs       []string `json:"channel_ids" jsonschema:"Notification channel IDs (at least one required)"`
+	ChannelIDs       []string `json:"channel_ids" jsonschema:"Notification channel IDs from list_channels (at least one required)"`
 }
 
 type updateTriggerInputWithID struct {

@@ -16,34 +16,38 @@ import (
 func registerChannelTools(server *gomcp.Server, svc *Services) {
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_channels",
-		Description: "List notification channels. Channels are silent on their own: an alert reaches one only through an alert trigger or an escalation level. Header values are masked as *** and Slack, Discord and Teams webhook URLs are cut after the host; the secret is never returned.",
+		Description: "List notification channels, oldest first, with their type, destination, enabled flag and delivery health. Channels are silent on their own: an alert reaches one only through an alert trigger or an escalation level. Header values are masked as *** and Slack, Discord and Teams webhook URLs are cut after the host; the secret is never returned.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listChannelsHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_channel",
-		Description: "Get a single notification channel by ID, with its delivery health and the triggers routing to it. Header values are masked as *** and Slack, Discord and Teams webhook URLs are cut after the host; the secret is never returned.",
+		Description: "Get one notification channel by id (from list_channels), with its delivery health (healthy or failing, from the last delivery) and the triggers routing to it. Header values are masked as *** and Slack, Discord and Teams webhook URLs are cut after the host; the secret is never returned. Use test_channel to check that it delivers.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getChannelHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "create_channel",
-		Description: "Create a notification channel. The webhook type is open in every edition; " + gatedChannelTypes() + ".",
+		Description: "Create a notification channel and return it, masked, with its id. The destination is validated and the name must be unique; nothing is sent, and the channel stays silent until a trigger or an escalation level routes alerts to it. Use test_channel to check delivery. The webhook type is open in every edition; " + gatedChannelTypes() + ".",
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(false), OpenWorldHint: new(false)},
 	}, createChannelHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "update_channel",
-		Description: "Update a notification channel. Omitted fields keep their stored value; a stored secret is never cleared this way.",
+		Description: "Update a notification channel by id (from list_channels) and return it, masked. Omitted fields keep their stored value; a stored secret is never cleared this way, and a new url or type is validated again. Sending only enabled false works on any edition; any other change needs the edition that opens its type.",
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true, OpenWorldHint: new(false)},
 	}, updateChannelHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "delete_channel",
-		Description: "Delete a notification channel. Triggers and escalation levels pointing at it lose that destination.",
+		Description: "Permanently delete a notification channel by id (from list_channels). Triggers and escalation levels pointing at it lose that destination but are kept. To stop deliveries without deleting, use update_channel with enabled false.",
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true, OpenWorldHint: new(false)},
 	}, deleteChannelHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "test_channel",
-		Description: "Send a test notification through a channel and report whether it was delivered.",
+		Description: "Send a real test notification (info severity, \"maintenant test notification\") through a channel by id (from list_channels), even a disabled one. Returns status delivered with the response_code, or status failed with the error; a failed delivery is not a tool error. Refused when the running edition does not open the channel's type.",
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(false), OpenWorldHint: new(true)},
 	}, testChannelHandler(svc))
 }
 
