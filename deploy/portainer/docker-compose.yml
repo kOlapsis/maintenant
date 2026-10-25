@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
 
   maintenant:
-    image: ghcr.io/kolapsis/maintenant:1.11.0
+    image: ghcr.io/kolapsis/maintenant:1.11.1
     ports:
       - "${MAINTENANT_PORT:-8080}:8080"
     read_only: true

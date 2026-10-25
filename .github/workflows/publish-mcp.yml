@@ -1,6 +1,6 @@
 # Publishes deploy/mcp/server.json to the official MCP registry for a release
 # whose image is already on GHCR. Run it once per release:
-#   gh workflow run publish-mcp.yml -f tag=v1.11.0
+#   gh workflow run publish-mcp.yml -f tag=v1.11.1
 #
 # The registry authorizes io.github.kOlapsis/* from the repository owner in the
 # GitHub OIDC token, so no personal account or stored credential is involved.
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag already published, for example v1.11.0
+        description: Release tag already published, for example v1.11.1
         required: true
         type: string
 

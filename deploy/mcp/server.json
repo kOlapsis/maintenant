@@ -8,11 +8,11 @@
     "source": "github"
   },
   "websiteUrl": "https://docs.maintenant.dev/features/mcp/",
-  "version": "1.11.0",
+  "version": "1.11.1",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/kolapsis/maintenant:1.11.0",
+      "identifier": "ghcr.io/kolapsis/maintenant:1.11.1",
       "runtimeHint": "docker",
       "transport": {
         "type": "stdio"

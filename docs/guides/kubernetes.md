@@ -356,7 +356,7 @@ Open **http://localhost:8080**.
 
 ## Helm
 
-The chart is located in `deploy/helm/maintenant/` (chart and application version 1.11.0).
+The chart is located in `deploy/helm/maintenant/` (chart and application version 1.11.1).
 
 ### Minimal install
 
@@ -452,7 +452,7 @@ The chart opens only the HTTP port. To enrol agents from other hosts with a serv
 | Value | Default | Description |
 |-------|---------|-------------|
 | `image.repository` | `ghcr.io/kolapsis/maintenant` | Image repository |
-| `image.tag` | `""` | Image tag to deploy. Empty uses the chart's application version (`1.11.0`). Release tags have no `v` (for example `1.11.0`). |
+| `image.tag` | `""` | Image tag to deploy. Empty uses the chart's application version (`1.11.1`). Release tags have no `v` (for example `1.11.1`). |
 | `image.pullPolicy` | `Always` | With a moving tag such as `latest`, restart the pod to pull a newer image. |
 | `runtime` | `kubernetes` | `kubernetes` or `docker` (`MAINTENANT_RUNTIME`) |
 | `persistence.enabled` | `true` | `false` uses an emptyDir: the data is lost when the pod restarts |

@@ -78,10 +78,10 @@ Installs the binary, the user, the directories and the env file, and no service.
 ### Pinning a specific version
 
 ```bash
-curl -fsSL https://install.maintenant.dev | sudo MAINTENANT_VERSION=v1.11.0 bash -s -- --addr 0.0.0.0:8080
+curl -fsSL https://install.maintenant.dev | sudo MAINTENANT_VERSION=v1.11.1 bash -s -- --addr 0.0.0.0:8080
 ```
 
-The variable is set on the `bash` side of the pipe. `MAINTENANT_VERSION=v1.11.0 curl … | sudo bash` does not pin anything: the assignment applies to `curl`, and `sudo` does not pass it on. Without the variable the script installs the latest release.
+The variable is set on the `bash` side of the pipe. `MAINTENANT_VERSION=v1.11.1 curl … | sudo bash` does not pin anything: the assignment applies to `curl`, and `sudo` does not pass it on. Without the variable the script installs the latest release.
 
 Standalone binaries exist from v1.6.0 on. If the version does not exist or predates them, the script exits with code 20 and lists the recent releases (among the 10 latest) that ship binaries. The script is also a release asset: to run the exact script of a release, download `install.sh` from that release's assets.
 
@@ -90,7 +90,7 @@ Standalone binaries exist from v1.6.0 on. If the version does not exist or preda
 `--binary` installs a binary you already have, with no network access at all. Download the files on a machine with internet access:
 
 ```bash
-VERSION=v1.11.0
+VERSION=v1.11.1
 BASE=https://github.com/kOlapsis/maintenant/releases/download/${VERSION}
 
 curl -LO ${BASE}/maintenant-${VERSION}-linux-amd64
@@ -102,7 +102,7 @@ Transfer the three files to the target host, then:
 
 ```bash
 sudo bash install.sh \
-  --binary ./maintenant-v1.11.0-linux-amd64 \
+  --binary ./maintenant-v1.11.1-linux-amd64 \
   --sha256sums ./SHA256SUMS
 ```
 
@@ -203,7 +203,7 @@ Run `maintenant --help` to see this list with descriptions at any time.
 | `MAINTENANT_SKIP_COSIGN` | unset | Any non-empty value behaves like `--skip-cosign`. |
 | `NO_COLOR` | unset | Disable ANSI colors. |
 
-Because `sudo` does not pass the environment through, give these on the `sudo` command line, as in `sudo MAINTENANT_VERSION=v1.11.0 bash`.
+Because `sudo` does not pass the environment through, give these on the `sudo` command line, as in `sudo MAINTENANT_VERSION=v1.11.1 bash`.
 
 ### Installing a native agent
 
@@ -270,7 +270,7 @@ curl -fsSL https://install.maintenant.dev | sudo bash
 To upgrade to a specific version:
 
 ```bash
-curl -fsSL https://install.maintenant.dev | sudo MAINTENANT_VERSION=v1.11.0 bash
+curl -fsSL https://install.maintenant.dev | sudo MAINTENANT_VERSION=v1.11.1 bash
 ```
 
 With `--no-service` the script replaces the binary and warns that a running service still uses the previous one: restart it with `systemctl restart maintenant`.
@@ -329,7 +329,7 @@ sudo install -m 0755 cosign-linux-amd64 /usr/local/bin/cosign
 ### Manual verification
 
 ```bash
-VERSION=v1.11.0
+VERSION=v1.11.1
 ARCH=amd64
 BASE=https://github.com/kOlapsis/maintenant/releases/download/${VERSION}
 

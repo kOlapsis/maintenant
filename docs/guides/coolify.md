@@ -52,7 +52,7 @@ services:
       - no-new-privileges:true
 
   maintenant:
-    image: ghcr.io/kolapsis/maintenant:1.11.0
+    image: ghcr.io/kolapsis/maintenant:1.11.1
     depends_on:
       - socketproxy
     read_only: true

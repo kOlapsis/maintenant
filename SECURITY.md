@@ -60,14 +60,14 @@ them where verification matters.
 Build provenance (SLSA), signed keyless through GitHub OIDC:
 
 ```bash
-gh attestation verify oci://ghcr.io/kolapsis/maintenant:1.11.0 --owner kOlapsis
+gh attestation verify oci://ghcr.io/kolapsis/maintenant:1.11.1 --owner kOlapsis
 ```
 
 Cosign signature. Both flags are required: without them, `cosign verify` would
 accept any identity.
 
 ```bash
-cosign verify ghcr.io/kolapsis/maintenant:1.11.0 \
+cosign verify ghcr.io/kolapsis/maintenant:1.11.1 \
   --certificate-identity-regexp "https://github.com/kOlapsis/maintenant/.github/workflows/release.yml@.*" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
@@ -93,7 +93,7 @@ and `install.sh`, plus:
   checked with `gh attestation verify`.
 
 ```bash
-VERSION=v1.11.0
+VERSION=v1.11.1
 ARCH=amd64
 BASE=https://github.com/kOlapsis/maintenant/releases/download/${VERSION}
 
