@@ -49,10 +49,10 @@ The install directory must exist before the run: the script writes the binary ne
 
 ```sh
 # Install a specific version: set the variable on the bash side of the pipe
-curl -fsSL https://install.maintenant.dev | sudo MAINTENANT_VERSION=v1.10.1 bash
+curl -fsSL https://install.maintenant.dev | sudo MAINTENANT_VERSION=v1.11.0 bash
 ```
 
-`MAINTENANT_VERSION=v1.10.1 curl … | sudo bash` does not pin anything: the assignment only reaches `curl`.
+`MAINTENANT_VERSION=v1.11.0 curl … | sudo bash` does not pin anything: the assignment only reaches `curl`.
 
 Note: version pinning only works for releases ≥ v1.6.0 (the first release containing standalone binaries).
 
