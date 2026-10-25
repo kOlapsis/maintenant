@@ -2,8 +2,8 @@ apiVersion: v2
 name: maintenant
 description: Self-discovering infrastructure monitoring for Docker and Kubernetes
 type: application
-version: 1.10.1
-appVersion: "1.10.1"
+version: 1.11.0
+appVersion: "1.11.0"
 home: https://maintenant.dev
 icon: https://raw.githubusercontent.com/kolapsis/maintenant/main/docs/logos/maintenant-favicon-512.png
 sources:

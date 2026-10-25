@@ -63,7 +63,7 @@ The Docker socket is mounted read-only. The image runs as an unprivileged user w
 ## Tags
 
 - `latest`: the most recent release.
-- `1.10.1`, `1.10`, `1`: a specific release, minor line or major line.
+- `1.11.0`, `1.11`, `1`: a specific release, minor line or major line.
 
 The image is published for `linux/amd64` and `linux/arm64`. It is the same image, with the same digest, as `ghcr.io/kolapsis/maintenant`. It is signed with Sigstore (keyless) and ships with SLSA provenance and an SBOM. Verification commands: https://github.com/kolapsis/maintenant/blob/main/SECURITY.md.
 

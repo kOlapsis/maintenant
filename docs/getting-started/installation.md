@@ -133,7 +133,7 @@ helm install maintenant ./deploy/helm/maintenant \
   -n maintenant --create-namespace
 ```
 
-The chart installs into the release namespace. Its `image.tag` is empty by default, which deploys the chart's application version; override it with `--set image.tag=1.10.1`.
+The chart installs into the release namespace. Its `image.tag` is empty by default, which deploys the chart's application version; override it with `--set image.tag=1.11.0`.
 
 ### Raw manifests
 
@@ -231,7 +231,7 @@ The image is available at `ghcr.io/kolapsis/maintenant`, for `linux/amd64` and `
 | Tag | Published | Use |
 |-----|-----------|-----|
 | `latest` | Every release | The newest release. |
-| `1.10.1` | Every release | One exact version, written without the `v` of the Git tag. |
+| `1.11.0` | Every release | One exact version, written without the `v` of the Git tag. |
 | `1.8` | Every release | The newest patch of a minor version. |
 | `1` | Every release | The newest minor and patch of a major version. |
 | `main` | Every push to `main` | A development build. |
@@ -262,7 +262,7 @@ curl http://localhost:8080/api/v1/health
 Expected response:
 
 ```json
-{"status":"ok","version":"1.10.1","runtime":{"name":"docker","connected":true},"storage":{"engine":"sqlite","connected":true,"peers":0}}
+{"status":"ok","version":"1.11.0","runtime":{"name":"docker","connected":true},"storage":{"engine":"sqlite","connected":true,"peers":0}}
 ```
 
 `version` is the running version. `runtime.name` is `docker` or `kubernetes`, and `runtime.connected` is `false` while the instance runs in degraded mode without a reachable runtime. `storage.engine` is `sqlite` or `postgres`, and `storage.peers` counts the other instances working on the same database. The endpoint answers 200 even when the database is momentarily unreachable, so it can back a liveness probe: read the outage from `storage.connected`.

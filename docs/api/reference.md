@@ -108,7 +108,7 @@ A demo build of maintenant is read-only. Every request other than `GET`, `HEAD` 
 `GET /api/v1/health` always answers `200`:
 
 ```json
-{ "status": "ok", "version": "1.10.1", "runtime": { "name": "docker", "connected": true }, "storage": { "engine": "sqlite", "connected": true, "peers": 0 } }
+{ "status": "ok", "version": "1.11.0", "runtime": { "name": "docker", "connected": true }, "storage": { "engine": "sqlite", "connected": true, "peers": 0 } }
 ```
 
 `version`, `runtime` and `storage` are left out when they are not known. The `storage` object reports the engine backing this instance, whether it answers, and how many other instances beat on the same database. `engine` is `sqlite` or `postgres`. It never carries the connection string, the host or any credential.
