@@ -63,79 +63,79 @@ func frameLogs(lines []string) string {
 func registerReadTools(server *gomcp.Server, svc *Services) {
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_containers",
-		Description: "List all monitored containers with their current state (running, stopped, restarting), health status, and basic metadata.",
+		Description: "List monitored containers sorted by name, archived and ignored ones excluded, optionally for one agent (agent_id from list_agents). Each row has state (running, exited, completed, restarting, paused, created or dead), health_status, image, agent_id and the internal id that get_container, get_container_logs and the security tools take as container_id. Use get_container for one container's state history and get_top_consumers for a CPU or memory ranking.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listContainersHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_container",
-		Description: "Get detailed information about a specific container including state, health, image, labels, and recent state transitions.",
+		Description: "Get one container by its internal id (from list_containers), archived ones included, with its state-transition history newest first: previous and new state, health, exit code and a log snippet. An unknown id returns a not-found error. Use get_container_logs for its current output.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getContainerHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_container_logs",
-		Description: "Get recent log lines from a container's stdout/stderr output.",
+		Description: "Read the last stdout and stderr lines of a container by container_id from list_containers; a container on a remote agent is read through that agent. Returns plain text whose first line warns that the output is untrusted; a line over 4096 bytes is cut and the oldest lines are dropped beyond 1 MiB. Fails with \"logs unavailable\" when the runtime or agent cannot be reached. Use get_container for state and transition history.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getContainerLogsHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_alerts",
-		Description: "List alerts. By default returns only active (unresolved) alerts that are not yet acknowledged. Set active_only to false to return the last 100 alerts instead, acknowledged, resolved and silenced ones included.",
+		Description: "List alerts, newest first. By default returns only active alerts not yet acknowledged; set active_only to false for the last 100 alerts in any state, acknowledged, resolved and silenced ones included. An alert's id is what acknowledge_alert and list_alert_escalation_runs take; its entity_type and entity_id are what trigger and escalation scope filters match.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listAlertsHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_resources",
-		Description: "Get current host resource metrics summary including CPU usage, memory usage, network throughput in bytes per second (net_rx_rate, net_tx_rate), and disk usage.",
+		Description: "Summarize live resource use over every container with a current sample, on all hosts: container_count, cpu_percent (sum of per-container CPU, can exceed 100), mem_used and mem_limit in bytes with mem_percent, and net_rx_rate and net_tx_rate in bytes per second. disk_total and disk_used (bytes) and disk_percent describe the root filesystem of the maintenant server. Use get_top_consumers to see which containers drive the totals.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getResourcesHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_top_consumers",
-		Description: "Get containers ranked by resource consumption (CPU or memory), useful for identifying resource-heavy containers.",
+		Description: "Rank containers on all hosts by CPU or memory, highest first. Each row gives ContainerID, ContainerName, AvgValue (CPU percent, or memory bytes) and AvgPercent; period current (the default) uses live samples, a history window averages over it. A window beyond the running edition's history cap is refused with edition_required, and get_edition lists the open windows. Use get_resources for the totals.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getTopConsumersHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_endpoints",
-		Description: "List all monitored HTTP/TCP endpoints with their current status (up/down), response time, and uptime percentage.",
+		Description: "List active HTTP and TCP endpoint monitors, optionally for one agent (agent_id from list_agents). Each row has its id, target, status (up, down, degraded or unknown), alert_state, last response time, HTTP status and error. Pass the id to get_endpoint_history for past checks.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listEndpointsHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_endpoint_history",
-		Description: "Get detailed check history for a specific endpoint, including response times, status codes, and error messages.",
+		Description: "List the most recent checks of one endpoint, newest first, by endpoint_id from list_endpoints. Each check has success, response_time_ms, http_status and error_message. An unknown id returns an empty list; list_endpoints gives the current status.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getEndpointHistoryHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_heartbeats",
-		Description: "List all heartbeat/cron monitors with their current status, last ping time, expected period, and grace period.",
+		Description: "List heartbeat (cron) monitors, optionally for one agent (agent_id from list_agents). Each row has its id, name, status (new, up, down, started or paused), last_ping_at, next_deadline_at, interval_seconds and grace_seconds. Pass the id as monitor_id to pause_monitor or resume_monitor.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listHeartbeatsHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_certificates",
-		Description: "List all monitored TLS certificates with expiration dates, issuer, chain validity, and days until expiry.",
+		Description: "List TLS certificate monitors sorted by hostname and port, optionally for one agent (agent_id from list_agents). Each row has hostname, port, status (valid, expiring, expired, error or unknown), warning_thresholds in days, last and next check time and last_error; issuer and expiry date are not included.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listCertificatesHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_updates",
-		Description: "List available image updates for monitored containers, and the operating system of every monitored host with its end-of-support status (supported, ending_soon, ended, unknown, untracked) and dates.",
+		Description: "List available image updates for monitored containers (current and latest version, update type, risk_score, changelog), and the operating system of every monitored host with its end-of-support status (supported, ending_soon, ended, unknown, untracked) and dates. Takes no filter. Use list_risk_scores for risk levels and list_cve for vulnerabilities.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getUpdatesHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_health",
-		Description: "Check maintenant's own health status, version, and runtime information.",
+		Description: "Report that the maintenant server answers, with its version and container runtime name; status is \"ok\" whenever the call succeeds. Use get_edition for the edition and quotas, get_resources for resource use.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getHealthHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_agents",
-		Description: "List all registered remote agents with their connection state, runtime type, hostname, and label." + requires(extension.CapMultihost),
+		Description: "List active remote agents, newest first, each with agent_id, label, hostname, runtime and live connection_state (connected or disconnected); the server itself is not listed. Pass an agent_id to the agent_id filter of the list tools, or 'local' for the server." + requires(extension.CapMultihost),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listAgentsHandler(svc))
 }
@@ -146,10 +146,10 @@ type listContainersInput struct {
 	AgentID string `json:"agent_id,omitempty" jsonschema:"Filter by agent UUID, or 'local' for resources managed directly by the server. Omit to return all."`
 }
 type getContainerInput struct {
-	ContainerID string `json:"container_id" jsonschema:"Internal container ID"`
+	ContainerID string `json:"container_id" jsonschema:"Internal container ID: the id field of list_containers, not the Docker ID"`
 }
 type getContainerLogsInput struct {
-	ContainerID string `json:"container_id" jsonschema:"Internal container ID"`
+	ContainerID string `json:"container_id" jsonschema:"Internal container ID: the id field of list_containers, not the Docker ID"`
 	Lines       int    `json:"lines,omitempty" jsonschema:"Number of log lines to retrieve, max 1000, default 100"`
 	Timestamps  bool   `json:"timestamps,omitempty" jsonschema:"Include timestamps in log output"`
 }
@@ -167,7 +167,7 @@ type listEndpointsInput struct {
 }
 type getEndpointHistoryInput struct {
 	EndpointID string `json:"endpoint_id" jsonschema:"Endpoint ID"`
-	Limit      int    `json:"limit,omitempty" jsonschema:"Number of recent checks to return, default 50"`
+	Limit      int    `json:"limit,omitempty" jsonschema:"Number of most recent checks to return, default 50, at most 500"`
 }
 type listHeartbeatsInput struct {
 	AgentID string `json:"agent_id,omitempty" jsonschema:"Filter by agent UUID, or 'local' for heartbeats received directly by the server. Omit to return all."`

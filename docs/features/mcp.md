@@ -208,10 +208,10 @@ and add an `agent_label` to each row that belongs to a remote agent.
 | `list_containers` | List all monitored containers with state, health, and metadata | Community |
 | `get_container` | Detailed info for one container (`container_id`) with recent state transitions | Community |
 | `get_container_logs` | Recent log lines from a container (`container_id`): `lines` (default 100, at most 1000) and optional `timestamps`. A container on a remote agent is read through that agent. The answer starts with a fixed line warning that what follows is untrusted container output; a line over 4096 bytes is cut there and marked ` …[truncated]`, and when the lines exceed 1 MiB (1 048 576 bytes) the oldest are dropped and their count is given on the first line. | Community |
-| `list_endpoints` | All HTTP/TCP endpoints with status, response time, uptime | Community |
+| `list_endpoints` | Active HTTP/TCP endpoints with status, last response time, HTTP status and error | Community |
 | `get_endpoint_history` | Check history for a specific endpoint (`endpoint_id`, `limit` defaulting to 50) | Community |
 | `list_heartbeats` | All heartbeat monitors with status, last ping, periods | Community |
-| `list_certificates` | TLS certificates with expiration, issuer, chain validity | Community |
+| `list_certificates` | TLS certificate monitors with status (`valid`, `expiring`, `expired`, `error`, `unknown`), check times and last error | Community |
 | `list_alerts` | Active alerts that are not yet acknowledged (or the last 100 alerts, acknowledged, resolved and silenced included, with `active_only: false`) | Community |
 | `get_resources` | Resource summary: CPU, memory and network throughput (`net_rx_rate` and `net_tx_rate`, in bytes per second) across the containers, plus disk usage of the server's root filesystem | Community |
 | `get_top_consumers` | Containers ranked by CPU or memory usage (`metric`, `limit` defaulting to 10, at most 20), live or over a history window (`period`) | Community (see above) |

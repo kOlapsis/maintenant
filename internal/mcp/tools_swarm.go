@@ -13,25 +13,25 @@ import (
 func registerSwarmTools(server *gomcp.Server, svc *Services) {
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_swarm_info",
-		Description: "Get Docker Swarm cluster info (manager/worker counts, whether this node is a manager). Reports inactive when Swarm is not detected.",
+		Description: "Get the Docker Swarm cluster the server's own Docker daemon belongs to: cluster_id, created_at, manager_count, worker_count and is_manager. Returns {\"active\": false} when Swarm is not detected. Use list_swarm_nodes, list_swarm_services and list_swarm_tasks for its members.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getSwarmInfoHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_swarm_services",
-		Description: "List Docker Swarm services with their image, mode, and desired/running replica counts.",
+		Description: "List Docker Swarm services, optionally for one agent (agent_id from list_agents), with service_id, name, image, mode (replicated or global), desired and running replicas, stack, ports and update status. Pass a service_id to list_swarm_tasks to see where its replicas run.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listSwarmServicesHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_swarm_tasks",
-		Description: "List Docker Swarm tasks (the running units of a service), optionally filtered by service, with their state and node.",
+		Description: "List Docker Swarm tasks, the containers running a service's replicas, with state, desired state, node, slot, exit code and error. Filter by service_id from list_swarm_services or omit it for all tasks; agent_id (from list_agents) limits them to one agent.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listSwarmTasksHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_swarm_nodes",
-		Description: "List Docker Swarm nodes with their role, status, availability and task count.",
+		Description: "List Docker Swarm nodes with their role (manager or worker), status (ready, down, disconnected or unknown), availability (active, pause or drain), engine version and task count, optionally for one agent (agent_id from list_agents). Use get_swarm_info for the cluster totals.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listSwarmNodesHandler(svc))
 }
