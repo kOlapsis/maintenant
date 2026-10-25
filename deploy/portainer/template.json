@@ -2,7 +2,7 @@
   "type": 3,
   "title": "maintenant",
   "name": "maintenant",
-  "description": "Self-hosted monitoring for Docker, Swarm and Kubernetes: container discovery, endpoint and TLS checks, cron heartbeats, logs, image updates, alerts and a status page, in a single Go binary. Source: https://github.com/kOlapsis/maintenant",
+  "description": "Self-hosted monitoring for Docker: container discovery, endpoint and TLS checks, cron heartbeats, logs, image updates, alerts and a status page, in a single Go binary. Source: https://github.com/kOlapsis/maintenant",
   "categories": ["Monitoring"],
   "platform": "linux",
   "logo": "https://raw.githubusercontent.com/kOlapsis/maintenant/main/docs/logos/maintenant-favicon-512.png",
@@ -15,14 +15,23 @@
     {
       "name": "MAINTENANT_BASE_URL",
       "label": "Address you'll open maintenant at",
-      "description": "The address in your browser, for example http://nas.lan:8080. The dashboard answers to IP addresses and to this host name only. It also builds the heartbeat ping URLs.",
+      "description": "The address in your browser, for example http://nas.lan:8080. The dashboard answers to IP addresses and to this host name only. The links in alert notifications are built from it too.",
       "default": "http://localhost:8080"
     },
     {
       "name": "MAINTENANT_PORT",
       "label": "Host port for the dashboard",
       "default": "8080"
+    },
+    {
+      "name": "MAINTENANT_DISABLE_TELEMETRY",
+      "label": "Anonymous usage telemetry",
+      "description": "One anonymous snapshot at startup, then every hour, to metrics.kolapsis.com. See the note below.",
+      "select": [
+        { "text": "Enabled", "value": "false", "default": true },
+        { "text": "Disabled", "value": "true" }
+      ]
     }
   ],
-  "note": "Open <code>http://&lt;your-host&gt;:8080</code>, or the port you chose. To open it by a host name rather than an IP address, enter that address in the first field, otherwise the dashboard answers 421. maintenant has no login of its own, so keep the port on a trusted network or put a reverse proxy with authentication in front of it. The Docker socket is only mounted into a filtering proxy that allows read-only API calls, so maintenant cannot change your containers. <code>/proc</code> and <code>/etc/os-release</code> are bind-mounted read-only for host metrics: if your Portainer restricts bind mounts, deploy it as an admin. Data lives in the <code>maintenant-data</code> volume. Docs: <a href=\"https://docs.maintenant.dev/\" target=\"_blank\">docs.maintenant.dev</a>"
+  "note": "Open <code>http://&lt;server-ip&gt;:8080</code>, or the port you chose. To open it by a host name, enter that address in the first field, otherwise the dashboard answers 421. For several host names, add <code>MAINTENANT_ALLOWED_HOSTS</code> to the stack's environment variables with all of them, comma-separated, the one of the first field included. maintenant has no login of its own, so keep the port on a trusted network or put a reverse proxy with authentication in front of it. The Docker socket is only mounted into a filtering proxy that allows read-only API calls: maintenant can read the details and logs of your containers but cannot change them. <code>/proc</code> and <code>/etc/os-release</code> are bind-mounted read-only for host metrics: if your Portainer restricts bind mounts, deploy it as an admin. Data lives in the <code>maintenant-data</code> volume. Telemetry: maintenant sends an anonymous usage snapshot to <code>metrics.kolapsis.com</code> at startup and then every hour, with counts of monitored objects, edition, storage engine, version and runtime figures (OS, architecture, CPU cores, memory), never host names, IP addresses, names, URLs or keys. Set the telemetry field to Disabled to turn it off (<a href=\"https://docs.maintenant.dev/getting-started/configuration/#telemetry\" target=\"_blank\">exact payload</a>). To check for image updates, it also contacts the registries of your images and endoflife.date. Docs: <a href=\"https://docs.maintenant.dev/\" target=\"_blank\">docs.maintenant.dev</a>"
 }
