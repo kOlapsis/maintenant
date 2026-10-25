@@ -1,6 +1,6 @@
 services:
   socketproxy:
-    image: tecnativa/docker-socket-proxy:latest
+    image: tecnativa/docker-socket-proxy:v0.5.0
     environment:
       CONTAINERS: "1"
       IMAGES: "1"
@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
 
   maintenant:
-    image: ghcr.io/kolapsis/maintenant:latest
+    image: ghcr.io/kolapsis/maintenant:1.11.0
     ports:
       - "${MAINTENANT_PORT:-8080}:8080"
     read_only: true
@@ -29,6 +29,8 @@ services:
       MAINTENANT_ADDR: "0.0.0.0:8080"
       MAINTENANT_DB: "/data/maintenant.db"
       MAINTENANT_BASE_URL: "${MAINTENANT_BASE_URL:-http://localhost:8080}"
+      MAINTENANT_ALLOWED_HOSTS: "${MAINTENANT_ALLOWED_HOSTS:-}"
+      MAINTENANT_DISABLE_TELEMETRY: "${MAINTENANT_DISABLE_TELEMETRY:-false}"
     volumes:
       - /proc:/host/proc:ro
       - /etc/os-release:/host/etc/os-release:ro
