@@ -206,14 +206,10 @@ func TestSubscribeRevealsNothingAboutTheAddress(t *testing.T) {
 	require.NotEmpty(t, firstLink)
 
 	pending := subscribe()
-	secondLink := confirmLink.FindString(mailer.next(t).body)
-	require.NotEmpty(t, secondLink)
-	assert.NotEqual(t, firstLink, secondLink, "a pending address gets a fresh link")
+	mailer.none(t)
 
 	rec := serve(t, public, http.MethodGet, requestURI(t, firstLink), "")
-	assert.Equal(t, http.StatusBadRequest, rec.Code, "the replaced link no longer confirms")
-	rec = serve(t, public, http.MethodGet, requestURI(t, secondLink), "")
-	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, http.StatusOK, rec.Code, "the link already sent keeps working within 15 minutes: %s", rec.Body.String())
 
 	confirmed := subscribe()
 	mailer.none(t)

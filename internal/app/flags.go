@@ -272,6 +272,15 @@ func init() {
 			Description: "SMTP sender address",
 			ApplyTo:     func(c *Config, v string) error { c.SMTP.From = v; return nil },
 		},
+		{
+			EnvName: "MAINTENANT_SMTP_ALLOW_PLAINTEXT", FlagName: "smtpAllowPlaintext",
+			Type: FlagTypeBool, Default: "false",
+			Description: "Allow SMTP without STARTTLS on ports other than 465",
+			ApplyTo: func(c *Config, v string) error {
+				c.SMTP.AllowPlaintext = parseTruthy(v)
+				return nil
+			},
+		},
 		// MCP
 		{
 			EnvName: "MAINTENANT_MCP", FlagName: "mcp",
@@ -451,6 +460,12 @@ func init() {
 			},
 		},
 		{
+			EnvName: "MAINTENANT_GRPC_SERVER_FINGERPRINT", FlagName: "grpc-server-fingerprint",
+			Type: FlagTypeString, Default: "",
+			Description: "SHA-256 fingerprint of the server certificate to trust (agent mode)",
+			ApplyTo:     func(c *Config, v string) error { c.MultiHost.ServerFingerprint = v; return nil },
+		},
+		{
 			EnvName: "MAINTENANT_EMBEDDED_AGENT", FlagName: "embedded-agent",
 			Type: FlagTypeBool, Default: "false",
 			Description: "Also run a local agent (server mode, Personal edition or above)",
@@ -612,7 +627,7 @@ func init() {
 		{Name: "Updates", Specs: specsFor("updateInterval", "disableOsEolRefresh")},
 		{Name: "Security", Specs: specsFor("securityScoreThreshold", "disableTelemetry", "allowPrivateWebhooks")},
 		{Name: "License (Personal and Pro)", Specs: specsFor("licenseKey")},
-		{Name: "SMTP", Specs: specsFor("smtpHost", "smtpPort", "smtpUsername", "smtpPassword", "smtpFrom")},
+		{Name: "SMTP", Specs: specsFor("smtpHost", "smtpPort", "smtpUsername", "smtpPassword", "smtpFrom", "smtpAllowPlaintext")},
 		{Name: "MCP", Specs: specsFor(
 			"mcp", "mcpClientId", "mcpClientSecret",
 			"mcpAllowedRedirectUris", "mcpAllowUnauthenticated",
@@ -621,7 +636,7 @@ func init() {
 		{Name: "Multi-host", Specs: specsFor(
 			"mode", "server", "enrollment-token", "label", "nodeName",
 			"grpc-listen", "grpc-url", "grpc-tls-cert", "grpc-tls-key",
-			"grpc-tls-insecure", "grpc-insecure-skip-tls-verify",
+			"grpc-tls-insecure", "grpc-insecure-skip-tls-verify", "grpc-server-fingerprint",
 			"agentRateLimitPerSecond", "agentStaleThresholdSeconds",
 			"agentSpoolMaxMemoryBytes", "agentSpoolMaxDiskBytes", "agentSpoolMaxAgeSeconds",
 			"embedded-agent", "ca-cert", "data-dir",
@@ -729,7 +744,7 @@ func PrintHelp(w io.Writer, _ Config) {
 	_, _ = fmt.Fprintln(w, "Special:")
 	_, _ = fmt.Fprintln(w, "  --help, -h         Show this help and exit")
 	_, _ = fmt.Fprintln(w, "  --version, -v      Show version and exit")
-	_, _ = fmt.Fprintln(w, "  --mcp-stdio        Run as MCP stdio server (advanced)")
+	_, _ = fmt.Fprintln(w, "  --mcp-stdio        Relay MCP over stdio to the running instance (advanced)")
 	_, _ = fmt.Fprintln(w)
 	_, _ = fmt.Fprintln(w, "Documentation: https://docs.maintenant.dev")
 	_, _ = fmt.Fprintln(w, "Install via script: curl -fsSL https://install.maintenant.dev | sudo bash")

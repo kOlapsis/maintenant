@@ -275,7 +275,7 @@ func TestMigration39_PurgesDeletedHeartbeatsAndRecordsCurrentPauses(t *testing.T
 
 	hbs := NewHeartbeatStore(db)
 	for _, id := range []string{"hb-gone", "hb-paused", "hb-live"} {
-		_, err := hbs.CreateHeartbeat(ctx, &heartbeat.Heartbeat{ID: id, Name: id, IntervalSeconds: 60, GraceSeconds: 10})
+		_, err := hbs.CreateHeartbeat(ctx, &heartbeat.Heartbeat{ID: id, PingToken: id, Name: id, IntervalSeconds: 60, GraceSeconds: 10})
 		require.NoError(t, err)
 		_, err = hbs.InsertPing(ctx, &heartbeat.HeartbeatPing{HeartbeatID: id, PingType: heartbeat.PingSuccess,
 			SourceIP: "10.0.0.1", HTTPMethod: "GET", Timestamp: time.Unix(1000, 0)})

@@ -50,6 +50,10 @@ export default defineConfig({
             handler: 'NetworkOnly',
           },
           {
+            urlPattern: /\/api\/v1\/(containers\/[^\/]+\/logs|status\/subscribers|escalation-policies|escalation-runs|alerts\/[^\/]+\/escalation-runs|agents|security|cve)/,
+            handler: 'NetworkOnly',
+          },
+          {
             urlPattern: /\/api\/v1\/(?!containers\/events|status\/smtp|channels|webhooks)/,
             handler: 'NetworkFirst',
             options: {

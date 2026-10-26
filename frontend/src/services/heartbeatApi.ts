@@ -6,6 +6,7 @@ import { apiFetch } from './apiFetch'
 
 export interface Heartbeat {
   id: string
+  ping_token: string
   name: string
   status: 'new' | 'up' | 'down' | 'started' | 'paused'
   alert_state: 'normal' | 'alerting'
@@ -117,6 +118,10 @@ export function pauseHeartbeat(id: string): Promise<Heartbeat> {
 
 export function resumeHeartbeat(id: string): Promise<Heartbeat> {
   return fetchJSON<Heartbeat>(`${API_BASE}/heartbeats/${id}/resume`, { method: 'POST' })
+}
+
+export function rotatePingToken(id: string): Promise<Heartbeat> {
+  return fetchJSON<Heartbeat>(`${API_BASE}/heartbeats/${id}/rotate-token`, { method: 'POST' })
 }
 
 export function listExecutions(id: string, params?: { limit?: number; offset?: number }): Promise<ExecutionsResponse> {

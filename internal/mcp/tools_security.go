@@ -17,25 +17,25 @@ import (
 func registerSecurityTools(server *gomcp.Server, svc *Services) {
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_security_insights",
-		Description: "List security insights (dangerous runtime configurations) across containers, or for a single container. Includes a severity summary.",
+		Description: "List security insights, the dangerous runtime configurations found on containers. Without container_id, returns only the containers that have insights plus a summary by severity and type; with a container_id from list_containers, that container's insights, empty when it has none. Use get_security_posture for a score and list_cve for image vulnerabilities.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getSecurityInsightsHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_cve",
-		Description: "List active CVE vulnerabilities detected in container images, optionally filtered by container or minimum severity. For a single container the response carries the CVE evaluation state: an empty list only means \"no known CVEs\" when the state is \"evaluated\"." + requires(extension.CapCVEEnrichment),
+		Description: "List active CVE vulnerabilities detected in container images: across all containers, optionally from a minimum severity, or for one container_id from list_containers. For a single container the response carries the CVE evaluation state: an empty list only means \"no known CVEs\" when the state is \"evaluated\". Use get_security_insights for runtime configuration issues." + requires(extension.CapCVEEnrichment),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listCVEHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_risk_scores",
-		Description: "List image update risk scores per container (0-100) with their risk level." + requires(extension.CapRiskScoring),
+		Description: "List the risk score (0-100) and risk level (low, moderate, high or critical) of each detected image update, available or pinned, per container. Only containers with a detected update appear; for a container_id from list_containers without one, returns not found. Use get_updates for the update details." + requires(extension.CapRiskScoring),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listRiskScoresHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_security_posture",
-		Description: "Get the infrastructure security posture score, or the posture of a single container." + requires(extension.CapSecurityPosture),
+		Description: "Get the security posture score: without container_id, the whole infrastructure with per-category totals and the riskiest containers; with a container_id from list_containers, that container's score by category. Use get_security_insights for the individual findings." + requires(extension.CapSecurityPosture),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getSecurityPostureHandler(svc))
 }
@@ -48,7 +48,7 @@ type getSecurityInsightsInput struct {
 
 type listCVEInput struct {
 	ContainerID string `json:"container_id,omitempty" jsonschema:"Internal container ID; omit to list across all containers"`
-	Severity    string `json:"severity,omitempty" jsonschema:"Minimum severity filter: low, medium, high, or critical"`
+	Severity    string `json:"severity,omitempty" jsonschema:"Minimum severity filter: low, medium, high, or critical. Ignored when container_id is set."`
 }
 
 type listRiskScoresInput struct {

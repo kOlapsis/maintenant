@@ -10,8 +10,10 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // EventCallback is called when a heartbeat event occurs (for SSE broadcasting).
@@ -115,7 +117,7 @@ func (s *Service) BaseURL() string {
 
 // --- CRUD ---
 
-// CreateHeartbeat creates a heartbeat whose id is the supplied ping token.
+// CreateHeartbeat creates a heartbeat pinged through the supplied token.
 func (s *Service) CreateHeartbeat(ctx context.Context, input CreateHeartbeatInput, token string) (*Heartbeat, error) {
 	if err := validateCreateInput(input); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrInvalidInput, err.Error())
@@ -130,7 +132,8 @@ func (s *Service) CreateHeartbeat(ctx context.Context, input CreateHeartbeatInpu
 	}
 
 	h := &Heartbeat{
-		ID:              token,
+		ID:              uid.New(),
+		PingToken:       token,
 		Name:            input.Name,
 		Status:          StatusNew,
 		AlertState:      AlertNormal,
@@ -155,6 +158,11 @@ func (s *Service) CreateHeartbeat(ctx context.Context, input CreateHeartbeatInpu
 	})
 
 	return created, nil
+}
+
+// GetHeartbeatByPingToken returns the heartbeat a ping token belongs to, or nil when no heartbeat has it.
+func (s *Service) GetHeartbeatByPingToken(ctx context.Context, token string) (*Heartbeat, error) {
+	return s.store.GetHeartbeatByPingToken(ctx, token)
 }
 
 func (s *Service) GetHeartbeat(ctx context.Context, id string) (*Heartbeat, error) {
@@ -192,13 +200,16 @@ func (s *Service) UpdateHeartbeat(ctx context.Context, id string, input UpdateHe
 	if input.IntervalSeconds != nil && (*input.IntervalSeconds < MinIntervalSeconds || *input.IntervalSeconds > MaxIntervalSeconds) {
 		return nil, fmt.Errorf("%w: interval must be %d-%d seconds", ErrInvalidInput, MinIntervalSeconds, MaxIntervalSeconds)
 	}
-	if input.GraceSeconds != nil {
-		maxGrace := h.IntervalSeconds
+	if input.IntervalSeconds != nil || input.GraceSeconds != nil {
+		interval, grace := h.IntervalSeconds, h.GraceSeconds
 		if input.IntervalSeconds != nil {
-			maxGrace = *input.IntervalSeconds
+			interval = *input.IntervalSeconds
 		}
-		if *input.GraceSeconds < 0 || *input.GraceSeconds > maxGrace {
-			return nil, fmt.Errorf("%w: grace must be 0-%d seconds", ErrInvalidInput, maxGrace)
+		if input.GraceSeconds != nil {
+			grace = *input.GraceSeconds
+		}
+		if grace < 0 || grace > interval {
+			return nil, fmt.Errorf("%w: grace must be 0-%d seconds", ErrInvalidInput, interval)
 		}
 	}
 
@@ -206,7 +217,26 @@ func (s *Service) UpdateHeartbeat(ctx context.Context, id string, input UpdateHe
 		return nil, err
 	}
 
-	return s.store.GetHeartbeatByID(ctx, id)
+	updated, err := s.store.GetHeartbeatByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if updated == nil {
+		return nil, ErrHeartbeatNotFound
+	}
+
+	payload := map[string]interface{}{
+		"heartbeat_id":     updated.ID,
+		"name":             updated.Name,
+		"interval_seconds": updated.IntervalSeconds,
+		"grace_seconds":    updated.GraceSeconds,
+	}
+	if updated.NextDeadlineAt != nil {
+		payload["next_deadline_at"] = updated.NextDeadlineAt
+	}
+	s.emitEvent(event.HeartbeatUpdated, payload)
+
+	return updated, nil
 }
 
 func (s *Service) DeleteHeartbeat(ctx context.Context, id string) error {
@@ -238,7 +268,7 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 
 // RecordPing processes a success ping and returns the id of the stored ping, empty when the ping row could not be written.
 func (s *Service) RecordPing(ctx context.Context, token string, sourceIP, httpMethod string, payload *string, agentID *string) (*Heartbeat, string, error) {
-	h, err := s.store.GetHeartbeatByID(ctx, token)
+	h, err := s.store.GetHeartbeatByPingToken(ctx, token)
 	if err != nil {
 		return nil, "", err
 	}
@@ -355,7 +385,7 @@ func (s *Service) RecordPing(ctx context.Context, token string, sourceIP, httpMe
 }
 
 func (s *Service) ProcessStartPing(ctx context.Context, token string, sourceIP, httpMethod string) (*Heartbeat, error) {
-	h, err := s.store.GetHeartbeatByID(ctx, token)
+	h, err := s.store.GetHeartbeatByPingToken(ctx, token)
 	if err != nil {
 		return nil, err
 	}
@@ -437,7 +467,7 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCod
 		return nil, ErrInvalidExitCode
 	}
 
-	h, err := s.store.GetHeartbeatByID(ctx, token)
+	h, err := s.store.GetHeartbeatByPingToken(ctx, token)
 	if err != nil {
 		return nil, err
 	}
@@ -797,4 +827,12 @@ func validateCreateInput(input CreateHeartbeatInput) error {
 		return fmt.Errorf("grace must be 0-%d seconds", input.IntervalSeconds)
 	}
 	return nil
+}
+
+// RotatePingToken gives a heartbeat a new ping token and returns the updated heartbeat.
+func (s *Service) RotatePingToken(ctx context.Context, id string) (*Heartbeat, error) {
+	if err := s.store.RotatePingToken(ctx, id, uuid.New().String()); err != nil {
+		return nil, fmt.Errorf("rotate ping token: %w", err)
+	}
+	return s.store.GetHeartbeatByID(ctx, id)
 }

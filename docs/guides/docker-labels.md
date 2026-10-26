@@ -91,10 +91,10 @@ The thresholds only drive the alert. The status of the endpoint turns `down` on 
 
 | Label | Default | Description |
 |-------|---------|-------------|
-| `maintenant.endpoint.http.method` | `GET` | `GET`, `HEAD`, `POST`, `PUT`, `DELETE`, `PATCH` or `OPTIONS`, in any case. |
+| `maintenant.endpoint.http.method` | `GET` | `GET` or `HEAD`, in any case. Any other value is ignored with a warning naming the container, and the check uses `GET`. |
 | `maintenant.endpoint.http.expected-status` | `2xx` | Accepted status codes, comma-separated. Each item is an exact code (`200`) or a class (`2xx`, from `1xx` to `5xx`), for example `200,301,4xx`. Unusable items are dropped; if none remains, `2xx` applies. |
 | `maintenant.endpoint.http.tls-verify` | `true` | Set `false`, `0` or `no` to accept a self-signed or otherwise untrusted certificate. |
-| `maintenant.endpoint.http.headers` | — | Custom headers, as JSON (`{"K":"V"}`) or as `K=V,K=V`. |
+| `maintenant.endpoint.http.headers` | — | Custom headers, as JSON (`{"K":"V"}`) or as `K=V,K=V`. `Authorization`, `Cookie` and `Proxy-Authorization` are ignored in any case, each with a warning. |
 | `maintenant.endpoint.http.max-redirects` | `5` | Redirects to follow, a non-negative integer. With `0` the first redirect answer is the result and is compared with the expected status. |
 
 ```yaml
@@ -102,10 +102,14 @@ labels:
   maintenant.endpoint.http: "https://api:8443/health"
   maintenant.endpoint.interval: "15s"
   maintenant.endpoint.failure-threshold: "3"
-  maintenant.endpoint.http.method: "POST"
+  maintenant.endpoint.http.method: "HEAD"
   maintenant.endpoint.http.expected-status: "200,201"
   maintenant.endpoint.http.tls-verify: "false"
 ```
+
+#### Where a label-declared check may go
+
+Anyone who can start a container can declare a check, so a label-declared check is bounded. It may reach private addresses (RFC 1918, ULA) and loopback, which is the usual case (`http://api:3000`). It is refused, at connection time and again on every redirect, when the address actually dialled is link-local (`169.254.0.0/16` including the cloud metadata service `169.254.169.254`, `fe80::/10`), multicast or unspecified (`0.0.0.0`, `::`): the check fails with `probe guard: blocked connection to <ip>`. The same rule applies to TCP checks and to `maintenant.tls.certificates`, on the server and on an agent. Endpoints and certificates created through the API are not bounded. `MAINTENANT_LABEL_ENDPOINTS_ALLOW_LINK_LOCAL=true` lifts the destination rule and is meant for tests only.
 
 A malformed target, for example a URL without a scheme or a TCP target without a port between 1 and 65535, creates no endpoint. maintenant logs a warning and emits an `endpoint.config_error` event.
 

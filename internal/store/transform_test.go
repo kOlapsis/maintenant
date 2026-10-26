@@ -137,8 +137,8 @@ func TestConvertToUUID(t *testing.T) {
 	wantCert := uid.CertMonitor(uid.LocalAgent, "example.com", 443, "")
 	require.Equal(t, wantCert, scanString(t, db, `SELECT id FROM cert_monitors`))
 
-	// Heartbeat id is the ping token.
 	require.Equal(t, "hb-token-1", scanString(t, db, `SELECT id FROM heartbeats`))
+	require.Equal(t, "hb-token-1", scanString(t, db, `SELECT ping_token FROM heartbeats`))
 
 	// Polymorphic alert.entity_id remapped onto the container UUID.
 	require.Equal(t, wantContainer, scanString(t, db, `SELECT entity_id FROM alerts WHERE message='msg'`))

@@ -133,6 +133,7 @@ function handleEndpointDeleted() {
       v-if="detail.entityType.value === 'heartbeat' && typeof detail.entityId.value === 'string' && detail.entityId.value"
       :heartbeat-id="(detail.entityId.value as string)"
       @close="handleClose"
+      @refresh="heartbeatsStore.fetchHeartbeats()"
     />
     <CertificateDetail
       v-if="detail.entityType.value === 'certificate' && typeof detail.entityId.value === 'string' && detail.entityId.value"

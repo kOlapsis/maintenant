@@ -499,9 +499,9 @@ If you set a license key and still see Community, check the license with `GET /a
 
 ## Every visitor shares one rate limit behind a reverse proxy
 
-**Symptom:** behind a reverse proxy, heartbeat pings, the public status page or the MCP endpoint answer `429` with `{"error":{"code":"rate_limited","message":"Too many requests"}}` as soon as a few clients are active.
+**Symptom:** behind a reverse proxy, the public status page or the MCP endpoint answer `429` with `{"error":{"code":"rate_limited","message":"Too many requests"}}` as soon as a few clients are active.
 
-**Why it happens:** `MAINTENANT_TRUSTED_PROXIES` is empty by default, which means no forwarded header is read. Every request is attributed to the address that opened the connection, that is the proxy, so all clients share one bucket (10 requests per second, burst 20, on `/ping/`, `/status/`, `/mcp` and `/oauth/`; 50 per second, burst 200, on `/api/`). `X-Forwarded-Host` is ignored too, so the gRPC address offered to new agents comes from the request's own `Host` unless `MAINTENANT_GRPC_URL` is set.
+**Why it happens:** `MAINTENANT_TRUSTED_PROXIES` is empty by default, which means no forwarded header is read. Every request is attributed to the address that opened the connection, that is the proxy, so all clients share one bucket (10 requests per second, burst 20, on `/status/`, `/mcp` and `/oauth/`; 50 per second, burst 200, on `/api/`). Pings with a known token are counted per token and are not affected. maintenant logs one `WARN` naming `MAINTENANT_TRUSTED_PROXIES` when it sees forwarded headers it ignores. `X-Forwarded-Host` is ignored too, so the gRPC address offered to new agents comes from the request's own `Host` unless `MAINTENANT_GRPC_URL` is set.
 
 **Fix:** list the addresses your proxy connects from:
 
@@ -521,7 +521,7 @@ The proxy must send `X-Forwarded-For` or `X-Real-IP`. A proxy on the Docker host
 application error  error="MAINTENANT_MCP=true but MAINTENANT_MCP_CLIENT_ID/MAINTENANT_MCP_CLIENT_SECRET are unset: /mcp is documented as bypassing the reverse-proxy auth, so it would serve containers, logs and alerts to anyone reaching it. Set both, or set MAINTENANT_MCP_ALLOW_UNAUTHENTICATED=true to accept that on a trusted network"
 ```
 
-Set both variables. The secret is the only thing that keeps `/mcp` closed, so use 32 characters or more (`openssl rand -hex 32`): a shorter one starts but logs `MAINTENANT_MCP_CLIENT_SECRET is shorter than 32 characters`. `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED=true` serves `/mcp` to anyone who can reach it and logs `MCP server enabled WITHOUT auth`. The stdio transport (`--mcp-stdio`) never listens and needs neither.
+Set both variables. The secret is the only thing that keeps `/mcp` closed, so use 32 characters or more (`openssl rand -hex 32`): a shorter one starts but logs `MAINTENANT_MCP_CLIENT_SECRET is shorter than 32 characters`. `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED=true` serves `/mcp` to anyone who can reach it and logs `MCP server enabled WITHOUT auth`. The stdio transport (`--mcp-stdio`) goes through a local Unix socket and needs neither credential, only `MAINTENANT_MCP=true` or `MAINTENANT_MCP_SOCKET=true` so that the socket is served.
 
 **`403 Forbidden: invalid Host header "..."`.** Only in the no-authentication mode, and only when maintenant listens on a loopback address (a native install, or `MAINTENANT_ADDR=127.0.0.1:...`) while the request carries another `Host`, which is what a reverse proxy on the same machine forwards. The MCP library refuses it as DNS rebinding protection. Configure the OAuth credentials, which lifts the check (the bearer token guards `/mcp` instead), or have the proxy send a loopback `Host` for `/mcp`.
 

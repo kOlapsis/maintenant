@@ -19,11 +19,24 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/peer"
 	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
+	"github.com/kolapsis/maintenant/internal/ratelimit"
 	"github.com/kolapsis/maintenant/internal/store"
 )
+
+const (
+	maxRecvMsgSize        = 1 << 20
+	maxConcurrentStreams  = 32
+	connectionTimeout     = 30 * time.Second
+	attemptsPerMinute     = 10
+	attemptsBurst         = 10
+	authenticationTimeout = 30 * time.Second
+)
+
+var errTooManyAttempts = grpcstatus.Error(codes.ResourceExhausted, "too many connection attempts from this address")
 
 // EventBroadcaster is the minimal interface required to publish SSE events to connected clients.
 type EventBroadcaster interface {
@@ -50,8 +63,9 @@ type Server struct {
 
 var (
 	serverKeepalive = keepalive.ServerParameters{
-		Time:    20 * time.Second,
-		Timeout: 10 * time.Second,
+		MaxConnectionIdle: 5 * time.Minute,
+		Time:              20 * time.Second,
+		Timeout:           10 * time.Second,
 	}
 	serverKeepalivePolicy = keepalive.EnforcementPolicy{
 		MinTime:             10 * time.Second,
@@ -62,7 +76,7 @@ var (
 // New creates a Server. Call Start to begin accepting connections.
 func New(deps Deps) *Server {
 	return &Server{
-		impl: &ingestImpl{deps: deps},
+		impl: &ingestImpl{deps: deps, perIP: ratelimit.New(attemptsPerMinute/60.0, attemptsBurst, nil)},
 		deps: deps,
 	}
 }
@@ -87,6 +101,9 @@ func (s *Server) Start(ctx context.Context, listen string, tlsCfg *tls.Config) e
 		grpc.KeepaliveEnforcementPolicy(serverKeepalivePolicy),
 		grpc.ChainUnaryInterceptor(recoveryUnaryInterceptor(s.deps.Logger)),
 		grpc.ChainStreamInterceptor(recoveryStreamInterceptor(s.deps.Logger)),
+		grpc.MaxRecvMsgSize(maxRecvMsgSize),
+		grpc.MaxConcurrentStreams(maxConcurrentStreams),
+		grpc.ConnectionTimeout(connectionTimeout),
 	}
 	if s.deps.DemoMode {
 		opts = append(opts,
@@ -101,6 +118,7 @@ func (s *Server) Start(ctx context.Context, listen string, tlsCfg *tls.Config) e
 	agentpb.RegisterIngestServer(s.grpc, s.impl)
 
 	s.deps.Logger.Info("agent gRPC server starting", "listen", listen)
+	go s.impl.perIP.Start(ctx)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -186,4 +204,17 @@ func (s *Server) StartTokenGC(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// peerIP returns the source address of the call without its port, so every connection from one host shares a quota.
+func peerIP(ctx context.Context) string {
+	p, ok := peer.FromContext(ctx)
+	if !ok || p.Addr == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(p.Addr.String())
+	if err != nil {
+		return p.Addr.String()
+	}
+	return host
 }

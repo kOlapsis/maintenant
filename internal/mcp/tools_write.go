@@ -20,39 +20,45 @@ import (
 func registerWriteTools(server *gomcp.Server, svc *Services) {
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "acknowledge_alert",
-		Description: "Acknowledge an active alert so it stops escalating.",
+		Description: "Acknowledge an active alert by alert_id from list_alerts: records who acknowledged it, stops its escalation runs and sends an acknowledgment notice to the channels those runs already notified. Returns acknowledged_at and acknowledged_by. An unknown alert returns not found; a resolved or already acknowledged one returns a conflict and nothing changes.",
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true, OpenWorldHint: new(true)},
 	}, acknowledgeAlertHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "create_incident",
-		Description: "Create a new incident on the status page." + requires(extension.CapIncidents),
+		Description: "Open an incident on the public status page and return it, with the id that update_incident takes. It is announced on the page and emailed to confirmed subscribers when subscriptions are enabled. Status defaults to investigating; for planned work use create_maintenance instead." + requires(extension.CapIncidents),
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(false), OpenWorldHint: new(true)},
 	}, createIncidentHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "update_incident",
-		Description: "Post a status update to an existing status page incident." + requires(extension.CapIncidents),
+		Description: "Post a status update to an incident by incident_id (returned by create_incident): appends the message, sets the incident to the given status and announces it on the status page and by email to subscribers. Setting resolved records the resolution time. Each call adds a new update, even on a resolved incident." + requires(extension.CapIncidents),
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(true), OpenWorldHint: new(true)},
 	}, updateIncidentHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "create_maintenance",
-		Description: "Schedule a maintenance window on the status page." + requires(extension.CapMaintenanceWindows),
+		Description: "Schedule a maintenance window on the status page and return it; end_time must be after start_time. While it runs, maintenant shows the listed components as under maintenance, suppresses alerts of their monitors and opens a maintenance incident emailed to subscribers, all undone when it ends. No tool here edits or cancels a window; use create_incident for unplanned problems." + requires(extension.CapMaintenanceWindows),
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(false), OpenWorldHint: new(true)},
 	}, createMaintenanceHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "pause_monitor",
-		Description: "Pause a heartbeat monitor to temporarily stop alerting. Only heartbeat monitors are supported.",
+		Description: "Pause a heartbeat monitor (monitor_type heartbeat, monitor_id from list_heartbeats): it is taken out of monitoring and its active alerts are resolved. A ping received while paused, or resume_monitor, puts it back under monitoring. Pausing an already paused heartbeat is refused and changes nothing.",
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true, OpenWorldHint: new(true)},
 	}, pauseMonitorHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "resume_monitor",
-		Description: "Resume a paused heartbeat monitor. Only heartbeat monitors are supported.",
+		Description: "Resume a paused heartbeat monitor (monitor_type heartbeat, monitor_id from list_heartbeats): its status becomes up and the next ping is due within its interval plus grace period. A heartbeat that is not paused is refused and nothing changes; pause_monitor is the inverse.",
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true, OpenWorldHint: new(true)},
 	}, resumeMonitorHandler(svc))
 }
 
 // --- Input types ---
 
 type acknowledgeAlertInput struct {
-	AlertID        string `json:"alert_id" jsonschema:"Alert ID to acknowledge"`
+	AlertID        string `json:"alert_id" jsonschema:"Alert ID to acknowledge, the id field of list_alerts"`
 	AcknowledgedBy string `json:"acknowledged_by,omitempty" jsonschema:"Who is acknowledging the alert (defaults to 'mcp')"`
 }
 
@@ -61,11 +67,11 @@ type createIncidentInput struct {
 	Severity     string   `json:"severity" jsonschema:"Incident severity: minor, major, or critical"`
 	Status       string   `json:"status,omitempty" jsonschema:"Initial incident status: investigating, identified, monitoring, or resolved (defaults to investigating)"`
 	Message      string   `json:"message,omitempty" jsonschema:"Description or initial update message"`
-	ComponentIDs []string `json:"component_ids,omitempty" jsonschema:"IDs of affected status page components"`
+	ComponentIDs []string `json:"component_ids,omitempty" jsonschema:"IDs of affected status page components; unknown or repeated IDs are refused. No MCP tool lists them."`
 }
 
 type updateIncidentInput struct {
-	IncidentID string `json:"incident_id" jsonschema:"Incident ID to update"`
+	IncidentID string `json:"incident_id" jsonschema:"Incident ID to update, as returned by create_incident"`
 	Status     string `json:"status" jsonschema:"New status: investigating, identified, monitoring, or resolved"`
 	Message    string `json:"message" jsonschema:"Update message"`
 }
@@ -75,7 +81,7 @@ type createMaintenanceInput struct {
 	StartTime    string   `json:"start_time" jsonschema:"Start time in RFC 3339 format"`
 	EndTime      string   `json:"end_time" jsonschema:"End time in RFC 3339 format"`
 	Message      string   `json:"message,omitempty" jsonschema:"Description of maintenance"`
-	ComponentIDs []string `json:"component_ids,omitempty" jsonschema:"IDs of affected status page components"`
+	ComponentIDs []string `json:"component_ids,omitempty" jsonschema:"IDs of affected status page components; unknown or repeated IDs are refused. No MCP tool lists them."`
 }
 
 type pauseMonitorInput struct {

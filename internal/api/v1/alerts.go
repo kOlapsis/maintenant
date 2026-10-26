@@ -189,6 +189,7 @@ func (h *AlertHandler) HandleListChannels(w http.ResponseWriter, r *http.Request
 
 	for _, ch := range channels {
 		ch.MarkSuspension()
+		ch.Redact()
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -208,6 +209,22 @@ func (h *AlertHandler) validateChannelURL(ctx context.Context, chType, rawURL st
 		return nil
 	}
 	return ssrf.ValidateURL(ctx, rawURL)
+}
+
+// readBackChannel answers with the stored row, masked, so a response carries the dates and never a secret.
+func (h *AlertHandler) readBackChannel(w http.ResponseWriter, r *http.Request, id string) *alert.NotificationChannel {
+	ch, err := h.channelStore.GetChannel(r.Context(), id)
+	if err != nil {
+		WriteStoreError(w, err, "Failed to read the channel back")
+		return nil
+	}
+	if ch == nil {
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to read the channel back")
+		return nil
+	}
+	ch.MarkSuspension()
+	ch.Redact()
+	return ch
 }
 
 // HandleCreateChannel handles POST /api/v1/channels.
@@ -247,6 +264,10 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 		WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
 		return
 	}
+	if _, err := alert.ParseHeaders(input.Headers); err != nil {
+		WriteError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+		return
+	}
 
 	config := strings.TrimSpace(string(input.Config))
 	if config == "null" {
@@ -284,12 +305,12 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create channel")
 		return
 	}
-	ch.ID = id
-	ch.HasSecret = ch.Secret != ""
-
-	ch.MarkSuspension()
-	h.broker.Broadcast(SSEEvent{Type: event.ChannelCreated, Data: ch})
-	WriteJSON(w, http.StatusCreated, ch)
+	stored := h.readBackChannel(w, r, id)
+	if stored == nil {
+		return
+	}
+	h.broker.Broadcast(SSEEvent{Type: event.ChannelCreated, Data: stored})
+	WriteJSON(w, http.StatusCreated, stored)
 }
 
 // HandleUpdateChannel handles PUT /api/v1/channels/{id}.
@@ -352,6 +373,10 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 		ch.URL = *input.URL
 	}
 	if input.Headers != nil {
+		if _, err := alert.ParseHeaders(*input.Headers); err != nil {
+			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+			return
+		}
 		ch.Headers = *input.Headers
 	}
 	// An absent secret keeps the stored one (FR-006); an empty one is refused,
@@ -396,11 +421,13 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update channel")
 		return
 	}
-	ch.HasSecret = ch.Secret != ""
 
-	ch.MarkSuspension()
-	h.broker.Broadcast(SSEEvent{Type: event.ChannelUpdated, Data: ch})
-	WriteJSON(w, http.StatusOK, ch)
+	stored := h.readBackChannel(w, r, id)
+	if stored == nil {
+		return
+	}
+	h.broker.Broadcast(SSEEvent{Type: event.ChannelUpdated, Data: stored})
+	WriteJSON(w, http.StatusOK, stored)
 }
 
 // HandleDeleteChannel handles DELETE /api/v1/channels/{id}.

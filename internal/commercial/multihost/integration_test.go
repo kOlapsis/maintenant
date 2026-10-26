@@ -240,7 +240,7 @@ func TestIntegration_Enrollment(t *testing.T) {
 
 	// (a) First call should succeed and insert the agent.
 	req := &agentpb.RegisterRequest{
-		AgentId:         "agt-integration-001",
+		AgentId:         "a1b2c3d4-0000-4000-8000-000000000001",
 		EnrollmentToken: tokCleartext,
 		Hostname:        "testhost",
 		Label:           "Test Agent",
@@ -268,7 +268,7 @@ func TestIntegration_Enrollment(t *testing.T) {
 
 	// (c) Re-call with same token → FailedPrecondition.
 	req2 := &agentpb.RegisterRequest{
-		AgentId:         "agt-integration-002",
+		AgentId:         "a1b2c3d4-0000-4000-8000-000000000002",
 		EnrollmentToken: tokCleartext,
 		Hostname:        "testhost2",
 		OsArch:          "linux/amd64",

@@ -34,7 +34,7 @@ const showCreateForm = ref(false)
         :doc-href="docUrl('features/heartbeats/#outbound-heartbeats')"
       >
         Create a heartbeat monitor on another Maintenant instance, then paste its ping URL
-        (<code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">/ping/{uuid}</code>)
+        (<code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">/ping/{token}</code>)
         as a target here. This instance pings it on the interval you choose &mdash; if this instance goes down, the other one raises the alert.
       </FeatureHint>
 

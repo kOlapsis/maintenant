@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
@@ -18,20 +19,70 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/kolapsis/maintenant/internal/agent"
+	"github.com/kolapsis/maintenant/internal/agentevent"
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/ratelimit"
 )
 
 // ingestImpl implements agentpb.IngestServer.
 type ingestImpl struct {
 	agentpb.UnimplementedIngestServer
-	deps Deps
+	deps  Deps
+	perIP *ratelimit.Limiter // nil = no per-address quota
+}
+
+const (
+	maxHostnameLen     = 253
+	maxOSArchLen       = 32
+	maxAgentVersionLen = 64
+)
+
+func (impl *ingestImpl) allowAttempt(ctx context.Context) bool {
+	return impl.perIP == nil || impl.perIP.Allow(peerIP(ctx))
+}
+
+// normalizeAgentID returns the canonical lowercase form of a UUID agent id.
+func normalizeAgentID(id string) (string, error) {
+	u, err := uuid.Parse(id)
+	if err != nil {
+		return "", grpcstatus.Error(codes.InvalidArgument, "agent_id must be a UUID")
+	}
+	return u.String(), nil
+}
+
+func validateRegisterFields(req *agentpb.RegisterRequest) error {
+	for _, f := range []struct {
+		name  string
+		value string
+		max   int
+	}{
+		{"hostname", req.GetHostname(), maxHostnameLen},
+		{"os_arch", req.GetOsArch(), maxOSArchLen},
+		{"agent_version", req.GetAgentVersion(), maxAgentVersionLen},
+	} {
+		if len(f.value) > f.max {
+			return grpcstatus.Errorf(codes.InvalidArgument, "%s is longer than %d characters", f.name, f.max)
+		}
+	}
+	return nil
 }
 
 // RegisterAgent handles first-boot agent enrollment.
 func (impl *ingestImpl) RegisterAgent(ctx context.Context, req *agentpb.RegisterRequest) (*agentpb.RegisterResponse, error) {
 	logger := impl.deps.Logger
+
+	if !impl.allowAttempt(ctx) {
+		return nil, errTooManyAttempts
+	}
+	agentID, err := normalizeAgentID(req.GetAgentId())
+	if err != nil {
+		return nil, err
+	}
+	if err := validateRegisterFields(req); err != nil {
+		return nil, err
+	}
 
 	// Resolve display label: if empty or >64 chars, fall back to hostname.
 	label := req.GetLabel()
@@ -50,8 +101,18 @@ func (impl *ingestImpl) RegisterAgent(ctx context.Context, req *agentpb.Register
 	// bytes; a wrong-sized key could only ever fail signature verification
 	// later, so store nothing and fail early with a clear error.
 	if len(req.GetPublicKey()) != ed25519.PublicKeySize {
-		logger.Warn("agent.enroll_rejected", "reason", "bad_public_key", "agent_id", req.GetAgentId())
+		logger.Warn("agent.enroll_rejected", "reason", "bad_public_key", "agent_id", agentID)
 		return nil, grpcstatus.Error(codes.InvalidArgument, "public key must be 32 bytes")
+	}
+
+	// A read refuses an unknown token without queueing on the serialized writer.
+	exists, err := impl.deps.AgentStore.TokenExists(ctx, agent.HashToken(req.GetEnrollmentToken()))
+	if err != nil {
+		logger.Error("enroll agent: check token failed", "agent_id", agentID, "err", err)
+		return nil, grpcstatus.Error(codes.Internal, "failed to register agent")
+	}
+	if !exists {
+		return nil, grpcstatus.Error(codes.NotFound, "enrollment token not found")
 	}
 
 	// Enrol the agent atomically: the per-edition host cap check, the one-time
@@ -61,7 +122,7 @@ func (impl *ingestImpl) RegisterAgent(ctx context.Context, req *agentpb.Register
 	// unconsumed. limit < 0 means unlimited.
 	now := time.Now().UTC()
 	a := &agent.Agent{
-		AgentID:         req.GetAgentId(),
+		AgentID:         agentID,
 		PublicKey:       req.GetPublicKey(),
 		Hostname:        req.GetHostname(),
 		Label:           label,
@@ -89,7 +150,7 @@ func (impl *ingestImpl) RegisterAgent(ctx context.Context, req *agentpb.Register
 		case errors.Is(err, agent.ErrTokenExpired):
 			return nil, grpcstatus.Error(codes.FailedPrecondition, "enrollment token expired")
 		default:
-			logger.Error("enroll agent failed", "agent_id", req.GetAgentId(), "err", err)
+			logger.Error("enroll agent failed", "agent_id", agentID, "err", err)
 			return nil, grpcstatus.Error(codes.Internal, "failed to register agent")
 		}
 	}
@@ -128,6 +189,10 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 	limiter := impl.deps.Limiter
 	dispatcher := impl.deps.Dispatcher
 
+	if !impl.allowAttempt(stream.Context()) {
+		return errTooManyAttempts
+	}
+
 	// Phase 1: send auth challenge.
 	challenge, err := GenerateChallenge()
 	if err != nil {
@@ -140,23 +205,44 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 	}
 
 	// Phase 2: receive auth response.
-	msg, err := stream.Recv()
-	if err != nil {
-		return err
+	type recvResult struct {
+		msg *agentpb.ClientMessage
+		err error
+	}
+	authTimer := time.NewTimer(authenticationTimeout)
+	defer authTimer.Stop()
+	authCh := make(chan recvResult, 1)
+	go func() {
+		msg, err := stream.Recv()
+		authCh <- recvResult{msg, err}
+	}()
+	var msg *agentpb.ClientMessage
+	select {
+	case <-authTimer.C:
+		return grpcstatus.Error(codes.DeadlineExceeded, "authentication timed out")
+	case res := <-authCh:
+		if res.err != nil {
+			return res.err
+		}
+		msg = res.msg
 	}
 	authResp, ok := msg.GetPayload().(*agentpb.ClientMessage_Auth)
 	if !ok {
 		return grpcstatus.Error(codes.InvalidArgument, "expected AuthResponse as first message")
 	}
 	resp := authResp.Auth
+	agentID, err := normalizeAgentID(resp.GetAgentId())
+	if err != nil {
+		return err
+	}
 
 	// Load agent and verify signature.
-	ag, err := impl.deps.AgentStore.Get(stream.Context(), resp.GetAgentId())
+	ag, err := impl.deps.AgentStore.Get(stream.Context(), agentID)
 	if errors.Is(err, agent.ErrAgentNotFound) {
 		return grpcstatus.Error(codes.NotFound, "agent not found")
 	}
 	if err != nil {
-		logger.Error("Push: load agent failed", "agent_id", resp.GetAgentId(), "err", err)
+		logger.Error("Push: load agent failed", "agent_id", agentID, "err", err)
 		return grpcstatus.Error(codes.Internal, "load agent error")
 	}
 
@@ -208,10 +294,6 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 	}
 
 	// Phase 4: async recv so we can select on session cancellation.
-	type recvResult struct {
-		msg *agentpb.ClientMessage
-		err error
-	}
 	recvCh := make(chan recvResult, 1)
 	go func() {
 		for {
@@ -340,6 +422,13 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 			if dispatcher != nil {
 				if err := dispatcher.Dispatch(stream.Context(), ag.AgentID, evt); err != nil {
 					logger.Error("Push: dispatch failed", "agent_id", ag.AgentID, "err", err)
+					if errors.Is(err, agentevent.ErrInvalid) {
+						_ = stream.Send(&agentpb.ServerMessage{
+							Payload: &agentpb.ServerMessage_Error{
+								Error: &agentpb.StreamError{Code: "invalid_argument", Message: err.Error()},
+							},
+						})
+					}
 				}
 			}
 

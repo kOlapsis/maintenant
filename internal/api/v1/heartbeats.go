@@ -76,7 +76,7 @@ func (h *HeartbeatHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	// Include snippets
 	baseURL := h.svc.BaseURL()
 	if baseURL != "" {
-		response["snippets"] = heartbeat.GenerateSnippets(baseURL, hb.ID)
+		response["snippets"] = heartbeat.GenerateSnippets(baseURL, hb.PingToken)
 	}
 
 	WriteJSON(w, http.StatusOK, response)
@@ -347,4 +347,19 @@ func enrichPings(pings []*heartbeat.HeartbeatPing, intervalSec, graceSec int, cr
 	}
 
 	return enriched
+}
+
+// HandleRotateToken handles POST /api/v1/heartbeats/{id}/rotate-token
+func (h *HeartbeatHandler) HandleRotateToken(w http.ResponseWriter, r *http.Request) {
+	hb, err := h.svc.RotatePingToken(r.Context(), r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, heartbeat.ErrHeartbeatNotFound) {
+			WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "Heartbeat not found")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to rotate the ping token")
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, hb)
 }

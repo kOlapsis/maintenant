@@ -3,7 +3,7 @@
 image:
   repository: ghcr.io/kolapsis/maintenant
   pullPolicy: Always
-  tag: "latest"
+  tag: ""
 
 imagePullSecrets: []
 

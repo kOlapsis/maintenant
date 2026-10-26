@@ -48,7 +48,7 @@ One binary, three modes, selected with `MAINTENANT_MODE` (`--mode`):
 | `server` | Same as `embedded`, but the instance refuses to start below Personal. It is the only mode where `--embedded-agent` has an effect: it runs a local agent inside the process. |
 | `agent` | No HTTP server and no store of its own apart from the event spool (an external database URL is refused). The agent detects its local runtime, enrols against a server and streams to it. It starts even when no runtime answers, reports the host alone and retries the runtime in the background. It keeps its identity (`identity.json`), its event spool (`spool.db`) and a liveness file in `MAINTENANT_DATA_DIR`. |
 
-Two more entry points share the binary: `maintenant --mcp-stdio` serves the MCP server over stdin and stdout, and `maintenant healthcheck` backs the image `HEALTHCHECK` (it reads the agent liveness file when there is one, otherwise it calls `/api/v1/health` on the configured address). `--copy-store-to` copies an installation into an empty PostgreSQL database and exits.
+Two more entry points share the binary: `maintenant --mcp-stdio` relays stdin and stdout to the running instance's MCP server through the `mcp.sock` Unix socket next to the database, and `maintenant healthcheck` backs the image `HEALTHCHECK` (it reads the agent liveness file when there is one, otherwise it calls `/api/v1/health` on the configured address). `--copy-store-to` copies an installation into an empty PostgreSQL database and exits.
 
 ---
 
@@ -76,7 +76,7 @@ Two more entry points share the binary: `maintenant --mcp-stdio` serves the MCP 
 
 | Technology | Purpose |
 |-----------|---------|
-| **Go** 1.26.9 | Application runtime (`go` directive of `go.mod`) |
+| **Go** 1.26.10 | Application runtime (`go` directive of `go.mod`) |
 | **`net/http`** (stdlib) | HTTP server, REST API, SSE, cross-origin protection |
 | **SQLite** (WAL mode) | Persistence by default, single-writer pattern |
 | **`github.com/mattn/go-sqlite3`** | SQLite driver (CGO, the only CGO dependency) |
@@ -266,7 +266,7 @@ Multi-host monitoring needs Personal or above. The gRPC protocol is defined in `
 - **Stream**: the agent pushes container events and inventories, endpoint and certificate probe results, resource samples, Swarm and Kubernetes topologies and the host OS identity. The server answers with acknowledgements and errors (`agent_revoked`, `rate_limited`, ...). Commands are the one exception to the push-only stream: the server can ask an agent for container logs.
 - **Probing**: the agent probes the endpoints and certificates of its own containers itself, from their labels. The server never dials them.
 - **Spool**: events are queued in memory, then in `spool.db`, while the server is unreachable, and replayed after the reconnect. Bounds: `MAINTENANT_AGENT_SPOOL_MAX_MEMORY_BYTES`, `MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES` and `MAINTENANT_AGENT_SPOOL_MAX_AGE_SECONDS`. State snapshots are never queued, and a replayed event is stored for history without raising live events or alerts.
-- **Transport**: TLS. Without `MAINTENANT_GRPC_TLS_CERT` and `MAINTENANT_GRPC_TLS_KEY` the server generates a self-signed certificate and logs a warning. `MAINTENANT_GRPC_TLS_INSECURE` serves plain h2c behind a trusted reverse proxy, and the embedded agent then dials `grpc://` instead of `grpcs://`. A certificate without its key, or the reverse, stops the startup. The listener defaults to `127.0.0.1:8443`.
+- **Transport**: TLS. Without `MAINTENANT_GRPC_TLS_CERT` and `MAINTENANT_GRPC_TLS_KEY` the server generates a self-signed certificate once, keeps it next to the database and logs its SHA-256 fingerprint, which agents pin with `--grpc-server-fingerprint`. `MAINTENANT_GRPC_TLS_INSECURE` serves plain h2c behind a trusted reverse proxy, and the embedded agent then dials `grpc://` instead of `grpcs://`. A certificate without its key, or the reverse, stops the startup. The listener defaults to `127.0.0.1:8443`.
 - **Identity**: the server's own runtime is an agent too, with the sentinel id `00000000-0000-0000-0000-000000000000` (`uid.LocalAgent`), so every entity carries an `agent_id`.
 
 See [Multi-Host Monitoring](features/multihost.md) and [Agent Setup](guides/agent-setup.md).
@@ -357,9 +357,20 @@ Before the raw transitions, check results and heartbeat pings are deleted, the s
 
 ---
 
+## Memory footprint
+
+Memory is measured with `docker stats --no-stream maintenant`, first on an empty instance right after it starts, then on the same instance on a busy host after several days.
+
+- 32 MB one hour after a restart.
+- About 100 MB after several days on a busy host.
+
+The slow growth between the two is being investigated.
+
+---
+
 ## HTTP layer
 
-The top-level mux routes `/mcp` (when MCP is enabled) and the OAuth endpoints (when a client id and secret are also set), `/status/*` (public status page), `/api/`, `/ping/` and, for everything else, the embedded single-page application with a fallback to `index.html`. Three per-IP token buckets protect it: 10 requests per second (burst 20) for `/ping/`, `/status/`, `/mcp` and `/oauth/`, 50 per second (burst 200) for `/api/`, and 5 per hour for status page subscriptions. Client addresses are read from forwarded headers only for the proxies listed in `MAINTENANT_TRUSTED_PROXIES`.
+The top-level mux routes `/mcp` (when MCP is enabled) and the OAuth endpoints (when a client id and secret are also set), `/status/*` (public status page), `/api/`, `/ping/` and, for everything else, the embedded single-page application with a fallback to `index.html`. Token buckets protect it: 10 requests per second (burst 20) per IP for `/status/`, `/mcp` and `/oauth/`, the same per IP for pings with an unknown token, 60 per minute per token for pings with a known one, 50 per second (burst 200) per IP for `/api/`, and 5 per hour per IP for status page subscriptions. A `Host` outside `MAINTENANT_ALLOWED_HOSTS` (or the hosts derived from the configured URLs) gets `421` on everything but the public routes, and a dedicated status host answers `404` outside them. Client addresses are read from forwarded headers only for the proxies listed in `MAINTENANT_TRUSTED_PROXIES`.
 
 Around the mux, from the outside in: security headers and a content security policy, a 10-second timeout for every request except the streaming ones, and the demo guard. The API router adds panic recovery, request logging, a request id, CORS, the cross-origin guard for unsafe methods, and the body size limit. The server itself uses a 5-second read timeout and no write timeout, which SSE requires. The API has no authentication of its own: see [Security](security.md) for what to put in front of it.
 

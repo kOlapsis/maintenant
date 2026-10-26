@@ -30,15 +30,15 @@ const typeLabels: Record<string, string> = {
   <div class="mt-2 space-y-1 rounded-lg border border-mnt-default bg-mnt-primary p-3">
     <div v-if="!monitors?.length" class="text-xs text-mnt-muted">No monitors</div>
     <div
-      v-for="m in monitors"
-      :key="`${m.type}-${m.id}`"
+      v-for="(m, index) in monitors"
+      :key="`${m.type}-${index}`"
       class="flex items-center gap-3 rounded px-2 py-1.5"
     >
       <span
         class="h-2 w-2 flex-shrink-0 rounded-full"
         :style="{ background: statusColors[m.status ?? 'operational'] || 'var(--mnt-text-muted)' }"
       ></span>
-      <span class="flex-1 text-sm text-mnt-secondary">{{ m.name || `${typeLabels[m.type] || m.type} #${m.id}` }}</span>
+      <span class="flex-1 text-sm text-mnt-secondary">{{ m.label?.trim() || typeLabels[m.type] || m.type }}</span>
       <span class="text-[10px] font-bold uppercase tracking-widest text-mnt-muted">{{ typeLabels[m.type] || m.type }}</span>
     </div>
   </div>

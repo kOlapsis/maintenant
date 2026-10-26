@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"syscall"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/ssrf"
 	"github.com/kolapsis/maintenant/internal/trust"
 )
 
@@ -53,7 +55,8 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 		return req, nil
 	}
 
-	client := newHTTPClient(cfg, timeout, !cfg.TLSVerify)
+	control := probeGuard(ep)
+	client := newHTTPClient(cfg, timeout, !cfg.TLSVerify, control)
 	defer client.CloseIdleConnections()
 
 	req, err := newRequest()
@@ -83,7 +86,7 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 			return result
 		}
 
-		state, dialErr := trust.DialInspect(ctx, addr, host, timeout)
+		state, dialErr := trust.DialInspectControl(ctx, addr, host, timeout, control)
 		if dialErr != nil {
 			result.ErrorMessage = fmt.Sprintf("request failed: %v", err)
 			return result
@@ -135,9 +138,17 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 	return result
 }
 
+// probeGuard returns the dial hook bounding a label-declared endpoint, nil for an API-created one.
+func probeGuard(ep *Endpoint) func(string, string, syscall.RawConn) error {
+	if ep.Source == SourceStandalone || ssrf.ProbeGuardDisabled() {
+		return nil
+	}
+	return ssrf.ProbeControl
+}
+
 // newHTTPClient builds the probe client. skipVerify is the per-endpoint
 // TLS-verify opt-out.
-func newHTTPClient(cfg EndpointConfig, timeout time.Duration, skipVerify bool) *http.Client {
+func newHTTPClient(cfg EndpointConfig, timeout time.Duration, skipVerify bool, control func(string, string, syscall.RawConn) error) *http.Client {
 	maxRedirects := cfg.MaxRedirects
 	if maxRedirects < 0 {
 		maxRedirects = 0
@@ -150,7 +161,7 @@ func newHTTPClient(cfg EndpointConfig, timeout time.Duration, skipVerify bool) *
 				MinVersion:         tls.VersionTLS12,
 				RootCAs:            trust.Pool(), // nil unless an extra CA was configured: system store
 			},
-			DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,
+			DialContext:           (&net.Dialer{Timeout: timeout, Control: control}).DialContext,
 			ResponseHeaderTimeout: timeout,
 		},
 		Timeout: timeout,

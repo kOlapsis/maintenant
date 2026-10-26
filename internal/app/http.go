@@ -10,9 +10,11 @@ import (
 	"encoding/base64"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -61,6 +63,16 @@ func SPAHandler(apiHandler http.Handler, logger *slog.Logger) http.Handler {
 		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		r.URL.Path = "/"
 		fileServer.ServeHTTP(w, r)
+	})
+}
+
+// noStoreAPI marks every /api/v1/ answer as never to be stored; an SSE handler overrides it with no-cache.
+func noStoreAPI(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/v1/") && w.Header().Get("Cache-Control") == "" {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		h.ServeHTTP(w, r)
 	})
 }
 
@@ -188,6 +200,86 @@ func SecurityHeaders(csp string) func(http.Handler) http.Handler {
 	}
 }
 
+// hostname returns the lowercase host name of a Host header, without port or IPv6 brackets.
+func hostname(h string) string {
+	if host, _, err := net.SplitHostPort(h); err == nil {
+		h = host
+	}
+	return strings.ToLower(strings.Trim(h, "[]"))
+}
+
+// publicPath reports whether p is the public status page, a ping or a file the status page needs.
+func publicPath(p string) bool {
+	switch p {
+	case "/status", "/manifest.webmanifest", "/sw.js", "/registerSW.js", "/apple-touch-icon.png", "/logo.svg":
+		return true
+	}
+	for _, prefix := range []string{"/status/", "/assets/", "/ping/", "/screenshots/", "/workbox-", "/favicon", "/icon"} {
+		if strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// statusHostFilter keeps a dedicated status host to the public paths and serves the status page at its root.
+func statusHostFilter(statusHost, baseHost string, next http.Handler) http.Handler {
+	if statusHost == "" || statusHost == baseHost {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hostname(r.Host) != statusHost {
+			next.ServeHTTP(w, r)
+			return
+		}
+		switch {
+		case r.URL.Path == "/":
+			r.URL.Path = "/status/"
+			next.ServeHTTP(w, r)
+		case publicPath(r.URL.Path):
+			next.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// hostGuard answers 421 when the Host of a request outside the public routes is neither an IP address nor an accepted name.
+func hostGuard(allowed map[string]struct{}, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if publicPath(p) || p == "/mcp" || strings.HasPrefix(p, "/mcp/") || strings.HasPrefix(p, "/oauth/") || strings.HasPrefix(p, "/.well-known/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		name := hostname(r.Host)
+		if _, ok := allowed[name]; !ok && net.ParseIP(name) == nil {
+			v1.WriteError(w, http.StatusMisdirectedRequest, "misdirected_request", "Host not allowed: add it to MAINTENANT_BASE_URL or MAINTENANT_ALLOWED_HOSTS")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// forwardedHeadersWarning logs once that forwarded headers are ignored because no trusted proxy is declared.
+func forwardedHeadersWarning(logger *slog.Logger, trusted bool, next http.Handler) http.Handler {
+	if trusted {
+		return next
+	}
+	var once sync.Once
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, header := range []string{"X-Forwarded-For", "X-Real-IP"} {
+			if r.Header.Get(header) != "" {
+				once.Do(func() {
+					logger.Warn("forwarded headers received but MAINTENANT_TRUSTED_PROXIES is empty: every visitor counts as the proxy", "header", header)
+				})
+				break
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 const minMCPClientSecretLength = 32
 
 // warnWeakMCPClientSecret warns when the only credential the MCP OAuth flow checks is short enough to guess.
@@ -275,12 +367,17 @@ func (a *App) buildHTTPServer() *http.Server {
 	}
 
 	a.statusHandler.Register(topMux, a.rl.Middleware)
-	topMux.Handle("/api/", a.apiRL.Middleware(a.router.Handler()))
-	topMux.Handle("/ping/", a.rl.Middleware(a.router.Handler()))
+	topMux.Handle("/api/", noStoreAPI(a.apiRL.Middleware(a.router.Handler())))
+	topMux.Handle("/ping/", a.router.Handler())
 	topMux.Handle("/", SPAHandler(a.router.Handler(), a.logger))
 
+	proxies, err := a.cfg.ParseTrustedProxies()
+	trusted := err == nil && len(proxies) > 0
+	// Start refuses an unreadable MAINTENANT_STATUS_URL through ValidateHTTP.
+	statusHost, _ := a.cfg.StatusHost()
 	handler := SecurityHeaders(contentSecurityPolicy(indexHTML))(
-		WithRequestTimeout(v1.DemoModeGuard(a.cfg.DemoMode, a.cfg.DemoToken)(topMux), 10*time.Second))
+		WithRequestTimeout(v1.DemoModeGuard(a.cfg.DemoMode, a.cfg.DemoToken)(
+			statusHostFilter(statusHost, urlHostname(a.cfg.BaseURL), hostGuard(a.cfg.AllowedHostSet(), forwardedHeadersWarning(a.logger, trusted, topMux)))), 10*time.Second))
 
 	return &http.Server{
 		Addr:         a.cfg.Addr,

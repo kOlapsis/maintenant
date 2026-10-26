@@ -36,6 +36,7 @@ const form = ref({
   // Telegram only: the bot token, and the optional forum topic.
   secret: '',
   threadId: '',
+  subjectLabel: '',
   enabled: true,
 })
 
@@ -132,6 +133,7 @@ function selectType(type: string) {
   form.value.headers = ''
   form.value.secret = ''
   form.value.threadId = ''
+  form.value.subjectLabel = ''
   submitError.value = ''
 }
 
@@ -139,13 +141,18 @@ async function submitConfig() {
   submitError.value = ''
   try {
     const isTelegram = selectedType.value === 'telegram'
+    const subjectLabel = form.value.subjectLabel.trim()
     const result = await createChannel({
       name: form.value.name,
       type: selectedType.value!,
       url: form.value.url,
       headers: form.value.headers || undefined,
       secret: isTelegram ? form.value.secret : undefined,
-      config: isTelegram && form.value.threadId ? { thread_id: form.value.threadId } : undefined,
+      config: isTelegram && form.value.threadId
+        ? { thread_id: form.value.threadId }
+        : selectedType.value === 'email' && subjectLabel
+          ? { subject_label: subjectLabel }
+          : undefined,
       enabled: form.value.enabled,
     })
     createdChannelId.value = result.id
@@ -387,6 +394,22 @@ function goBack() {
             <p>Leave the topic empty unless the group uses topics.</p>
           </div>
         </template>
+        <FormField
+          v-if="selectedType === 'email'"
+          label="Subject label (optional)"
+          hint="Replaces “maintenant” in the subject, e.g. [prod-paris] ALERT: …"
+        >
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="form.subjectLabel"
+              maxlength="64"
+              placeholder="maintenant"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+            />
+          </template>
+        </FormField>
         <FormField v-if="selectedType === 'webhook'" label="Custom Headers (JSON, optional)">
           <template #default="{ id, describedBy, invalid }">
             <TextInput

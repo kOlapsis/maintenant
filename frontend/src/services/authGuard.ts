@@ -87,10 +87,22 @@ export function startReauth(): void {
   window.location.assign(url.toString())
 }
 
+function purgeApiCaches(): void {
+  try {
+    void caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('api-')).map((k) => caches.delete(k))))
+      .catch(() => {})
+  } catch {
+    // No Cache Storage (insecure origin, old browser): nothing to purge.
+  }
+}
+
 /** Called on every detected challenge; triggers the overlay and one re-auth. */
 export function reportAuthChallenge(): void {
   if (sessionExpired.value) return
   sessionExpired.value = true
+  purgeApiCaches()
 
   if (Date.now() - lastReauthAt() < REAUTH_LOOP_WINDOW_MS) {
     // We just came back from the proxy and it is challenging us again: stop

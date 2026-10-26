@@ -28,6 +28,18 @@ const (
 	labelPBThreshold = "maintenant.alert.restart_threshold"
 )
 
+const (
+	maxInventoryContainers = 10_000
+	maxContainerLabels     = 256
+)
+
+func checkLabelCount(ev *agentpb.ContainerEvent) error {
+	if n := len(ev.GetLabels()); n > maxContainerLabels {
+		return fmt.Errorf("%w: container %s has too many labels (%d, limit %d)", agentevent.ErrInvalid, shortID(ev.GetContainerId()), n, maxContainerLabels)
+	}
+	return nil
+}
+
 // HandleAgentEvent processes a ContainerEvent received from a remote agent.
 //
 // Unlike local discovery, agent containers never come through Reconcile, so this
@@ -39,6 +51,10 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	if externalID == "" {
 		return nil
 	}
+	if err := checkLabelCount(ev); err != nil {
+		return err
+	}
+	WarnUnknownLabels(externalID, ev.GetLabels(), s.logger)
 
 	c, err := s.store.GetContainerByExternalID(ctx, uid.Agent(agentID), externalID)
 	if err != nil {
@@ -135,6 +151,14 @@ func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *
 	reported := ev.GetContainers()
 	if len(reported) == 0 && !ev.GetComplete() {
 		return nil
+	}
+	if len(reported) > maxInventoryContainers {
+		return fmt.Errorf("%w: inventory too large (%d containers, limit %d)", agentevent.ErrInvalid, len(reported), maxInventoryContainers)
+	}
+	for _, c := range reported {
+		if err := checkLabelCount(c); err != nil {
+			return err
+		}
 	}
 
 	live := make(map[string]struct{}, len(reported))

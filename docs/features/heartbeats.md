@@ -7,7 +7,7 @@ Monitor cron jobs, scheduled tasks, and any periodic process. Create a monitor, 
 ## How It Works
 
 1. **Create a heartbeat monitor** through the API or dashboard: give it a name, an interval (how often the job runs, from 60 seconds to 7 days) and a grace period (extra time allowed, from 0 up to the interval).
-2. **Get a unique ping URL**: maintenant generates a UUID-based URL for this monitor.
+2. **Get a unique ping URL**: maintenant generates a random, secret ping token for this monitor and builds the URL from it.
 3. **Ping the URL** from your cron job or script: maintenant records the ping and moves the deadline to *now + interval + grace*.
 4. **Get alerted** if the deadline is missed: the job did not report in on time.
 
@@ -20,17 +20,27 @@ Deadlines are checked every 15 seconds. A new heartbeat has the status `new` and
 Every heartbeat monitor gets a unique URL:
 
 ```
-{BASE_URL}/ping/{uuid}
+{BASE_URL}/ping/{token}
 ```
 
 Where `{BASE_URL}` is your `MAINTENANT_BASE_URL` environment variable. The ready-made snippets (curl, wget, Python, Go, Bash and a Docker healthcheck) shown in a heartbeat's detail panel, and returned by `GET /api/v1/heartbeats/{id}`, are built from it. It defaults to `http://` plus `MAINTENANT_ADDR` (`http://127.0.0.1:8080`), so set it to the public address of your instance or the snippets will not work from another machine.
+
+### The Ping Token Is a Secret
+
+The `{token}` part of the URL is the heartbeat's ping token. It is distinct from the heartbeat `id` used by the admin API, and it is the only access control of the ping URL: anyone who knows it can report runs for that job, and so hide a failure or raise a false alert. Keep it out of public repositories and CI/CD logs.
+
+The token appears in the `ping_token` field of the heartbeat object returned by the admin API, on the heartbeat card (the shortened URL and the **Copy URL** button), and in the heartbeat detail panel with the snippets. `/ping/{id}` never resolves a heartbeat: only the token does.
+
+After the upgrade that introduced the token, every existing heartbeat received its former id as its ping token, so the ping URLs already deployed keep working without any change. Heartbeats created afterwards get a token that differs from their id.
+
+If a token leaks, rotate it (see [Rotate the Ping Token](#rotate-the-ping-token)).
 
 ### Simple Ping
 
 Report that the job ran successfully:
 
 ```bash
-curl -fsS -o /dev/null https://now.example.com/ping/{uuid}
+curl -fsS -o /dev/null https://now.example.com/ping/{token}
 ```
 
 ### Ping with Exit Code
@@ -38,7 +48,7 @@ curl -fsS -o /dev/null https://now.example.com/ping/{uuid}
 Report the job's exit code so maintenant can track failures:
 
 ```bash
-curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/$?
+curl -fsS -o /dev/null https://now.example.com/ping/{token}/$?
 ```
 
 - Exit code `0` = success
@@ -51,19 +61,19 @@ Track job duration by sending a start ping before the job and a finish ping afte
 
 ```bash
 # Signal job start
-curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/start
+curl -fsS -o /dev/null https://now.example.com/ping/{token}/start
 
 # Run the actual job
 /usr/local/bin/my-backup.sh
 EXIT_CODE=$?
 
 # Signal job finish with exit code
-curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/${EXIT_CODE}
+curl -fsS -o /dev/null https://now.example.com/ping/{token}/${EXIT_CODE}
 ```
 
 maintenant calculates the duration between start and finish pings. A start ping also moves the deadline, so a job that starts and never finishes raises an alert once the deadline passes. Starting again while a run is still open closes the previous run as `timeout`.
 
-All ping routes accept `GET` and `POST`. A `POST` body of up to 10 KB is accepted but not stored. `/ping/{uuid}` answers the `id` of the ping it stored, the one the ping history lists. An unknown UUID answers `404 HEARTBEAT_NOT_FOUND`.
+All ping routes accept `GET` and `POST`. A `POST` body of up to 10 KB is accepted but not stored. `/ping/{token}` answers the `id` of the ping it stored, the one the ping history lists. An unknown token answers `404 HEARTBEAT_NOT_FOUND`.
 
 ---
 
@@ -73,21 +83,21 @@ All ping routes accept `GET` and `POST`. A `POST` body of up to 10 KB is accepte
 
 ```bash
 # Run backup every day at 2 AM, report to maintenant
-0 2 * * * /usr/local/bin/backup.sh && curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/$?
+0 2 * * * /usr/local/bin/backup.sh && curl -fsS -o /dev/null https://now.example.com/ping/{token}/$?
 ```
 
 ### With Duration Tracking
 
 ```bash
 # Report start and finish with exit code
-0 2 * * * curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/start; /usr/local/bin/backup.sh; curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/$?
+0 2 * * * curl -fsS -o /dev/null https://now.example.com/ping/{token}/start; /usr/local/bin/backup.sh; curl -fsS -o /dev/null https://now.example.com/ping/{token}/$?
 ```
 
 ### Systemd Timer
 
 ```bash
 # In your service ExecStartPost or a wrapper script
-ExecStartPost=/usr/bin/curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/0
+ExecStartPost=/usr/bin/curl -fsS -o /dev/null https://now.example.com/ping/{token}/0
 ```
 
 ---
@@ -156,6 +166,24 @@ POST /api/v1/heartbeats/{id}/resume
 
 Pausing a heartbeat that is already paused, or resuming one that is not paused, answers `400 INVALID_INPUT`. An unknown heartbeat answers `404`. Every pause is recorded and kept with the ping history. A ping that arrives while the heartbeat is paused puts it back to `up`.
 
+### Edit a Heartbeat
+
+Change the name, the interval or the grace period from the **Edit** button of the detail panel, or with `PUT /api/v1/heartbeats/{id}`. The heartbeat keeps its id, its ping URL and its whole history, so the jobs that ping it need no change.
+
+When the interval or the grace period changes, the deadline of a heartbeat that is `up` or `started` is recomputed from the same starting point as before: the last ping, the start of the current run, or the resume after a pause when no ping has arrived since. The new deadline is that starting point plus the new interval plus the new grace period. A heartbeat that is `new` or `paused` has no deadline and keeps none; a heartbeat that is `down` stays down until its next ping. Editing never raises nor resolves an alert by itself: if the recomputed deadline is already past, the next deadline check marks the heartbeat `down` and raises the usual `deadline_missed` alert.
+
+The grace period must stay between 0 and the interval. Lowering the interval under the current grace period answers `400 INVALID_INPUT`, as does any value outside the limits given for creation.
+
+### Rotate the Ping Token
+
+Replace the ping token of a heartbeat, from the **Rotate token** button of its detail panel or through the API:
+
+```bash
+POST /api/v1/heartbeats/{id}/rotate-token
+```
+
+The response is the heartbeat with its new `ping_token`. The old token answers `404 HEARTBEAT_NOT_FOUND` from the next request on, so update every job that pings it. The heartbeat keeps its `id`, its status and its whole history. An unknown heartbeat answers `404 HEARTBEAT_NOT_FOUND`, and a demo build answers `403 DEMO_MODE`.
+
 ### CRUD Operations
 
 | Method | Endpoint | Description |
@@ -164,6 +192,7 @@ Pausing a heartbeat that is already paused, or resuming one that is not paused, 
 | `POST` | `/api/v1/heartbeats` | Create a new heartbeat monitor (`name`, `interval_seconds`, `grace_seconds`) |
 | `GET` | `/api/v1/heartbeats/{id}` | Get a specific monitor, with its snippets |
 | `PUT` | `/api/v1/heartbeats/{id}` | Update a monitor |
+| `POST` | `/api/v1/heartbeats/{id}/rotate-token` | Replace the ping token; the old one answers 404 at once |
 | `DELETE` | `/api/v1/heartbeats/{id}` | Delete a monitor and its history for good: its ping URL answers 404 from then on |
 | `GET` | `/api/v1/heartbeats/{id}/executions` | Execution history |
 | `GET` | `/api/v1/heartbeats/{id}/pings` | Raw pings |
@@ -229,7 +258,7 @@ The first send happens within seconds of creating the target. Two instances can 
 
 The `/ping/` routes are designed to be publicly accessible. maintenant applies no authentication of its own to them, since your cron jobs and external services need to reach them directly.
 
-Pings are rate limited to 10 requests per second per client address, with a burst of 20, and a request over the limit answers `429` with a `Retry-After` header. Behind a reverse proxy, set `MAINTENANT_TRUSTED_PROXIES`: without it every caller counts as the proxy and shares its single limit. A demo build does not accept pings: the `/ping/` routes answer `403 DEMO_MODE`.
+Each ping token is limited to 60 pings per minute, whatever the address it comes from. Pings with an unknown token are limited to 10 requests per second per client address, with a burst of 20, so a flood of invalid tokens never blocks a valid one. A request over the limit answers `429` with a `Retry-After` header and is not recorded. Behind a reverse proxy, set `MAINTENANT_TRUSTED_PROXIES`: without it every caller with an unknown token counts as the proxy and shares its single limit. A demo build does not accept pings: the `/ping/` routes answer `403 DEMO_MODE`.
 
 !!! warning "Reverse proxy configuration"
     Make sure your reverse proxy allows unauthenticated access to `/ping/` paths.

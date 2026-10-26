@@ -53,7 +53,7 @@ func TestPing_SourceIPIsResolvedLikeTheRateLimit(t *testing.T) {
 				hb, err := svc.CreateHeartbeat(ctx, heartbeat.CreateHeartbeatInput{Name: "job", IntervalSeconds: 300, GraceSeconds: 60}, uid.New())
 				require.NoError(t, err)
 
-				req := httptest.NewRequest(http.MethodGet, "/ping/"+hb.ID+suffix, nil)
+				req := httptest.NewRequest(http.MethodGet, "/ping/"+hb.PingToken+suffix, nil)
 				req.RemoteAddr = tc.peer
 				req.Header.Set("X-Forwarded-For", "198.51.100.7")
 				rec := httptest.NewRecorder()

@@ -48,7 +48,9 @@ Set [`MAINTENANT_STATUS_URL`](../getting-started/configuration.md#environment-va
 
 ### Subdomain deployment
 
-When serving the status page from its own subdomain, point the subdomain at the same backend container as the main app and rewrite only the root path to `/status/`. The Vue router detects the dedicated-status context and mounts the public status page at `/`, so the browser URL stays clean (`status.example.com/`) without a visible redirect.
+When serving the status page from its own subdomain, point the subdomain at the same backend container as the main app and set `MAINTENANT_STATUS_URL` to it. On that host, maintenant serves the status page at `/` itself, so the browser URL stays clean (`status.example.com/`), and the Vue router only registers the public page: the dashboard cannot be reached from the subdomain.
+
+The server also answers `404` to every other path on that host: `/api/`, `/mcp`, `/oauth/` and the dashboard pages are refused even if the proxy forwards them. Route only the public paths to the backend anyway:
 
 **Traefik example:**
 
@@ -57,14 +59,16 @@ When serving the status page from its own subdomain, point the subdomain at the 
 traefik.http.routers.maintenant.rule: "Host(`app.example.com`)"
 traefik.http.routers.maintenant.middlewares: "authelia@docker"
 
-# Public status page on status.example.com (no auth, root rewritten to /status/)
-traefik.http.routers.maintenant-status.rule: "Host(`status.example.com`)"
+# Public status page on status.example.com (no auth, public paths only)
+traefik.http.routers.maintenant-status.rule: "Host(`status.example.com`) && (Path(`/`) || PathPrefix(`/status`) || PathPrefix(`/assets/`) || Path(`/manifest.webmanifest`) || Path(`/sw.js`) || Path(`/registerSW.js`) || PathRegexp(`^/workbox-`) || PathRegexp(`^/(favicon|icon|apple-touch-icon|logo)`))"
+
+# Optional: rewrite / to /status/ at the proxy (maintenant already serves / as the status page on that host)
 traefik.http.routers.maintenant-status.middlewares: "status-rewrite@docker"
 traefik.http.middlewares.status-rewrite.replacepathregex.regex: "^/$"
 traefik.http.middlewares.status-rewrite.replacepathregex.replacement: "/status/"
 ```
 
-Use `replacepathregex` (only rewriting `/` to `/status/`), not `addprefix=/status`: the latter would also prepend `/status` to SPA asset paths (`/assets/...`) and SSE endpoints (`/status/events`), causing 404s. All other paths (`/assets/...`, `/status/api`, `/status/events`, `/status/settings.json`) must pass through unchanged.
+If you keep a rewrite, use `replacepathregex` (only rewriting `/` to `/status/`), not `addprefix=/status`: the latter would also prepend `/status` to SPA asset paths (`/assets/...`) and SSE endpoints (`/status/events`), causing 404s. All other paths (`/assets/...`, `/status/api`, `/status/events`, `/status/settings.json`) must pass through unchanged.
 
 Set the matching env var on the backend:
 
@@ -88,7 +92,7 @@ POST /api/v1/status/components
   "composition_mode": "explicit",
   "monitors": [
     { "type": "container", "id": "0195f3c2-7b1e-7c3a-9d2e-5a4f8e1b6c70" },
-    { "type": "endpoint",  "id": "0195f3c4-11aa-7f00-8c55-2b9d0e3a4c18" }
+    { "type": "endpoint",  "id": "0195f3c4-11aa-7f00-8c55-2b9d0e3a4c18", "label": "Public API" }
   ],
   "display_order": 1,
   "visible": true,
@@ -108,7 +112,7 @@ POST /api/v1/status/components
 |-------|---------|
 | `display_name` | Name shown on the page. Required. |
 | `composition_mode` | `explicit` (default) or `match-all`. Fixed once the component exists. |
-| `monitors` | Explicit mode only, at least one entry. Each entry is `{type, id}` where `id` is the UUID of the monitor. |
+| `monitors` | Explicit mode only, at least one entry. Each entry is `{type, id, label}` where `id` is the UUID of the monitor. `label` is optional: plain text, 80 characters at most, without control characters (line breaks, tabs), trimmed. The public page shows it instead of the type name. A label outside this rule is refused with `400 validation`. |
 | `match_all_type` | Match-all mode only: `container`, `endpoint`, `heartbeat` or `certificate`. Fixed once the component exists. |
 | `display_order` | Sort position on the page. |
 | `visible` | `false` hides the component from the public page and from the global status. A hidden component is never named on a public surface: not in `/status/api`, not in the `/status/events` stream, not in subscriber emails, and it never opens an automatic incident. Default `true`. |
@@ -187,11 +191,11 @@ The status page is a responsive Vue SPA with live SSE updates. It can be embedde
 
 ### `/status/events`
 
-The stream carries these events. They are also sent on the admin stream `/api/v1/containers/events`, which is how `/status-admin` stays current.
+As soon as a client connects, the stream sends its headers and a `: ping` comment, so a proxy sees it open before the first event. The stream carries these events. They are also sent on the admin stream `/api/v1/containers/events`, which is how `/status-admin` stays current.
 
 | Event | Payload | Sent when |
 |-------|---------|-----------|
-| `status.component_changed` | `component_id`, `name`, `status`, `monitors` | A monitor linked to the component changes (container state or health, endpoint status, heartbeat or certificate alert). Not sent on the public stream for a hidden component |
+| `status.component_changed` | `component_id`, `name`, `status`, `monitors` | A monitor linked to the component changes (container state or health, endpoint status, heartbeat or certificate alert). On the public stream each monitor is `{type, status, label}`, without its id or name; the admin stream keeps `{type, id, name, label, status}`. Not sent on the public stream for a hidden component |
 | `status.global_changed` | `status`, `message` | After every component change, creation, edit or deletion |
 | `status.component_created`, `status.component_updated`, `status.component_deleted` | `component_id` | A component is created, edited or deleted. The public page receives it only when the component is or was visible |
 | `status.incident_created` | `id`, `title`, `severity`, `status`, `components` | An incident is opened. `components` lists only the visible components; the dashboard stream gets the full list |
@@ -210,7 +214,7 @@ The page updates in place: `status.component_changed` and `status.global_changed
   "updated_at": "2026-03-10T14:02:11Z",
   "components": [{
     "id": "…", "name": "API", "status": "degraded",
-    "monitors": [{ "type": "endpoint", "id": "…", "name": "api.example.com", "status": "degraded" }]
+    "monitors": [{ "type": "endpoint", "status": "degraded", "label": "Public API" }]
   }],
   "active_incidents": [{
     "id": "…", "title": "API latency increase", "severity": "minor",
@@ -224,7 +228,7 @@ The page updates in place: `status.component_changed` and `status.global_changed
 }
 ```
 
-`monitors` is the per-monitor breakdown of each component, the same as in the `status.component_changed` event, so a reload keeps it. Incidents and maintenance windows name only the visible components. `subscriptions_enabled` is `true` only when email subscriptions are open. The page shows its *Subscribe to updates* form only in that case. `personalization_version` is omitted when no personalization has been saved.
+`monitors` is the per-monitor breakdown of each component, in the same public form as the `status.component_changed` event, so a reload keeps it. Each monitor is `{type, status, label}`, and `label` is omitted when none is set. The id and the name (the target, such as a URL or a host) of a monitor never appear on a public surface; the page names a monitor by its label, or by its type when it has none. Incidents and maintenance windows name only the visible components. `subscriptions_enabled` is `true` only when email subscriptions are open. The page shows its *Subscribe to updates* form only in that case. `personalization_version` is omitted when no personalization has been saved.
 
 ### `/status/feed.atom`
 
@@ -379,8 +383,9 @@ Subscriptions are open only when both conditions hold, and the page reports the 
 | `MAINTENANT_SMTP_USERNAME` | — | Login for AUTH PLAIN. Authentication is skipped when empty. |
 | `MAINTENANT_SMTP_PASSWORD` | — | Password for that login. |
 | `MAINTENANT_SMTP_FROM` | `maintenant@localhost` | Sender address. |
+| `MAINTENANT_SMTP_ALLOW_PLAINTEXT` | `false` | Lets a server without STARTTLS receive mail in clear. Logged as a warning at startup. |
 
-The same server sends the emails of the email alert channel. Port 465 uses implicit TLS. On any other port, maintenant upgrades the connection with STARTTLS whenever the server offers it, and a send fails if the server offers STARTTLS but the negotiation does not succeed. A server that does not offer STARTTLS is used without encryption, and the client then refuses to send credentials to it unless it is `localhost`. Any send gives up after 30 seconds. Subjects are MIME-encoded, so a title with accents or other non-ASCII characters arrives intact. The SMTP tab of `/status-admin` shows whether SMTP is configured and sends a test email (`POST /api/v1/status/smtp/test` with `{"to": "you@example.com"}`, from Personal; `400 not_configured` without `MAINTENANT_SMTP_HOST`, `502 smtp_failed` when the server refuses); the Subscribers tab warns when SMTP is missing.
+The same server sends the emails of the email alert channel. Port 465 uses implicit TLS. On any other port, maintenant requires STARTTLS, and a send fails if the negotiation does not succeed. A server that does not offer STARTTLS gets nothing and the send fails, unless `MAINTENANT_SMTP_ALLOW_PLAINTEXT=true`: the mail then goes without encryption, and the client still refuses to send credentials unless the server is `localhost`. Any send gives up after 30 seconds. Subjects are MIME-encoded, so a title with accents or other non-ASCII characters arrives intact. The SMTP tab of `/status-admin` shows whether SMTP is configured and sends a test email (`POST /api/v1/status/smtp/test` with `{"to": "you@example.com"}`, from Personal; `400 not_configured` without `MAINTENANT_SMTP_HOST`, `502 smtp_failed` when the server refuses); the Subscribers tab warns when SMTP is missing.
 
 ```bash
 # List subscribers (emails are masked)
@@ -400,7 +405,7 @@ POST /status/subscribe
 3. Opening the link (`GET /status/confirm?token=…`) confirms the subscription. Unconfirmed subscriptions older than 24 hours are purged daily.
 4. Every notification ends with a personal unsubscribe link (`GET /status/unsubscribe?token=…`). Unsubscribing always works, even when subscriptions are closed.
 
-The answer to `POST /status/subscribe` is the same for a new address, a pending one and a confirmed one, so nobody can use the form to find out who is subscribed. Any other `Content-Type` answers `415 unsupported_media_type`. A pending address receives a fresh link and the previous one stops working; a confirmed address receives nothing. A failed email is only written to the log.
+The answer to `POST /status/subscribe` is the same for a new address, a pending one and a confirmed one, so nobody can use the form to find out who is subscribed. Any other `Content-Type` answers `415 unsupported_media_type`. A pending address asked for less than 15 minutes ago receives nothing and its link keeps working; after 15 minutes it receives a fresh link and the previous one stops working. A confirmed address receives nothing. At most 100 confirmation emails are sent per hour: past that, requests get the same answer, no email goes out until the next hour, and a single warning is logged for that hour. A failed email is only written to the log.
 
 | Status | Code | Reason |
 |--------|------|--------|

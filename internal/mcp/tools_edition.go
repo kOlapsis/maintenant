@@ -12,7 +12,7 @@ import (
 func registerEditionTools(server *gomcp.Server, svc *Services) {
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_edition",
-		Description: "Report the running edition, which capability each edition opens, the quota usage of capped resources, and the resource-history windows. Call this before offering a feature that may be gated, instead of asking the operator which edition they run.",
+		Description: "Report the running edition, which capability each edition opens, the quota usage of capped resources (a limit of -1 means unlimited), the resource-history windows and the channels the edition has suspended. Call this before offering a feature that may be gated, instead of asking the operator which edition they run.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getEditionHandler(svc))
 }

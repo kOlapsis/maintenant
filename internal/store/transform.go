@@ -335,14 +335,14 @@ func copyStatements() []stmt {
 			SELECT mnt_uuid7(), m.new_id, cce.position, cce.subject_cn, cce.issuer_cn, cce.not_before, cce.not_after
 			FROM _old_cert_chain_entries cce JOIN _map_certcheck m ON cce.check_result_id = m.old_id`},
 
-		// -------- heartbeats + children (id = ping token) -----------------------
+		// -------- heartbeats + children (id = old uuid, kept as ping token) ------
 		{"heartbeats", `INSERT INTO heartbeats
 			(id, agent_id, name, status, alert_state, interval_seconds, grace_seconds, last_ping_at,
 			 next_deadline_at, current_run_started_at, last_exit_code, last_duration_ms,
-			 consecutive_failures, consecutive_successes, created_at, updated_at)
+			 consecutive_failures, consecutive_successes, created_at, updated_at, ping_token)
 			SELECT uuid, '` + s + `', name, status, alert_state, interval_seconds, grace_seconds, last_ping_at,
 			 next_deadline_at, current_run_started_at, last_exit_code, last_duration_ms, consecutive_failures,
-			 consecutive_successes, created_at, updated_at
+			 consecutive_successes, created_at, updated_at, uuid
 			FROM _old_heartbeats`},
 
 		{"heartbeat_pings", `INSERT INTO heartbeat_pings

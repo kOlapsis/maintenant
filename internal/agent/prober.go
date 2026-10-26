@@ -132,7 +132,11 @@ func discoverEndpoints(ctx context.Context, ld labeledDiscoverer, logger *slog.L
 	}
 	declared := make(map[string]*endpoint.Endpoint)
 	for _, res := range results {
-		parsed, _ := endpoint.ParseEndpointLabels(res.Labels, logger)
+		epLogger := logger
+		if res.Container != nil {
+			epLogger = logger.With("container", res.Container.Name)
+		}
+		parsed, _ := endpoint.ParseEndpointLabels(res.Labels, epLogger)
 		for _, p := range parsed {
 			if _, seen := declared[p.Target]; seen {
 				continue
@@ -140,7 +144,7 @@ func discoverEndpoints(ctx context.Context, ld labeledDiscoverer, logger *slog.L
 			if p.EndpointType != endpoint.TypeHTTP && p.EndpointType != endpoint.TypeTCP {
 				continue
 			}
-			declared[p.Target] = &endpoint.Endpoint{ID: p.Target, EndpointType: p.EndpointType, Target: p.Target, Config: p.Config}
+			declared[p.Target] = &endpoint.Endpoint{ID: p.Target, EndpointType: p.EndpointType, Target: p.Target, Config: p.Config, Source: endpoint.SourceLabel}
 		}
 	}
 	return declared, nil
@@ -165,7 +169,7 @@ func scanCertsOnce(ctx context.Context, agentID string, ld labeledDiscoverer, se
 			}
 			seen[key] = true
 
-			scan := certificate.CheckCertificate(c.Hostname, c.Port, "", certScanTimeout)
+			scan := certificate.CheckCertificateFrom(certificate.SourceLabel, c.Hostname, c.Port, "", certScanTimeout)
 			if scan.Error != "" {
 				logger.Debug("prober: cert scan failed", "host", c.Hostname, "port", c.Port, "err", scan.Error)
 				continue

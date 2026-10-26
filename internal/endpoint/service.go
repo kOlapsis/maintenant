@@ -139,7 +139,7 @@ func (s *Service) Stop() {
 
 // SyncEndpoints synchronizes endpoint definitions from container labels with the store and check engine.
 func (s *Service) SyncEndpoints(ctx context.Context, containerName, externalID string, labels map[string]string) {
-	parsed, parseErrors := ParseEndpointLabels(labels, s.logger)
+	parsed, parseErrors := ParseEndpointLabels(labels, s.logger.With("container", containerName))
 	s.logger.Debug("endpoint: sync started", "external_id", externalID, "count", len(parsed))
 
 	// Emit config errors
@@ -239,7 +239,7 @@ func (s *Service) SyncEndpoints(ctx context.Context, containerName, externalID s
 // and (b) never enrolls them in the local check engine — the agent probes them
 // on its own host and pushes results (FR-018a). Reconciles removed labels.
 func (s *Service) SyncAgentEndpoints(ctx context.Context, agentID, containerName, externalID string, labels map[string]string) {
-	parsed, parseErrors := ParseEndpointLabels(labels, s.logger)
+	parsed, parseErrors := ParseEndpointLabels(labels, s.logger.With("container", containerName))
 	for _, pe := range parseErrors {
 		s.emitEvent(event.EndpointConfigError, map[string]interface{}{
 			"endpoint_id":    nil,

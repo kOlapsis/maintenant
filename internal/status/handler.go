@@ -66,6 +66,7 @@ func (h *Handler) Register(mux *http.ServeMux, mw Middleware) {
 
 	// Page HTML — catch-all for /status/ (more specific patterns below take precedence).
 	mux.Handle("GET /status/", mw(http.HandlerFunc(h.HandleStatusPage)))
+	mux.Handle("GET /status", mw(http.HandlerFunc(h.HandleStatusPage)))
 	// API & SSE endpoints.
 	mux.Handle("GET /status/api", mw(http.HandlerFunc(h.HandleStatusAPI)))
 	mux.Handle("GET /status/events", mw(h.sseHandler))
@@ -114,10 +115,10 @@ type StatusAPIResponse struct {
 
 // APIComponentBrief is a brief component in the JSON API.
 type APIComponentBrief struct {
-	ID       string       `json:"id"`
-	Name     string       `json:"name"`
-	Status   string       `json:"status"`
-	Monitors []MonitorRef `json:"monitors"`
+	ID       string          `json:"id"`
+	Name     string          `json:"name"`
+	Status   string          `json:"status"`
+	Monitors []PublicMonitor `json:"monitors"`
 }
 
 // APIIncidentBrief is a brief incident in the JSON API.
@@ -171,7 +172,7 @@ func (h *Handler) HandleStatusAPI(w http.ResponseWriter, r *http.Request) {
 			ID:       c.ID,
 			Name:     c.DisplayName,
 			Status:   c.EffectiveStatus,
-			Monitors: c.Monitors,
+			Monitors: PublicMonitors(c.Monitors),
 		})
 	}
 

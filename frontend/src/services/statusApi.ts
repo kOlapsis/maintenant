@@ -10,6 +10,7 @@ export interface MonitorRef {
   type: string   // 'container' | 'endpoint' | 'heartbeat' | 'certificate'
   id: string
   name?: string
+  label?: string
   status?: string
 }
 

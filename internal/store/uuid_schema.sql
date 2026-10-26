@@ -300,9 +300,9 @@ CREATE TABLE cert_chain_entries (
 CREATE INDEX idx_chain_entry_check ON cert_chain_entries(check_result_id, position);
 
 -- ============================================================ heartbeats =====
--- PK is the heartbeat's public ping token (already a UUID). No separate int id.
+-- id is an ordinary UUID; the public ping token lives in ping_token (unique).
 CREATE TABLE heartbeats (
-    id              TEXT PRIMARY KEY NOT NULL,              -- the ping token (was column "uuid")
+    id              TEXT PRIMARY KEY NOT NULL,
     agent_id        TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000' REFERENCES agents(id) ON DELETE CASCADE,
     name            TEXT NOT NULL,
     status          TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new','up','down','started','paused')),
@@ -317,9 +317,11 @@ CREATE TABLE heartbeats (
     consecutive_failures  INTEGER NOT NULL DEFAULT 0,
     consecutive_successes INTEGER NOT NULL DEFAULT 0,
     created_at      BIGINT NOT NULL,
-    updated_at      BIGINT NOT NULL
+    updated_at      BIGINT NOT NULL,
+    ping_token      TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX idx_heartbeat_status_deadline ON heartbeats(status, next_deadline_at);
+CREATE UNIQUE INDEX uq_heartbeats_ping_token ON heartbeats(ping_token);
 CREATE INDEX idx_heartbeats_agent_id ON heartbeats(agent_id);
 
 CREATE TABLE outbound_heartbeats (
@@ -536,6 +538,7 @@ CREATE TABLE status_component_monitors (
     component_id  TEXT NOT NULL REFERENCES status_components(id) ON DELETE CASCADE,
     monitor_type  TEXT NOT NULL,
     monitor_id    TEXT NOT NULL,
+    label         TEXT NOT NULL DEFAULT '',
     PRIMARY KEY(component_id, monitor_type, monitor_id)
 );
 CREATE INDEX idx_status_component_monitors_lookup ON status_component_monitors(monitor_type, monitor_id);

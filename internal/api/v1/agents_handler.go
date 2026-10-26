@@ -132,37 +132,57 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 		TrustedProxies: h.trustedProxies,
 	})
 
+	var fingerprint string
+	var selfSigned bool
+	if h.sessions != nil {
+		fingerprint, selfSigned = h.sessions.GRPCServerCertificate()
+	}
+
 	WriteJSON(w, http.StatusCreated, map[string]any{
-		"token_id":             tokenID,
-		"token":                tokenStr,
-		"token_masked":         tok.Masked(),
-		"created_at":           tok.CreatedAt,
-		"expires_at":           tok.ExpiresAt,
-		"consumed_at":          nil,
-		"consumed_by_agent_id": nil,
-		"install_templates":    buildInstallTemplates(publicURL, tokenStr),
-		"warnings":             warnings,
+		"token_id":                       tokenID,
+		"token":                          tokenStr,
+		"token_masked":                   tok.Masked(),
+		"created_at":                     tok.CreatedAt,
+		"expires_at":                     tok.ExpiresAt,
+		"consumed_at":                    nil,
+		"consumed_by_agent_id":           nil,
+		"install_templates":              buildInstallTemplatesFor(publicURL, tokenStr, fingerprint, selfSigned),
+		"grpc_server_fingerprint_sha256": fingerprint,
+		"grpc_server_self_signed":        selfSigned,
+		"warnings":                       warnings,
 	})
 }
 
-func buildInstallTemplates(serverURL, token string) map[string]string {
+// buildInstallTemplatesFor builds the install templates, pinning the fingerprint only when the certificate is self-signed.
+func buildInstallTemplatesFor(serverURL, token, fingerprint string, selfSigned bool) map[string]string {
+	pin := ""
+	if selfSigned {
+		pin = fingerprint
+	}
 	return map[string]string{
-		"standalone":     buildInstallStandalone(serverURL, token),
-		"docker_run":     buildInstallDockerRun(serverURL, token),
-		"docker_compose": buildInstallDockerCompose(serverURL, token),
-		"kubernetes":     buildInstallKubernetes(serverURL, token),
+		"standalone":     buildInstallStandalone(serverURL, token, pin),
+		"docker_run":     buildInstallDockerRun(serverURL, token, pin),
+		"docker_compose": buildInstallDockerCompose(serverURL, token, pin),
+		"kubernetes":     buildInstallKubernetes(serverURL, token, pin),
 	}
 }
 
-func buildInstallStandalone(serverURL, token string) string {
-	return "curl -fsSL https://install.maintenant.dev | sudo bash -s -- \\\n" +
-		"  --mode agent \\\n" +
-		"  --server " + serverURL + " \\\n" +
-		"  --enrollment-token " + token
+func buildInstallTemplates(serverURL, token string) map[string]string {
+	return buildInstallTemplatesFor(serverURL, token, "", false)
 }
 
-func buildInstallDockerRun(serverURL, token string) string {
-	return "docker run -d \\\n" +
+func buildInstallStandalone(serverURL, token, pin string) string {
+	out := "curl -fsSL https://install.maintenant.dev | sudo bash -s -- \\\n" +
+		"  --mode agent \\\n" +
+		"  --server " + serverURL + " \\\n"
+	if pin != "" {
+		out += "  --grpc-server-fingerprint " + pin + " \\\n"
+	}
+	return out + "  --enrollment-token " + token
+}
+
+func buildInstallDockerRun(serverURL, token, pin string) string {
+	out := "docker run -d \\\n" +
 		"  --name maintenant-agent \\\n" +
 		"  --restart unless-stopped \\\n" +
 		"  -v /var/run/docker.sock:/var/run/docker.sock:ro \\\n" +
@@ -171,12 +191,15 @@ func buildInstallDockerRun(serverURL, token string) string {
 		"  -v maintenant-agent-data:/var/lib/maintenant \\\n" +
 		"  ghcr.io/kolapsis/maintenant:latest \\\n" +
 		"  --mode=agent \\\n" +
-		"  --server=" + serverURL + " \\\n" +
-		"  --enrollment-token=" + token
+		"  --server=" + serverURL + " \\\n"
+	if pin != "" {
+		out += "  --grpc-server-fingerprint=" + pin + " \\\n"
+	}
+	return out + "  --enrollment-token=" + token
 }
 
-func buildInstallDockerCompose(serverURL, token string) string {
-	return "services:\n" +
+func buildInstallDockerCompose(serverURL, token, pin string) string {
+	out := "services:\n" +
 		"  maintenant-agent:\n" +
 		"    image: ghcr.io/kolapsis/maintenant:latest\n" +
 		"    restart: unless-stopped\n" +
@@ -187,15 +210,18 @@ func buildInstallDockerCompose(serverURL, token string) string {
 		"      - maintenant-agent-data:/var/lib/maintenant\n" +
 		"    command:\n" +
 		"      - --mode=agent\n" +
-		"      - --server=" + serverURL + "\n" +
-		"      - --enrollment-token=" + token + "\n" +
+		"      - --server=" + serverURL + "\n"
+	if pin != "" {
+		out += "      - --grpc-server-fingerprint=" + pin + "\n"
+	}
+	return out + "      - --enrollment-token=" + token + "\n" +
 		"\n" +
 		"volumes:\n" +
 		"  maintenant-agent-data:\n"
 }
 
-func buildInstallKubernetes(serverURL, token string) string {
-	return "apiVersion: v1\n" +
+func buildInstallKubernetes(serverURL, token, pin string) string {
+	out := "apiVersion: v1\n" +
 		"kind: Namespace\n" +
 		"metadata:\n" +
 		"  name: maintenant\n" +
@@ -282,8 +308,12 @@ func buildInstallKubernetes(serverURL, token string) string {
 		"                  key: token\n" +
 		"            - name: MAINTENANT_NODE_NAME\n" +
 		"              valueFrom:\n" +
-		"                fieldRef: { fieldPath: spec.nodeName }\n" +
-		"          securityContext:\n" +
+		"                fieldRef: { fieldPath: spec.nodeName }\n"
+	if pin != "" {
+		out += "            - name: MAINTENANT_GRPC_SERVER_FINGERPRINT\n" +
+			"              value: \"" + pin + "\"\n"
+	}
+	return out + "          securityContext:\n" +
 		"            allowPrivilegeEscalation: false\n" +
 		"            readOnlyRootFilesystem: true\n" +
 		"            capabilities:\n" +

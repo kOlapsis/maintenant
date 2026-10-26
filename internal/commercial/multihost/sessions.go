@@ -155,6 +155,9 @@ type Sessions struct {
 	// (connected=true). reason carries the disconnect cause ("stream_ended",
 	// "stale", "revoked", "deleted"). Always called WITHOUT s.mu held.
 	alertHook func(agentID, reason string, connected bool)
+
+	certFingerprint string // guarded by mu
+	certSelfSigned  bool   // guarded by mu
 }
 
 // NewSessions creates an empty Sessions registry.
@@ -593,4 +596,17 @@ func (s *Sessions) StartStaleWatcher(ctx context.Context, interval, threshold, g
 			}
 		}
 	}()
+}
+
+// GRPCServerCertificate returns the SHA-256 fingerprint of the certificate served to agents and whether it is self-signed.
+func (s *Sessions) GRPCServerCertificate() (fingerprint string, selfSigned bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.certFingerprint, s.certSelfSigned
+}
+
+func (s *Sessions) setGRPCServerCertificate(fingerprint string, selfSigned bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.certFingerprint, s.certSelfSigned = fingerprint, selfSigned
 }

@@ -26,11 +26,13 @@ type SMTPConfig struct {
 	Username string
 	Password string
 	From     string
+
+	AllowPlaintext bool
 }
 
 const implicitTLSPort = "465"
 
-// SMTPSender sends email notifications via SMTP, over implicit TLS on port 465 and STARTTLS elsewhere when the server offers it.
+// SMTPSender sends email notifications via SMTP, over implicit TLS on port 465 and STARTTLS elsewhere unless AllowPlaintext lets a server without it receive mail in clear.
 type SMTPSender struct {
 	cfg         SMTPConfig
 	implicitTLS bool
@@ -76,12 +78,13 @@ func (s *SMTPSender) Send(ctx context.Context, to, subject, textBody string) err
 		_ = c.Close()
 	}(c)
 
-	// A relay that does not offer STARTTLS is accepted in clear; one that offers it and fails the negotiation is not.
 	if !s.implicitTLS {
 		if ok, _ := c.Extension("STARTTLS"); ok {
 			if err := c.StartTLS(tlsCfg); err != nil {
 				return fmt.Errorf("smtp starttls: %w", err)
 			}
+		} else if !s.cfg.AllowPlaintext {
+			return fmt.Errorf("smtp: %s does not offer STARTTLS; set MAINTENANT_SMTP_ALLOW_PLAINTEXT=true to send in clear", s.cfg.Host)
 		}
 	}
 

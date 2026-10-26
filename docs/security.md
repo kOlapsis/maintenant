@@ -22,9 +22,9 @@ These routes **must bypass** your authentication middleware:
 
 | Route | Purpose | Rate Limited |
 |-------|---------|:------------:|
-| `/ping/{uuid}` | Heartbeat ping, called by cron jobs, CI/CD pipelines, external services | Yes |
-| `/ping/{uuid}/start` | Job start signal for duration tracking | Yes |
-| `/ping/{uuid}/{exit_code}` | Job completion with exit code | Yes |
+| `/ping/{token}` | Heartbeat ping, called by cron jobs, CI/CD pipelines, external services | Yes |
+| `/ping/{token}/start` | Job start signal for duration tracking | Yes |
+| `/ping/{token}/{exit_code}` | Job completion with exit code | Yes |
 | `/status/` | Status page (the web app, served at `/status`) | Yes |
 | `/status/api` | Status page JSON API | Yes |
 | `/status/settings.json` | Status page appearance settings | Yes |
@@ -36,10 +36,13 @@ These routes **must bypass** your authentication middleware:
 | `/assets/*` | JavaScript and CSS of the web app. Without them the status page stays blank when it shares a host with the protected dashboard | No |
 
 !!! note "Match the prefix, not the exact slash"
-    Route the public matcher on the prefix **without** a trailing slash (`/ping`, `/status`). maintenant answers the bare path with a `307` redirect to its canonical form (`/status` → `/status/`); if your matcher only covers `/status/`, the bare `/status` reaches the authenticated router first and returns 401 before the redirect. `/ping` redirects to `/ping/`, which returns **404**: only `/ping/{uuid}` is a real endpoint, the prefix just needs to bypass auth so heartbeats reach the app.
+    Route the public matcher on the prefix **without** a trailing slash (`/ping`, `/status`). maintenant serves the status page on both `/status` and `/status/`; if your matcher only covers `/status/`, the bare `/status` reaches the authenticated router and returns 401. `/ping` redirects to `/ping/`, which returns **404**: only `/ping/{token}` is a real endpoint, the prefix just needs to bypass auth so heartbeats reach the app.
 
 !!! note "Optional public routes"
     The web app also requests `/manifest.webmanifest`, `/registerSW.js`, `/sw.js` (with its `workbox-*.js` file) and the icons (`/favicon.svg`, `/favicon.ico`, `/apple-touch-icon.png`) from the root. The status page renders without them. Behind authentication, an anonymous visitor only loses the icons and the PWA features (install, offline cache), and the browser console shows failed requests. The manifest is requested with credentials, so signed-in users still get it.
+
+!!! note "Dedicated status host"
+    When `MAINTENANT_STATUS_URL` points at its own subdomain, maintenant answers `404` on that host to every path outside the public ones above. Restrict the proxy router of that subdomain the same way: see the [Traefik rule in the status page guide](features/status-page.md#subdomain-deployment).
 
 ### MCP & OAuth Routes
 
@@ -56,7 +59,9 @@ Only registered when `MAINTENANT_MCP=true`, and never in [demo mode](#demo-mode)
 !!! warning "MCP without credentials refuses to start"
     `MAINTENANT_MCP=true` **without** `MAINTENANT_MCP_CLIENT_ID` and `MAINTENANT_MCP_CLIENT_SECRET` would serve `/mcp` to anyone. Since `/mcp` bypasses proxy auth, an incomplete `.env` would publish your monitoring data, so maintenant refuses to listen and names the missing variables.
 
-    To run MCP unauthenticated anyway (a local instance on a trusted network), set `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED=true`. The startup log then carries a `WARN` for as long as it stays that way, and only `/mcp` is registered: there are no OAuth routes. `--mcp-stdio` is unaffected: it never listens on the network and needs no credentials.
+    To run MCP unauthenticated anyway (a local instance on a trusted network), set `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED=true`. The startup log then carries a `WARN` for as long as it stays that way, and only `/mcp` is registered: there are no OAuth routes.
+
+The local `mcp.sock` socket that `--mcp-stdio` relays to is not an HTTP route and never goes through the proxy. It is created only when `MAINTENANT_MCP=true` or `MAINTENANT_MCP_SOCKET=true`, next to the database with mode `0600`, and never in agent mode.
 
 ### Protected Routes
 
@@ -210,9 +215,13 @@ believed**: `X-Forwarded-For`, `X-Real-IP` and `X-Forwarded-Host` are not read
 at all, and every rate-limit quota is counted against the address that opened
 the connection. Anyone able to reach the instance directly can otherwise send a
 different header on every request and get a fresh quota each time. Behind a
-proxy that is not listed, every visitor looks like the proxy itself: heartbeat
-pings, status page visitors and MCP clients share one public bucket (10 requests
-per second, burst of 20), and every dashboard user shares the API bucket.
+proxy that is not listed, every visitor looks like the proxy itself: status page
+visitors and MCP clients share one public bucket (10 requests per second, burst
+of 20), pings with an unknown token share their own bucket of the same size,
+and every dashboard user shares the API bucket. Pings with a known token are
+counted per token and are not affected. maintenant logs one `WARN` naming
+`MAINTENANT_TRUSTED_PROXIES` the first time a request carries `X-Forwarded-For`
+or `X-Real-IP` while the list is empty.
 
 The list has to contain the address maintenant sees as the connecting peer,
 which depends on where the proxy runs:
@@ -271,15 +280,17 @@ schema on first start and read/write it afterwards; nothing more.
 
 ### Rate Limiting
 
-Three per-address token bucket limiters, tight for the public surfaces and loose for the admin API:
+Token bucket limiters, tight for the public surfaces and loose for the admin API. Each one has its own buckets, so a flood on one surface does not use up the quota of another:
 
-| Limiter | Applied to | Rate | Burst |
-|---------|------------|------|-------|
-| Public | `/ping/`, every `/status/` route, `/mcp`, `/oauth/authorize`, `/oauth/token` | 10 requests/second | 20 |
-| Admin API | `/api/*` | 50 requests/second | 200 |
-| Subscription | `POST /status/subscribe`, in addition to the public limiter | 5 requests/hour | 5 |
+| Limiter | Applied to | Rate | Burst | Counted per |
+|---------|------------|------|-------|-------------|
+| Public | every `/status/` route, `/mcp`, `/oauth/authorize`, `/oauth/token` | 10 requests/second | 20 | address |
+| Pings, unknown token | `/ping/` with a token no heartbeat has | 10 requests/second | 20 | address |
+| Pings, known token | `/ping/{token}`, `/ping/{token}/start`, `/ping/{token}/{exit_code}` | 60 per minute | 60 | token, whatever the address |
+| Admin API | `/api/*` | 50 requests/second | 200 | address |
+| Subscription | `POST /status/subscribe`, in addition to the public limiter | 5 requests/hour | 5 | address |
 
-A refused request gets `429` with `{"error":{"code":"rate_limited","message":"Too many requests"}}` and a `Retry-After` header: 1 second for the public and admin API limiters, 720 seconds for subscriptions. The OAuth metadata documents under `/.well-known/` and the web app's own files (`/`, `/assets/*`) are not limited.
+A flood of invalid tokens from one address therefore never blocks a valid heartbeat ping from the same address, and a refused ping is not recorded. A refused request gets `429` with `{"error":{"code":"rate_limited","message":"Too many requests"}}` and a `Retry-After` header: 1 second for the public, ping and admin API limiters, 720 seconds for subscriptions. The OAuth metadata documents under `/.well-known/` and the web app's own files (`/`, `/assets/*`) are not limited.
 
 The admin API limit is a flood ceiling, not a quota. A dashboard page load fans out dozens of parallel calls, so the public bucket would reject ordinary use; at 50/s with a burst of 200 the interface never reaches it. It exists so an unauthenticated surface, or a stolen session, cannot hammer expensive routes for free.
 
@@ -291,7 +302,7 @@ Which address a quota is counted against is decided by
 | Header | Value | Sent on | Purpose |
 |--------|-------|---------|---------|
 | `X-Content-Type-Options` | `nosniff` | Every response | Stops the browser from re-guessing a declared content type |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` | Every response | Keeps paths (which can carry heartbeat UUIDs) out of cross-origin referrers |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Every response | Keeps paths (which can carry heartbeat ping tokens) out of cross-origin referrers |
 | `X-Frame-Options` | `DENY` | Every response except `/status` and `/status/*` | Clickjacking defence for browsers that ignore CSP |
 | `Content-Security-Policy` | see below | Every response | Defence in depth if an XSS ever lands |
 
@@ -311,6 +322,8 @@ The route that serves the uploaded status page images (`/api/v1/status-page/asse
     `/status` and `/status/*` are served with `frame-ancestors *` and no `X-Frame-Options`, so you can keep iframing the status page. Every other route, the dashboard and `/api/v1/*` included, gets `frame-ancestors 'none'` and `X-Frame-Options: DENY`.
 
 HSTS is deliberately **not** set by the application. TLS terminates at your reverse proxy, and the app would have to infer "this was HTTPS" from a forwarded header a client can forge. Set `Strict-Transport-Security` in the proxy.
+
+Every `/api/v1/` answer carries `Cache-Control: no-store`, so neither the browser nor an intermediate cache keeps it; the SSE streams send `no-cache` instead. The web app's service worker keeps a short-lived cache of the other API answers (prefix `api-`) for offline use, but never caches container logs, status page subscribers, escalation policies, agents, security findings or CVEs: those always come from the network. When the authentication proxy session expires, the web app deletes every `api-` cache before sending the browser back to the login page.
 
 ### Request Size Limits
 
@@ -350,6 +363,22 @@ The proxy's session cookie travels with every request a browser makes, including
 
 `/ping/`, `/status/`, `/mcp` and `/oauth/*` are outside this check: they are designed to be called from other origins, and `/mcp` has its own cross-origin check, built into the MCP SDK.
 
+### Host header
+
+A DNS rebinding attack points a domain the attacker controls at the address of your instance, so a page on that domain can read the API and the dashboard from the visitor's browser. maintenant therefore checks the `Host` header: outside the public routes, a request whose host name is not accepted gets `421` with `{"error":{"code":"misdirected_request","message":"Host not allowed: add it to MAINTENANT_BASE_URL or MAINTENANT_ALLOWED_HOSTS"}}`. A request without a `Host` header is refused the same way. The port and the case of the header do not matter.
+
+An IP address is always accepted, IPv4 or IPv6, because a rebinding attack goes through a domain name and never through an IP address. Opening the dashboard at `http://192.168.1.10:8080` therefore works without any setting. Only host names have to be declared.
+
+The accepted host names are `localhost`, the host of `MAINTENANT_ADDR` (unless it is `0.0.0.0` or `::`), and either the entries of `MAINTENANT_ALLOWED_HOSTS` or, when it is not set, the hosts of `MAINTENANT_BASE_URL` and `MAINTENANT_STATUS_URL`:
+
+```bash
+MAINTENANT_ALLOWED_HOSTS=now.example.com,monitor.lan
+```
+
+The check does not apply to `/ping/`, `/status` and `/status/`, `/assets/`, the installable app files (`/manifest.webmanifest`, `/sw.js`, `/registerSW.js`, `/workbox-*`, the icons), `/mcp`, `/oauth/` and `/.well-known/`: the public routes answer any host so they can be embedded and reached through any name, and `/mcp` checks the host itself.
+
+When maintenant listens beyond the loopback without `MAINTENANT_ALLOWED_HOSTS`, it logs one `WARN` at startup listing the hosts it accepts. The proxy must forward the original `Host` (Traefik and Caddy do by default, nginx needs `proxy_set_header Host $host`), and the Kubernetes probes send `Host: localhost`.
+
 ---
 
 ## MCP Authentication
@@ -368,9 +397,11 @@ When `MAINTENANT_MCP_CLIENT_ID` and `MAINTENANT_MCP_CLIENT_SECRET` are both conf
 - **Refresh token rotation**: each use invalidates the old token
 - **Replay detection**: reusing a consumed refresh token revokes the entire token family
 - **Automatic cleanup** of expired tokens every 15 minutes
+- **Scopes**: a token is `read` unless the client asked for `scope=read write`. A `read` token calls the read-only tools only; a write tool answers `tool <name> requires the write scope; this token only grants read` and writes nothing. Any other scope is refused with `invalid_scope`, a refresh keeps the scope it had, and tokens issued before scopes existed count as `read`
+- **Read-only mode**: with `MAINTENANT_MCP_READ_ONLY=true`, the 17 write tools are not registered at all, whatever the scope. Without it, `/mcp` with a `read write` token is an admin API, as powerful as the dashboard
 - **Host header**: with OAuth configured, `/mcp` accepts any `Host`, so a proxy on the same machine can forward the public hostname. With `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED` on a loopback listener, a request with a non-loopback `Host` is refused with `403` (the MCP SDK's DNS rebinding protection)
 
-The stdio transport (`--mcp-stdio`) requires no authentication: it is a local, trusted channel only accessible to the process that spawned maintenant.
+The stdio transport (`--mcp-stdio`) requires no authentication: it relays to the `mcp.sock` Unix socket next to the database, which only the user maintenant runs as can open (mode `0600`, set from its creation). The socket is served only when `MAINTENANT_MCP=true` or `MAINTENANT_MCP_SOCKET=true`, never in agent mode, and gives full access to every registered tool: it carries no token, so scopes do not apply, but read-only mode does.
 
 See [MCP Server](features/mcp.md) for full configuration and usage details.
 
@@ -380,10 +411,12 @@ See [MCP Server](features/mcp.md) for full configuration and usage details.
 
 In server and embedded modes, from the Personal edition, maintenant opens a second listener for remote agents on `MAINTENANT_GRPC_LISTEN` (default `127.0.0.1:8443`). On Community it does not start, and the startup log says so. This listener is separate from the HTTP one: the reverse proxy's authentication, the HTTP rate limiters, the security headers and the request timeouts do not apply to it. A proxy in front of it has to pass HTTP/2 (gRPC) or TCP through. Expose it only to the networks your agents connect from. An agent has no HTTP listener at all.
 
-- **TLS**: set `MAINTENANT_GRPC_TLS_CERT` and `MAINTENANT_GRPC_TLS_KEY` to serve your own certificate; giving only one of the two refuses to start. Without them, maintenant generates a self-signed certificate in memory at each start and logs a `WARN`; agents can then only connect with `MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY`, which disables verification. `MAINTENANT_GRPC_TLS_INSECURE=true` serves plaintext HTTP/2 for a proxy that terminates TLS in front of it, and logs a `WARN`. An agent verifies the server against the system roots plus [`MAINTENANT_CA_CERT`](#private-ca)
+- **TLS**: set `MAINTENANT_GRPC_TLS_CERT` and `MAINTENANT_GRPC_TLS_KEY` to serve your own certificate; giving only one of the two refuses to start. Without them, maintenant generates a self-signed certificate once, valid ten years, and keeps it next to the database in `grpc-server.crt` and `grpc-server.key` (mode `0600`); a missing, unreadable or expired pair is regenerated with a `WARN`, and a data directory it cannot write stops the start. The SHA-256 fingerprint of the served certificate is logged at every start and returned when an enrollment token is created; for a self-signed certificate the install commands pass it to the agent with `--grpc-server-fingerprint`, and the agent then refuses any server whose certificate has another fingerprint, before sending anything. `MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY` still disables verification as a workaround, with a `WARN` on every connection. `MAINTENANT_GRPC_TLS_INSECURE=true` serves plaintext HTTP/2 for a proxy that terminates TLS in front of it, and logs a `WARN`. An agent verifies the server against the system roots plus [`MAINTENANT_CA_CERT`](#private-ca)
 - **Enrollment**: an agent enrolls once with a one-time token created in the dashboard. The token expires after 24 hours by default (7 days at most) and is stored as a SHA-256 hash; it is consumed in the same transaction that registers the agent and checks the host limit. The agent generates its Ed25519 key pair locally and sends only the public key
 - **Every connection** starts with a challenge. The server sends a random 32-byte nonce, and the agent answers with an Ed25519 signature over the nonce, its agent ID and its timestamp. The timestamp must be within 300 seconds of the server clock, and a revoked agent is refused
-- **Rate limit**: once authenticated, an agent may send `MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND` events per second (default 1000). Excess events are refused with a `rate_limited` error that carries a retry delay. Nothing limits connection attempts per address, which is one more reason to keep the listener off untrusted networks
+- **Rate limit**: once authenticated, an agent may send `MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND` events per second (default 1000). Excess events are refused with a `rate_limited` error that carries a retry delay
+- **Limits before authentication**: `RegisterAgent` and the opening of a `Push` stream are limited to 10 per minute per source address (burst of 10), refused beyond with `ResourceExhausted`. The quota is keyed on the TCP peer address: agents behind one NAT or TCP proxy share it. A `Push` client has 30 s from the challenge to send a valid authentication response, after which the stream is closed with `DeadlineExceeded`. A connection that does not complete its handshake within 30 s is dropped. An unknown enrollment token is refused by a read, before any write transaction
+- **Message and field limits**: a gRPC message larger than 1 MiB (1,048,576 bytes) is refused with `ResourceExhausted`; a connection carries at most 32 concurrent streams and is closed after 5 minutes without any. At enrollment `agent_id` must be a UUID (stored in lower case), `hostname` is limited to 253 characters, `os_arch` to 32 and `agent_version` to 64, otherwise `InvalidArgument` names the field. A container inventory of more than 10,000 containers, or with a container carrying more than 256 labels, is refused whole with an `invalid_argument` stream error and nothing is written
 
 See [Agent setup](guides/agent-setup.md) for the installation steps.
 
@@ -414,7 +447,7 @@ Credentials that maintenant only has to verify are stored hashed, so a copy of t
 | License key | Signature verified with a build-injected public key; disk cache is `0600` |
 | Notification channel URL, headers and credential (the Telegram bot token) | Clear text. The API never returns the credential |
 | Webhook signing secret | Clear text. The API never returns it after creation |
-| Heartbeat UUIDs and outbound heartbeat URLs | Clear text: the UUID is the access control of a ping URL |
+| Heartbeat ping tokens and outbound heartbeat URLs | Clear text: the token is the access control of a ping URL, and the dashboard has to show it |
 
 Status page subscriber tokens (`confirm_token`, `unsub_token`) are also stored in the clear. They only confirm or cancel an email subscription, and the same table holds the subscriber addresses in the clear by nature, so hashing them would not protect the sensitive part of that table.
 
@@ -569,14 +602,14 @@ the transport defaults and what reaches the logs, and
 
 **On an agent host**, the data directory (`MAINTENANT_DATA_DIR`, `/var/lib/maintenant` by default) holds the agent's private key in `identity.json` and `spool.db`, a SQLite queue of the events waiting for the server to be reachable. Restrict it like the server's database.
 
-### Heartbeat UUIDs
+### Heartbeat Ping Tokens
 
-Ping URLs (`/ping/{uuid}`) use UUIDs as the sole access control. Anyone who knows the UUID can send pings.
+Ping URLs (`/ping/{token}`) use the heartbeat's ping token as the sole access control. Anyone who knows the token can send pings. The token is distinct from the heartbeat `id`, and `/ping/{id}` never resolves a heartbeat.
 
-- Treat heartbeat UUIDs as **secrets**.
+- Treat ping tokens as **secrets**.
 - Do not commit them to public repositories.
 - Do not log them in CI/CD output.
-- Rotate a heartbeat's UUID by deleting and recreating it if you suspect a leak.
+- If you suspect a leak, rotate the token with `POST /api/v1/heartbeats/{id}/rotate-token` or the **Rotate token** button of the heartbeat detail panel. The old token answers 404 from the next request on; the heartbeat keeps its id and its history.
 
 ### Webhook URLs
 
@@ -589,11 +622,13 @@ Outbound heartbeats go through the same guard and have no way to disable it. Dis
 
 `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS=true` turns off both the HTTPS requirement at creation and the address checks for webhooks and channels, for a lab or a receiver on your own network. Leave it unset in production.
 
-Endpoint and certificate monitors are not subject to this guard: probing internal addresses is their purpose. Anyone who can create a monitor through the API can make the server probe your network, which is one more reason to keep the API behind authentication.
+Endpoint and certificate monitors created through the API are not subject to this guard: probing internal addresses is their purpose. Anyone who can create a monitor through the API can make the server probe your network, which is one more reason to keep the API behind authentication.
+
+Setting a container label creates a monitor, and anyone who can start a container can set one, so label-declared monitors are bounded, on the server and on an agent. They send only `GET` or `HEAD`, drop the `Authorization`, `Cookie` and `Proxy-Authorization` headers, and may reach private and loopback addresses but not link-local (including `169.254.169.254`), multicast or unspecified ones. That last rule is checked on the address actually dialled and on every redirect, for HTTP, TCP and certificate checks. `MAINTENANT_LABEL_ENDPOINTS_ALLOW_LINK_LOCAL=true` lifts it, for tests only. See [Docker labels](guides/docker-labels.md#where-a-label-declared-check-may-go).
 
 ### Outgoing mail
 
-The email channel and the status page subscription mails go through the one SMTP server set with `MAINTENANT_SMTP_*`. With `MAINTENANT_SMTP_PORT=465`, maintenant uses implicit TLS: the connection is encrypted from the first byte. On any other port the connection starts in plaintext and is upgraded with STARTTLS when the server announces it. A server that announces STARTTLS and then fails the negotiation gets no message: the send fails instead of falling back to plaintext. A server that does not announce STARTTLS receives the message unencrypted. The SMTP client refuses to send a username and password over an unencrypted connection unless the server is `localhost`, so a server without STARTTLS or TLS cannot be used with credentials.
+The email channel and the status page subscription mails go through the one SMTP server set with `MAINTENANT_SMTP_*`. With `MAINTENANT_SMTP_PORT=465`, maintenant uses implicit TLS: the connection is encrypted from the first byte. On any other port the connection starts in plaintext and is upgraded with STARTTLS when the server announces it. A server that announces STARTTLS and then fails the negotiation gets no message: the send fails instead of falling back to plaintext. A server that does not announce STARTTLS gets no message either: the send fails with an error naming `MAINTENANT_SMTP_ALLOW_PLAINTEXT`. Setting `MAINTENANT_SMTP_ALLOW_PLAINTEXT=true` lets such a server receive the message unencrypted, and maintenant logs a warning at startup while it is set. The SMTP client refuses to send a username and password over an unencrypted connection unless the server is `localhost`, so a server without STARTTLS or TLS cannot be used with credentials.
 
 ### Private CA
 
@@ -615,16 +650,17 @@ A quick reference for securing your deployment:
 - [ ] Reverse proxy in front of maintenant with authentication enabled
 - [ ] `/api/v1/*` (`/api/v1/health` included) and `/` require authentication
 - [ ] `/ping`, `/status` (prefix, no trailing slash) and `/assets/` bypass authentication
+- [ ] `MAINTENANT_ALLOWED_HOSTS` lists the host names users reach maintenant by when it listens beyond the loopback
 - [ ] `MAINTENANT_TRUSTED_PROXIES` lists the address maintenant sees the proxy from, and the proxy passes `X-Forwarded-For` and `Host` on
 - [ ] If MCP is enabled: OAuth2 credentials configured (`MAINTENANT_MCP_CLIENT_ID` + `MAINTENANT_MCP_CLIENT_SECRET`), the secret at least 32 random characters
 - [ ] If MCP is enabled: `/mcp`, `/oauth/*`, `/.well-known/*` bypass proxy auth (MCP handles its own)
 - [ ] If MCP is enabled: `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` lists only the non-loopback redirect URIs of your clients
 - [ ] `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED` **not** set (it is only for a local instance on a trusted network)
-- [ ] If agents are used: the gRPC listener (`MAINTENANT_GRPC_LISTEN`) is reachable only from the agents' networks, serves your own certificate (`MAINTENANT_GRPC_TLS_CERT` + `MAINTENANT_GRPC_TLS_KEY`), and `MAINTENANT_GRPC_TLS_INSECURE` is not set unless a proxy terminates TLS in front of it
+- [ ] If agents are used: the gRPC listener (`MAINTENANT_GRPC_LISTEN`) is reachable only from the agents' networks, serves your own certificate (`MAINTENANT_GRPC_TLS_CERT` + `MAINTENANT_GRPC_TLS_KEY`) or the persistent self-signed one with agents pinned by `--grpc-server-fingerprint`, no agent runs with `MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY`, and `MAINTENANT_GRPC_TLS_INSECURE` is not set unless a proxy terminates TLS in front of it
 - [ ] `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS` **not** set
 - [ ] HTTPS termination at the proxy level
 - [ ] `Strict-Transport-Security` set at the proxy (the app cannot set it safely)
 - [ ] `MAINTENANT_BASE_URL` set to your public HTTPS URL
 - [ ] Database file has restrictive permissions
-- [ ] Heartbeat UUIDs not exposed in public repositories or logs
+- [ ] Heartbeat ping tokens not exposed in public repositories or logs
 - [ ] `MAINTENANT_CORS_ORIGINS` unset unless a page on another origin calls the API, then listing exactly those origins (`*` does not allow writes)

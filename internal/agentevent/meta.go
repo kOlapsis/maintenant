@@ -5,7 +5,10 @@
 // the domain services.
 package agentevent
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 // Meta is the observation time, the replay flag and the id of an event pushed by an agent.
 type Meta struct {
@@ -13,3 +16,6 @@ type Meta struct {
 	Replayed   bool
 	EventID    string
 }
+
+// ErrInvalid marks an event refused for its content, reported back to the agent as invalid_argument.
+var ErrInvalid = errors.New("invalid agent event")

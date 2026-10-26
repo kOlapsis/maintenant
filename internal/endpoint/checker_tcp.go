@@ -23,7 +23,7 @@ func CheckTCP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string, 
 	// Link-local warning
 	warnLinkLocalTCP(ep, logger)
 
-	conn, err := net.DialTimeout("tcp", ep.Target, timeout)
+	conn, err := (&net.Dialer{Timeout: timeout, Control: probeGuard(ep)}).DialContext(ctx, "tcp", ep.Target)
 	result.ResponseTimeMs = time.Since(start).Milliseconds()
 
 	if err != nil {

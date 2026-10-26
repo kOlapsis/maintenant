@@ -28,7 +28,9 @@ func NewSubscriberStore(d *DB) *SubscriberStoreImpl {
 	}
 }
 
-// UpsertPendingSubscriber records sub as an unconfirmed subscription, or hands a still unconfirmed one sub's confirmation token and a fresh 24 h window; issued is false when the address is already confirmed.
+const pendingResendWindow = 15 * time.Minute
+
+// UpsertPendingSubscriber records sub as pending, or re-issues an unconfirmed address last requested at least 15 minutes ago; issued reports whether sub's token was written.
 func (s *SubscriberStoreImpl) UpsertPendingSubscriber(ctx context.Context, sub *status.StatusSubscriber) (bool, error) {
 	now := time.Now().Unix()
 	var confirmExpires *int64
@@ -44,8 +46,8 @@ func (s *SubscriberStoreImpl) UpsertPendingSubscriber(ctx context.Context, sub *
 			confirm_token = excluded.confirm_token,
 			confirm_expires = excluded.confirm_expires,
 			created_at = excluded.created_at
-		WHERE status_subscribers.confirmed = 0`,
-		uid.New(), sub.Email, sub.ConfirmToken, confirmExpires, sub.UnsubToken, now,
+		WHERE status_subscribers.confirmed = 0 AND status_subscribers.created_at <= ?`,
+		uid.New(), sub.Email, sub.ConfirmToken, confirmExpires, sub.UnsubToken, now, now-int64(pendingResendWindow/time.Second),
 	)
 	if err != nil {
 		return false, fmt.Errorf("upsert subscriber: %w", err)

@@ -32,7 +32,7 @@ func tierNotifier(t *testing.T, store alert.ChannelStore, logs *syncBuffer) (*al
 	n := alert.NewNotifier(store, logger, true)
 	for chType, s := range NewChannels(extpoint.ChannelDeps{
 		HTTPClient: n.HTTPClient(),
-		SMTP:       extpoint.SMTPConfig{Host: host, Port: port, From: "maintenant@example.com"},
+		SMTP:       extpoint.SMTPConfig{Host: host, Port: port, From: "maintenant@example.com", AllowPlaintext: true},
 		Logger:     logger,
 	}) {
 		n.RegisterChannel(chType, s)

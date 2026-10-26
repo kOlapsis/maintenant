@@ -28,46 +28,50 @@ import (
 func registerEscalationTools(server *gomcp.Server, svc *Services) {
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_escalation_policies",
-		Description: "List all escalation policies with their filters and levels." + requires(extension.CapAlertEscalation),
+		Description: "List escalation policies with their filters, levels and active flag, plus limits (current active count and max levels). Set active_only to true to skip inactive ones; use get_escalation_policy for a single policy." + requires(extension.CapAlertEscalation),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listEscalationPoliciesHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_escalation_policy",
-		Description: "Get a single escalation policy by ID." + requires(extension.CapAlertEscalation),
+		Description: "Get one escalation policy by id (from list_escalation_policies): name, active flag, severity and scope filters, and its levels with delays and channel_ids. An unknown id returns policy_not_found. Change it with update_escalation_policy or set_escalation_policy_active." + requires(extension.CapAlertEscalation),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getEscalationPolicyHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "create_escalation_policy",
-		Description: "Create a new escalation policy." + requires(extension.CapAlertEscalation),
+		Description: "Create an escalation policy and return it with its id. While active, it starts a run for each new alert matching its filters (empty filters match every alert): each level notifies its channels (IDs from list_channels) delay_seconds after the alert fired, until the alert is acknowledged or resolved. Unlike a trigger, which notifies at once, a policy follows up over time. Invalid names, delays or levels return validation_failed." + requires(extension.CapAlertEscalation),
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(false), OpenWorldHint: new(false)},
 	}, createEscalationPolicyHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "delete_escalation_policy",
-		Description: "Delete an escalation policy and stop any active runs." + requires(extension.CapAlertEscalation),
+		Description: "Permanently delete an escalation policy by id (from list_escalation_policies); its running escalations stop and past runs stay readable. An unknown id returns policy_not_found. To suspend it instead, use set_escalation_policy_active." + requires(extension.CapAlertEscalation),
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true, OpenWorldHint: new(false)},
 	}, deleteEscalationPolicyHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_alert_escalation_runs",
-		Description: "List escalation runs attached to a specific alert." + requires(extension.CapAlertEscalation),
+		Description: "List the escalation runs of one alert, newest first, by alert_id from list_alerts: one run per matching policy, with its status, last executed level and next action time. Pass a run id to get_escalation_run for its deliveries." + requires(extension.CapAlertEscalation),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listAlertEscalationRunsHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_escalation_run",
-		Description: "Get full detail of an escalation run including all deliveries." + requires(extension.CapAlertEscalation),
+		Description: "Get one escalation run by id (from list_alert_escalation_runs) with every delivery it made: level, channel and status (pending, sent, failed or abandoned). An unknown id returns run_not_found." + requires(extension.CapAlertEscalation),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getEscalationRunHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "update_escalation_policy",
-		Description: "Update an existing escalation policy (name, filters, levels, active)." + requires(extension.CapAlertEscalation),
+		Description: "Replace an escalation policy by id (from list_escalation_policies): name, active, filters and levels are all overwritten, so send the full policy. Turning active off stops its running escalations; runs already started keep the levels they began with. To only switch it on or off, use set_escalation_policy_active." + requires(extension.CapAlertEscalation),
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true, OpenWorldHint: new(false)},
 	}, updateEscalationPolicyHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "set_escalation_policy_active",
-		Description: "Activate or deactivate an escalation policy; deactivating it stops its running escalations." + requires(extension.CapAlertEscalation),
+		Description: "Switch an escalation policy on or off by id (from list_escalation_policies), leaving its filters and levels untouched. Deactivating stops its running escalations; activating does not start runs for alerts already open. Sending the current value again changes nothing." + requires(extension.CapAlertEscalation),
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true, OpenWorldHint: new(false)},
 	}, setEscalationPolicyActiveHandler(svc))
 }
 
@@ -95,12 +99,12 @@ type escalationFiltersInput struct {
 
 type escalationScopeInput struct {
 	Kind  string `json:"kind" jsonschema:"Scope kind: the entity_type of the alerts to match, such as container, endpoint, heartbeat, certificate, agent, swarm_service or workload"`
-	RefID string `json:"ref_id" jsonschema:"Referenced entity ID"`
+	RefID string `json:"ref_id" jsonschema:"Entity ID to match: the entity_id of an alert from list_alerts"`
 }
 
 type escalationLevelInput struct {
-	DelaySeconds int      `json:"delay_seconds" jsonschema:"Delay in seconds (60-86400)"`
-	ChannelIDs   []string `json:"channel_ids" jsonschema:"Notification channel IDs (at least one required)"`
+	DelaySeconds int      `json:"delay_seconds" jsonschema:"Seconds after the alert fired at which this level notifies (60-86400), at least 60 more than the previous level"`
+	ChannelIDs   []string `json:"channel_ids" jsonschema:"Notification channel IDs from list_channels (at least one required)"`
 }
 
 type deleteEscalationPolicyInput struct {

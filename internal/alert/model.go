@@ -5,6 +5,10 @@ package alert
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -103,6 +107,8 @@ type NotificationChannel struct {
 	// HasSecret is derived at scan time, never stored. It lets the interface show
 	// "token on file" without receiving the token.
 	HasSecret       bool      `json:"has_secret"`
+	HasHeaders      bool      `json:"has_headers"`
+	HasURLSecret    bool      `json:"has_url_secret"`
 	Enabled         bool      `json:"enabled"`
 	Health          string    `json:"health,omitempty"`
 	Suspended       bool      `json:"suspended"`
@@ -242,4 +248,49 @@ type SilenceStore interface {
 	ListSilenceRules(ctx context.Context, activeOnly bool) ([]*SilenceRule, error)
 	CancelSilenceRule(ctx context.Context, id string) error
 	GetActiveSilenceRules(ctx context.Context) ([]*SilenceRule, error)
+}
+
+var errInvalidHeaders = errors.New("headers must be a JSON object of strings")
+
+var secretURLTypes = map[string]bool{"slack": true, "discord": true, "teams": true}
+
+// Redact replaces header values by *** and cuts a platform webhook URL after its host, for every read surface.
+func (c *NotificationChannel) Redact() {
+	c.HasSecret = c.Secret != ""
+	headers, err := ParseHeaders(c.Headers)
+	c.HasHeaders = err != nil || len(headers) > 0
+	c.Headers = ""
+	if len(headers) > 0 {
+		for k := range headers {
+			headers[k] = "***"
+		}
+		b, _ := json.Marshal(headers)
+		c.Headers = string(b)
+	}
+	if secretURLTypes[c.Type] {
+		if u, err := url.Parse(c.URL); err == nil && u.Scheme != "" && u.Host != "" {
+			c.URL = u.Scheme + "://" + u.Host
+			c.HasURLSecret = true
+		}
+	}
+}
+
+// ParseHeaders decodes a channel's headers field: empty means none; anything but a JSON object of strings is an error.
+func ParseHeaders(s string) (map[string]string, error) {
+	if s == "" {
+		return nil, nil
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil || raw == nil {
+		return nil, errInvalidHeaders
+	}
+	headers := make(map[string]string, len(raw))
+	for k, v := range raw {
+		var value string
+		if strings.TrimSpace(k) == "" || len(v) == 0 || v[0] != '"' || json.Unmarshal(v, &value) != nil {
+			return nil, errInvalidHeaders
+		}
+		headers[k] = value
+	}
+	return headers, nil
 }

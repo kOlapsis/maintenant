@@ -28,15 +28,24 @@ type stubChannelStore struct {
 }
 
 func (s *stubChannelStore) InsertChannel(_ context.Context, ch *alert.NotificationChannel) (string, error) {
+	cp := *ch
+	cp.ID = "1"
+	s.ch = &cp
 	return "1", nil
 }
 func (s *stubChannelStore) GetChannel(_ context.Context, _ string) (*alert.NotificationChannel, error) {
-	return s.ch, nil
+	if s.ch == nil {
+		return nil, nil
+	}
+	cp := *s.ch
+	return &cp, nil
 }
 func (s *stubChannelStore) ListChannels(_ context.Context) ([]*alert.NotificationChannel, error) {
 	return nil, nil
 }
-func (s *stubChannelStore) UpdateChannel(_ context.Context, _ *alert.NotificationChannel) error {
+func (s *stubChannelStore) UpdateChannel(_ context.Context, ch *alert.NotificationChannel) error {
+	cp := *ch
+	s.ch = &cp
 	return nil
 }
 func (s *stubChannelStore) DeleteChannel(_ context.Context, _ string) error { return nil }

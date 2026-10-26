@@ -104,6 +104,11 @@ func (b *SSEBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		close(ch)
 	}()
 
+	if _, err := io.WriteString(w, ": ping\n\n"); err != nil {
+		return
+	}
+	flusher.Flush()
+
 	keepAlive := time.NewTicker(sseKeepAliveInterval)
 	defer keepAlive.Stop()
 

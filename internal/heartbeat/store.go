@@ -14,6 +14,8 @@ type HeartbeatStore interface {
 	// Heartbeat CRUD
 	CreateHeartbeat(ctx context.Context, h *Heartbeat) (string, error)
 	GetHeartbeatByID(ctx context.Context, id string) (*Heartbeat, error)
+	GetHeartbeatByPingToken(ctx context.Context, token string) (*Heartbeat, error)
+	RotatePingToken(ctx context.Context, id, token string) error
 	ListHeartbeats(ctx context.Context, opts ListHeartbeatsOpts) ([]*Heartbeat, error)
 	UpdateHeartbeat(ctx context.Context, id string, input UpdateHeartbeatInput) error
 	DeleteHeartbeat(ctx context.Context, id string) error

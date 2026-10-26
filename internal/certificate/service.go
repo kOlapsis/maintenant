@@ -586,7 +586,7 @@ func (s *Service) runScheduledChecks(ctx context.Context) {
 			defer func() { <-sem }()
 
 			s.logger.Debug("certificate: checking", "hostname", monitor.Hostname, "port", monitor.Port, "server_name", monitor.ServerName, "source", string(monitor.Source))
-			result := CheckCertificate(monitor.Hostname, monitor.Port, monitor.ServerName, checkTimeout)
+			result := CheckCertificateFrom(monitor.Source, monitor.Hostname, monitor.Port, monitor.ServerName, checkTimeout)
 			s.processCheckResult(ctx, monitor, result, false)
 		}(m)
 	}
@@ -618,7 +618,7 @@ func (s *Service) CheckNow(ctx context.Context, monitorID string) (*CertMonitor,
 
 	s.logger.Info("certificate: on-demand check", "monitor_id", monitorID,
 		"hostname", monitor.Hostname, "port", monitor.Port)
-	result := CheckCertificate(monitor.Hostname, monitor.Port, monitor.ServerName, checkTimeout)
+	result := CheckCertificateFrom(monitor.Source, monitor.Hostname, monitor.Port, monitor.ServerName, checkTimeout)
 	s.processCheckResult(ctx, monitor, result, false)
 
 	return s.GetMonitor(ctx, monitorID)

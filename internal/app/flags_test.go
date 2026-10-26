@@ -124,7 +124,7 @@ func sampleValueFor(spec FlagSpec) string {
 var kebabFlags = map[string]bool{
 	"enrollment-token": true, "grpc-tls-insecure": true, "data-dir": true,
 	"grpc-listen": true, "grpc-url": true, "grpc-tls-cert": true,
-	"grpc-tls-key": true, "grpc-insecure-skip-tls-verify": true,
+	"grpc-tls-key": true, "grpc-insecure-skip-tls-verify": true, "grpc-server-fingerprint": true,
 	"embedded-agent": true, "ca-cert": true, "database-url": true,
 	"copy-store-to": true, "yes": true,
 	"state-dir": true, "sqlite-synchronous": true,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
@@ -31,11 +32,14 @@ func NewTokenVerifier(store MCPOAuthStore) auth.TokenVerifier {
 			return nil, fmt.Errorf("%w: token expired", auth.ErrInvalidToken)
 		}
 
+		scope := grantedScope(stored.Scope)
 		return &auth.TokenInfo{
+			Scopes:     strings.Fields(scope),
 			Expiration: stored.ExpiresAt,
 			Extra: map[string]any{
 				"client_id": stored.ClientID,
 				"family_id": stored.FamilyID,
+				"scope":     scope,
 			},
 		}, nil
 	}

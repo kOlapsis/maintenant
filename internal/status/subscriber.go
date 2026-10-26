@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/extension"
@@ -26,7 +27,14 @@ type SubscriberService struct {
 	logger *slog.Logger
 
 	baseURL string
+
+	capMu     sync.Mutex
+	hourStart time.Time
+	sent      int
+	warned    bool
 }
+
+const confirmationsPerHour = 100
 
 // NewSubscriberService creates a subscriber service; a nil mailer keeps subscriptions disabled.
 func NewSubscriberService(store SubscriberStore, mailer Mailer, baseURL string, logger *slog.Logger) *SubscriberService {
@@ -76,7 +84,7 @@ func (s *SubscriberService) Subscribe(ctx context.Context, email string) error {
 	if err != nil {
 		return fmt.Errorf("record subscriber: %w", err)
 	}
-	if issued {
+	if issued && s.takeConfirmationSlot() {
 		go s.sendConfirmation(context.WithoutCancel(ctx), email, confirmToken)
 	}
 	return nil
@@ -136,5 +144,36 @@ func (s *SubscriberService) Start(ctx context.Context) {
 				s.logger.Info("cleaned expired subscribers", "deleted", deleted)
 			}
 		}
+	}
+}
+
+// ConfirmationsThisHour returns how many confirmation emails were sent in the current hour.
+func (s *SubscriberService) ConfirmationsThisHour() int {
+	s.capMu.Lock()
+	defer s.capMu.Unlock()
+	s.rollHour()
+	return s.sent
+}
+
+func (s *SubscriberService) takeConfirmationSlot() bool {
+	s.capMu.Lock()
+	defer s.capMu.Unlock()
+	s.rollHour()
+	if s.sent >= confirmationsPerHour {
+		if !s.warned {
+			s.warned = true
+			s.logger.Warn("status: hourly confirmation email cap reached, further confirmations are dropped until the next hour", "cap", confirmationsPerHour)
+		}
+		return false
+	}
+	s.sent++
+	return true
+}
+
+func (s *SubscriberService) rollHour() {
+	if h := time.Now().Truncate(time.Hour); !h.Equal(s.hourStart) {
+		s.hourStart = h
+		s.sent = 0
+		s.warned = false
 	}
 }

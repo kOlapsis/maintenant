@@ -88,6 +88,7 @@ func (c *Client) DiscoverAll(ctx context.Context) ([]*cmodel.Container, error) {
 			continue
 		}
 		labels := c.containerLabels(ctx, dc.Labels)
+		cmodel.WarnUnknownLabels(dc.ID, labels, c.logger)
 		result, err := c.inspectAndMap(ctx, dc, labels, now)
 		if err != nil {
 			c.logger.Warn("failed to inspect container", "docker_id", dc.ID[:12], "error", err)
@@ -116,6 +117,7 @@ func (c *Client) DiscoverAllWithLabels(ctx context.Context) ([]*DiscoveryResult,
 			continue
 		}
 		labels := c.containerLabels(ctx, dc.Labels)
+		cmodel.WarnUnknownLabels(dc.ID, labels, c.logger)
 		result, err := c.inspectAndMap(ctx, dc, labels, now)
 		if err != nil {
 			c.logger.Warn("failed to inspect container", "docker_id", dc.ID[:12], "error", err)

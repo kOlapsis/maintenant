@@ -99,6 +99,7 @@ stamp=$(date +%s)
 
 hb=$(api POST /api/v1/heartbeats "{\"name\":\"e2e-backup-$stamp\",\"interval_seconds\":3600,\"grace_seconds\":300}")
 hb_id=$(echo "$hb" | jq -r '.heartbeat.id // .id // empty')
+hb_token=$(echo "$hb" | jq -r '.heartbeat.ping_token // .ping_token // empty')
 if [ -n "$hb_id" ]; then
 	ok "heartbeat created ($hb_id)"
 else
@@ -126,8 +127,7 @@ fi
 echo
 echo "monitoring"
 if [ -n "$hb_id" ]; then
-	# The heartbeat's id is its ping token: the primary key is the token.
-	code=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/ping/$hb_id/0")
+	code=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/ping/$hb_token/0")
 	expect "the ping endpoint accepts the token" "200" "$code"
 	sleep 2
 	state=$(api GET "/api/v1/heartbeats" | jq -r "(.heartbeats // .) | map(select(.id == \"$hb_id\")) | .[0].status")

@@ -6,11 +6,12 @@ package alert
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -72,7 +73,7 @@ func (s *webhookSender) post(ctx context.Context, ch *NotificationChannel, body 
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("send request: %w", err)
+		return fmt.Errorf("send request: %w", withoutURL(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -98,7 +99,7 @@ func (s *webhookSender) sendBody(ctx context.Context, ch *NotificationChannel, b
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, withoutURL(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -116,14 +117,19 @@ func (s *webhookSender) request(ctx context.Context, ch *NotificationChannel, bo
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if ch.Headers != "" {
-		var headers map[string]string
-		if err := json.Unmarshal([]byte(ch.Headers), &headers); err == nil {
-			for k, v := range headers {
-				req.Header.Set(k, v)
-			}
-		}
+	headers, _ := ParseHeaders(ch.Headers)
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 
 	return req, nil
+}
+
+// withoutURL drops the request URL that net/http puts in its errors, since a webhook URL carries its secret.
+func withoutURL(err error) error {
+	var uerr *url.Error
+	if errors.As(err, &uerr) {
+		return uerr.Err
+	}
+	return err
 }

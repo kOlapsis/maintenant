@@ -51,6 +51,10 @@ func LoadOrCreate(dataDir string) (*Identity, error) {
 		return nil, fmt.Errorf("marshal identity: %w", err)
 	}
 
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
+		return nil, fmt.Errorf("create data dir %s: %w", dataDir, err)
+	}
+
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600) // #nosec G304 -- path is dataDir + constant identity filename, not user input
 	if err != nil {
 		return nil, fmt.Errorf("create identity file: %w", err)

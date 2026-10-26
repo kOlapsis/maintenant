@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/client"
@@ -47,12 +48,15 @@ func (c *Client) FetchLogs(ctx context.Context, containerID string, lines int, t
 	return demuxLogs(reader)
 }
 
-// FetchLogSnippet retrieves the last 50 lines of logs for storing as a snippet on exit events.
-func (c *Client) FetchLogSnippet(ctx context.Context, containerID string) (string, error) {
+// FetchLogSnippetSince retrieves the last 50 log lines, restricted to those emitted after since unless it is zero, for a snippet on exit events.
+func (c *Client) FetchLogSnippetSince(ctx context.Context, containerID string, since time.Time) (string, error) {
 	opts := client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Tail:       snippetTail,
+	}
+	if !since.IsZero() {
+		opts.Since = since.Format(time.RFC3339Nano)
 	}
 
 	reader, err := c.cli.ContainerLogs(ctx, containerID, opts)
@@ -72,6 +76,27 @@ func (c *Client) FetchLogSnippet(ctx context.Context, containerID string) (strin
 	}
 
 	return snippet, nil
+}
+
+// StartedAt returns the container's recorded start time, or the zero time when it never started.
+func (c *Client) StartedAt(ctx context.Context, containerID string) (time.Time, error) {
+	res, err := c.cli.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+	if err != nil {
+		return time.Time{}, fmt.Errorf("container inspect for start time: %w", err)
+	}
+	if res.Container.State == nil || res.Container.State.StartedAt == "" {
+		return time.Time{}, nil
+	}
+	started, err := time.Parse(time.RFC3339Nano, res.Container.State.StartedAt)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse container start time: %w", err)
+	}
+	return started, nil
+}
+
+// FetchLogSnippet retrieves the last 50 lines of logs for storing as a snippet on exit events.
+func (c *Client) FetchLogSnippet(ctx context.Context, containerID string) (string, error) {
+	return c.FetchLogSnippetSince(ctx, containerID, time.Time{})
 }
 
 // StreamLogs returns an io.ReadCloser that follows container logs in real-time.

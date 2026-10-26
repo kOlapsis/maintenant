@@ -58,7 +58,7 @@ func (cr *ChangelogResolver) ResolveSourceURL(ctx context.Context, imageRef stri
 		"org.opencontainers.image.source",
 		"org.label-schema.vcs-url",
 	} {
-		if url, ok := labels[key]; ok && url != "" {
+		if url := labels[key]; strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
 			return url, nil
 		}
 	}

@@ -35,12 +35,12 @@ func TestUpsertPendingSubscriber_NewPendingConfirmed(t *testing.T) {
 
 	issued, err = s.UpsertPendingSubscriber(ctx, pendingSubscription("visitor@example.com", "confirm-2", "unsub-2"))
 	require.NoError(t, err)
-	assert.True(t, issued, "a pending address gets a fresh confirmation token")
+	assert.False(t, issued, "a pending address asked for less than 15 minutes ago gets no new token")
 
-	stale, err := s.GetSubscriberByToken(ctx, "confirm-1")
+	ignored, err := s.GetSubscriberByToken(ctx, "confirm-2")
 	require.NoError(t, err)
-	assert.Nil(t, stale, "the previous confirmation link stops working")
-	pending, err := s.GetSubscriberByToken(ctx, "confirm-2")
+	assert.Nil(t, ignored)
+	pending, err := s.GetSubscriberByToken(ctx, "confirm-1")
 	require.NoError(t, err)
 	require.NotNil(t, pending)
 	assert.Equal(t, "unsub-1", pending.UnsubToken, "the unsubscribe link of the address does not change")

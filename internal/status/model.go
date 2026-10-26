@@ -4,10 +4,13 @@
 package status
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Component status values.
@@ -86,7 +89,38 @@ type MonitorRef struct {
 	Type   string `json:"type"`
 	ID     string `json:"id"`
 	Name   string `json:"name,omitempty"`
+	Label  string `json:"label,omitempty"`
 	Status string `json:"status,omitempty"`
+}
+
+// PublicMonitor is what a public surface tells about a monitor: never its id or its target.
+type PublicMonitor struct {
+	Type   string `json:"type"`
+	Status string `json:"status,omitempty"`
+	Label  string `json:"label,omitempty"`
+}
+
+// PublicMonitors reduces monitor refs to their public form.
+func PublicMonitors(refs []MonitorRef) []PublicMonitor {
+	out := make([]PublicMonitor, 0, len(refs))
+	for _, ref := range refs {
+		out = append(out, PublicMonitor{Type: ref.Type, Status: ref.Status, Label: ref.Label})
+	}
+	return out
+}
+
+const maxMonitorLabelRunes = 80
+
+// ValidateMonitorLabel trims a public label and refuses one over 80 runes or holding a control character.
+func ValidateMonitorLabel(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if utf8.RuneCountInString(s) > maxMonitorLabelRunes {
+		return "", fmt.Errorf("monitor label must be at most %d characters", maxMonitorLabelRunes)
+	}
+	if strings.IndexFunc(s, unicode.IsControl) >= 0 {
+		return "", errors.New("monitor label must not contain control characters")
+	}
+	return s, nil
 }
 
 // Component is a public-facing representation of a monitored application or service.

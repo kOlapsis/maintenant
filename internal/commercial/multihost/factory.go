@@ -57,8 +57,8 @@ func (s *Sessions) StartWatchers(ctx context.Context, staleThreshold time.Durati
 }
 
 // serve binds and serves the agent-facing gRPC server in a background
-// goroutine. TLS is required (FR-031); if no keypair is configured a
-// self-signed dev cert is generated in-memory and a warning is logged.
+// goroutine. Without a configured keypair it serves the self-signed
+// certificate kept in cfg.DataDir.
 func (m *multiHost) serve(ctx context.Context, cfg extpoint.GRPCConfig) error {
 	listen := cfg.Listen
 	if listen == "" {
@@ -70,16 +70,19 @@ func (m *multiHost) serve(ctx context.Context, cfg extpoint.GRPCConfig) error {
 		m.logger.Warn("agentserver: TLS disabled — only use behind a trusted reverse proxy (MAINTENANT_GRPC_TLS_INSECURE)")
 	} else {
 		hosts := collectGRPCTLSHosts(cfg.PublicURL, listen)
+		var selfSigned bool
 		var err error
-		tlsCfg, err = LoadOrGenerateTLS(
+		tlsCfg, selfSigned, err = LoadOrGenerateTLS(
 			cfg.TLSCertFile,
 			cfg.TLSKeyFile,
 			hosts,
+			cfg.DataDir,
 			m.logger.With("component", "agentserver"),
 		)
 		if err != nil {
 			return err
 		}
+		m.server.deps.Sessions.setGRPCServerCertificate(fingerprintDER(tlsCfg.Certificates[0].Certificate[0]), selfSigned)
 	}
 
 	m.server.StartTokenGC(ctx)

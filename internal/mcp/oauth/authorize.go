@@ -18,7 +18,6 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	codeChallenge := q.Get("code_challenge")
 	codeChallengeMethod := q.Get("code_challenge_method")
 	state := q.Get("state")
-	scope := q.Get("scope")
 
 	// Validate redirect_uri before any redirect to prevent open redirect.
 	if redirectURI == "" {
@@ -57,6 +56,12 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	scope, err := ParseScope(q.Get("scope"))
+	if err != nil {
+		oauthRedirectError(w, r, target, state, "invalid_scope", err.Error())
+		return
+	}
+
 	// PKCE is mandatory per OAuth 2.1
 	if codeChallenge == "" {
 		oauthRedirectError(w, r, target, state, "invalid_request", "missing code_challenge")
@@ -71,7 +76,7 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	code, codeHash := GenerateToken()
 	now := time.Now()
 
-	err := s.store.StoreCode(r.Context(), &MCPAuthCode{
+	err = s.store.StoreCode(r.Context(), &MCPAuthCode{
 		CodeHash:            codeHash,
 		ClientID:            clientID,
 		RedirectURI:         redirectURI,

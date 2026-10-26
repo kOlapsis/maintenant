@@ -61,10 +61,10 @@ labels:
 | Label | Default | Description |
 |-------|---------|-------------|
 | `maintenant.endpoint.http` | none | URL to check (required for HTTP) |
-| `maintenant.endpoint.http.method` | `GET` | HTTP method: `GET`, `HEAD`, `POST`, `PUT`, `DELETE`, `PATCH` or `OPTIONS` |
+| `maintenant.endpoint.http.method` | `GET` | HTTP method: `GET` or `HEAD`. Any other value is ignored with a warning and the check uses `GET` |
 | `maintenant.endpoint.http.expected-status` | `2xx` | Accepted status codes, comma-separated. Each entry is an exact code (`200,201`) or a range (`2xx,301`) |
 | `maintenant.endpoint.http.tls-verify` | `true` | Verify TLS certificates. Set to `false` for self-signed certs. |
-| `maintenant.endpoint.http.headers` | none | Request headers, as a JSON object or as `Name=value,Name2=value2` |
+| `maintenant.endpoint.http.headers` | none | Request headers, as a JSON object or as `Name=value,Name2=value2`. `Authorization`, `Cookie` and `Proxy-Authorization` are ignored with a warning |
 | `maintenant.endpoint.http.max-redirects` | `5` | Redirects to follow. Past the limit, the last response is judged against `expected-status` |
 | `maintenant.endpoint.interval` | `30s` | Check interval (Go duration format), at least `5s`: a shorter value is raised to 5 seconds and a warning is logged |
 | `maintenant.endpoint.timeout` | `10s` | Request timeout. A value above the interval is lowered to the interval |

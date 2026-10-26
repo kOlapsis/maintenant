@@ -1,0 +1,69 @@
+# Publishes deploy/mcp/server.json to the official MCP registry for a release
+# whose image is already on GHCR. Run it once per release:
+#   gh workflow run publish-mcp.yml -f tag=v1.11.0
+#
+# The registry authorizes io.github.kOlapsis/* from the repository owner in the
+# GitHub OIDC token, so no personal account or stored credential is involved.
+name: Publish to the MCP registry
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag already published, for example v1.11.0
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  publish:
+    name: Publish server.json
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      PUBLISHER_VERSION: v1.8.1
+      PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
+      TAG: ${{ inputs.tag }}
+
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Validate the tag
+        run: |
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::tag must look like v1.2.3, got '$TAG'"; exit 1 ;;
+          esac
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL -o publisher.tgz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/${PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${PUBLISHER_SHA256}  publisher.tgz" | sha256sum -c -
+          tar xzf publisher.tgz mcp-publisher
+
+      - name: Set the version in server.json
+        run: |
+          VERSION="${TAG#v}"
+          jq --arg v "$VERSION" \
+            '.version = $v | .packages[0].identifier = "ghcr.io/kolapsis/maintenant:" + $v' \
+            deploy/mcp/server.json > server.json
+
+      - name: Publish
+        run: |
+          ./mcp-publisher validate server.json
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish server.json

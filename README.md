@@ -10,7 +10,12 @@
   <strong>Drop a container. Your stack is monitored.</strong><br>
   <em>When something breaks, fixed rules catch it, the alert is pushed to you, and your AI agent investigates through the built-in MCP server.</em><br><br>
   Docker, Kubernetes, uptime, TLS, cron jobs, live logs, image updates, CVEs: auto-discovered, alerting on every one of them,<br>
-  from a single Go binary that idles under 30 MB of RAM. No PromQL, no exporters, no dashboards to build.
+  from a single Go binary that fits in a few tens of MB of RAM when freshly started (about 100 MB after several days on a busy host). No PromQL, no exporters, no dashboards to build.
+</p>
+
+<p align="center">
+  <a href="https://demo.maintenant.dev/"><strong>Try the live demo →</strong></a>
+  <br><sub>A Pro instance monitoring a real stack, read-only. Nothing to install, nothing to sign up for.</sub>
 </p>
 
 <p align="center">
@@ -21,7 +26,7 @@
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick Start</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#why-maintenant">Why maintenant</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#agents">Agents</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://docs.maintenant.dev/">Documentation</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#editions">Editions</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://maintenant.dev/pricing/">Pricing</a>
+  <a href="https://demo.maintenant.dev/">Live demo</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#quick-start">Quick Start</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#why-maintenant">Why maintenant</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#agents">Agents</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://docs.maintenant.dev/">Documentation</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#editions">Editions</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://maintenant.dev/pricing/">Pricing</a>
 </p>
 
 ---
@@ -243,7 +248,7 @@ claude -p "maintenant just fired this alert: {...} Investigate it read-only." \
                  mcp__maintenant__get_endpoint_history mcp__maintenant__get_resources
 ```
 
-`mcp.json` reaches maintenant over stdio with `docker exec -i maintenant /app/maintenant --mcp-stdio`, so no MCP port is opened. Point a webhook channel at the receiver with an `Authorization: Bearer <token>` header and route alerts to it with a trigger. The [AI agents guide](https://docs.maintenant.dev/guides/ai-agents/) walks through the setup.
+`mcp.json` reaches maintenant over stdio with `docker exec -i maintenant /app/maintenant --mcp-stdio`, so no MCP port is opened: start maintenant with `MAINTENANT_MCP_SOCKET=true` to serve the local socket it relays to. Point a webhook channel at the receiver with an `Authorization: Bearer <token>` header and route alerts to it with a trigger. The [AI agents guide](https://docs.maintenant.dev/guides/ai-agents/) walks through the setup.
 
 **With OpenCode**, the same receiver calls `opencode run` instead of `claude -p`, with maintenant declared as a local MCP server in `opencode.json`. **With n8n**, a Webhook trigger feeds an AI Agent node whose MCP Client tool points at your instance's `/mcp` endpoint.
 
@@ -303,7 +308,7 @@ labels:
 Create a monitor, get a URL, add one `curl` to the job. maintenant tracks start and finish, duration, exit code, and alerts when the deadline is missed. Outbound heartbeats let two maintenant instances watch each other, so a dead monitor does not go unnoticed.
 
 ```bash
-curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/$?
+curl -fsS -o /dev/null https://now.example.com/ping/{token}/$?
 ```
 
 ### [TLS certificate monitoring](https://docs.maintenant.dev/features/certificates/)
@@ -392,7 +397,7 @@ volumes:
 
 ## Security model
 
-- **No built-in authentication, by design.** Like Dozzle and Prometheus, maintenant sits behind your reverse proxy and auth middleware (Traefik or Caddy, Authelia or Authentik). `/ping/{uuid}` and `/status/` are meant to stay public. [Reverse proxy setup](https://docs.maintenant.dev/security/#reverse-proxy-setup).
+- **No built-in authentication, by design.** Like Dozzle and Prometheus, maintenant sits behind your reverse proxy and auth middleware (Traefik or Caddy, Authelia or Authentik). `/ping/{token}` and `/status/` are meant to stay public. [Reverse proxy setup](https://docs.maintenant.dev/security/#reverse-proxy-setup).
 - **Read-only everywhere.** Docker socket mounted `:ro`, read-only RBAC on Kubernetes, read-only agents. maintenant never starts, stops or modifies a container. A [socket proxy](https://docs.maintenant.dev/security/#recommended-docker-socket-proxy) is supported if you would rather not mount the socket at all.
 - **Hardened container.** Drops to `nobody` (uid 65534) once it has fixed the ownership of its volume, `read_only` root filesystem, `no-new-privileges`.
 - **Anonymous, opt-out telemetry.** One snapshot per hour: counts of monitored objects, edition, storage engine, version and runtime figures (OS, architecture, CPU cores, memory). No hostnames, IPs, names, URLs or keys, ever. `MAINTENANT_DISABLE_TELEMETRY=1` turns it off with no background goroutine and no outbound packet. [Exact payload and details](https://docs.maintenant.dev/getting-started/configuration/#telemetry).
@@ -405,7 +410,7 @@ volumes:
 - **Zero dependencies.** SQLite is the only datastore. No Redis, no queue, nothing to administer. A fleet operator may back the server on a [PostgreSQL](https://docs.maintenant.dev/guides/postgresql/) they already run; agents always stay on SQLite.
 - **Runtime optional.** Endpoints, certificates and heartbeats run without any Docker socket or Kubernetes API. Container monitoring resumes on its own when a runtime becomes reachable.
 - **Real-time.** SSE pushes every state change to the browser and to the status page instantly.
-- **Under 30 MB of RAM at idle.** Runs on a Raspberry Pi, a €4 VPS or a NAS.
+- **Light on memory.** A freshly started instance fits in a few tens of MB; plan on about 100 MB after several days on a busy host. Runs on a Raspberry Pi, a €4 VPS or a NAS.
 
 Full write-up in the [architecture documentation](https://docs.maintenant.dev/architecture/).
 

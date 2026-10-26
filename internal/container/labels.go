@@ -4,8 +4,12 @@
 package container
 
 import (
+	"log/slog"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const (
@@ -90,4 +94,51 @@ func agentLabelFields(labels map[string]string) *Container {
 	applyAgentLabels(c, labels)
 	c.ApplySwarmTaskLabels(labels)
 	return c
+}
+
+var knownLabelKeys = map[string]struct{}{
+	labelPBIgnore:                 {},
+	labelPBGroup:                  {},
+	labelPBSeverity:               {},
+	labelPBThreshold:              {},
+	"maintenant.tls.certificates": {},
+	"maintenant.proxy-labels":     {},
+}
+
+var knownLabelPrefixes = []string{"maintenant.endpoint.", UpdateLabelPrefix}
+
+var unknownLabelsWarned sync.Map
+
+func isKnownLabel(key string) bool {
+	if _, ok := knownLabelKeys[key]; ok {
+		return true
+	}
+	for _, p := range knownLabelPrefixes {
+		if strings.HasPrefix(key, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// WarnUnknownLabels logs a warning for each unrecognised maintenant.* label on a container, once per container per process.
+func WarnUnknownLabels(containerID string, labels map[string]string, logger *slog.Logger) {
+	if _, done := unknownLabelsWarned.Load(containerID); done {
+		return
+	}
+	var unknown []string
+	for _, key := range slices.Sorted(maps.Keys(labels)) {
+		if strings.HasPrefix(key, "maintenant.") && !isKnownLabel(key) {
+			unknown = append(unknown, key)
+		}
+	}
+	if len(unknown) == 0 {
+		return
+	}
+	if _, done := unknownLabelsWarned.LoadOrStore(containerID, struct{}{}); done {
+		return
+	}
+	for _, key := range unknown {
+		logger.Warn("unknown maintenant.* label ignored", "container", shortID(containerID), "label", key)
+	}
 }

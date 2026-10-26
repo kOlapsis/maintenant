@@ -1,0 +1,65 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.kOlapsis/maintenant",
+  "title": "maintenant",
+  "description": "Docker monitoring for AI agents: logs, history, alerts. Can ack alerts; never touches containers.",
+  "repository": {
+    "url": "https://github.com/kOlapsis/maintenant",
+    "source": "github"
+  },
+  "websiteUrl": "https://docs.maintenant.dev/features/mcp/",
+  "version": "1.11.0",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/kolapsis/maintenant:1.11.0",
+      "runtimeHint": "docker",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--volume",
+          "value": "{data_volume}:/data",
+          "description": "Docker volume holding the maintenant database of the running instance, mounted at /data.",
+          "isRequired": true,
+          "variables": {
+            "data_volume": {
+              "description": "Name of the volume your maintenant container mounts at /data.",
+              "isRequired": true,
+              "default": "maintenant-data"
+            }
+          }
+        },
+        {
+          "type": "named",
+          "name": "--volume",
+          "value": "/var/run/docker.sock:/var/run/docker.sock:ro",
+          "description": "Docker socket, read-only, needed by the tools that read containers and logs.",
+          "isRequired": true
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "--mcp-stdio",
+          "isRequired": true
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://{maintenant_host}/mcp",
+      "variables": {
+        "maintenant_host": {
+          "description": "Hostname of your own maintenant instance, e.g. maintenant.example.com. Needs MAINTENANT_MCP=true and OAuth2 client credentials on the server.",
+          "isRequired": true,
+          "placeholder": "maintenant.example.com"
+        }
+      }
+    }
+  ]
+}

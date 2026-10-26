@@ -16,34 +16,38 @@ import (
 func registerChannelTools(server *gomcp.Server, svc *Services) {
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_channels",
-		Description: "List notification channels. Channels are silent on their own: an alert reaches one only through an alert trigger or an escalation level. Secrets are never returned.",
+		Description: "List notification channels, oldest first, with their type, destination, enabled flag and delivery health. Channels are silent on their own: an alert reaches one only through an alert trigger or an escalation level. Header values are masked as *** and Slack, Discord and Teams webhook URLs are cut after the host; the secret is never returned.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listChannelsHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_channel",
-		Description: "Get a single notification channel by ID, with its delivery health and the triggers routing to it.",
+		Description: "Get one notification channel by id (from list_channels), with its delivery health (healthy or failing, from the last delivery) and the triggers routing to it. Header values are masked as *** and Slack, Discord and Teams webhook URLs are cut after the host; the secret is never returned. Use test_channel to check that it delivers.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getChannelHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "create_channel",
-		Description: "Create a notification channel. The webhook type is open in every edition; " + gatedChannelTypes() + ".",
+		Description: "Create a notification channel and return it, masked, with its id. The destination is validated and the name must be unique; nothing is sent, and the channel stays silent until a trigger or an escalation level routes alerts to it. Use test_channel to check delivery. The webhook type is open in every edition; " + gatedChannelTypes() + ".",
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(false), OpenWorldHint: new(false)},
 	}, createChannelHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "update_channel",
-		Description: "Update a notification channel. Omitted fields keep their stored value; a stored secret is never cleared this way.",
+		Description: "Update a notification channel by id (from list_channels) and return it, masked. Omitted fields keep their stored value; a stored secret is never cleared this way, and a new url or type is validated again. Sending only enabled false works on any edition; any other change needs the edition that opens its type.",
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true, OpenWorldHint: new(false)},
 	}, updateChannelHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "delete_channel",
-		Description: "Delete a notification channel. Triggers and escalation levels pointing at it lose that destination.",
+		Description: "Permanently delete a notification channel by id (from list_channels). Triggers and escalation levels pointing at it lose that destination but are kept. To stop deliveries without deleting, use update_channel with enabled false.",
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true, OpenWorldHint: new(false)},
 	}, deleteChannelHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "test_channel",
-		Description: "Send a test notification through a channel and report whether it was delivered.",
+		Description: "Send a real test notification (info severity, \"maintenant test notification\") through a channel by id (from list_channels), even a disabled one. Returns status delivered with the response_code, or status failed with the error; a failed delivery is not a tool error. Refused when the running edition does not open the channel's type.",
+		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(false), OpenWorldHint: new(true)},
 	}, testChannelHandler(svc))
 }
 
@@ -70,9 +74,9 @@ type createChannelInput struct {
 	Name    string `json:"name" jsonschema:"Channel name, unique across channels"`
 	Type    string `json:"type" jsonschema:"Channel type: webhook, email, telegram, slack or teams. Defaults to webhook."`
 	URL     string `json:"url" jsonschema:"Destination: an HTTPS webhook URL, an email address, or a Telegram chat id"`
-	Headers string `json:"headers,omitempty" jsonschema:"Extra HTTP headers as a JSON object, webhook types only"`
+	Headers string `json:"headers,omitempty" jsonschema:"Extra HTTP headers as a JSON object of strings, webhook types only"`
 	Secret  string `json:"secret,omitempty" jsonschema:"Channel credential, a Telegram bot token today. Write-only: it is never read back."`
-	Config  string `json:"config,omitempty" jsonschema:"Non-secret per-type settings as a JSON object, e.g. {\"thread_id\":\"42\"} for Telegram"`
+	Config  string `json:"config,omitempty" jsonschema:"Non-secret per-type settings as a JSON object, e.g. {\"thread_id\":\"42\"} for Telegram, {\"subject_label\":\"prod\"} for email"`
 	Enabled *bool  `json:"enabled,omitempty" jsonschema:"Whether the channel accepts deliveries, default true"`
 }
 
@@ -81,9 +85,9 @@ type updateChannelInput struct {
 	Name    *string `json:"name,omitempty" jsonschema:"New channel name"`
 	Type    *string `json:"type,omitempty" jsonschema:"New channel type"`
 	URL     *string `json:"url,omitempty" jsonschema:"New destination"`
-	Headers *string `json:"headers,omitempty" jsonschema:"New extra HTTP headers as a JSON object"`
+	Headers *string `json:"headers,omitempty" jsonschema:"New extra HTTP headers as a JSON object of strings. Omit to keep the stored ones; {} clears them."`
 	Secret  *string `json:"secret,omitempty" jsonschema:"New credential. Omit to keep the stored one; it cannot be set to empty."`
-	Config  *string `json:"config,omitempty" jsonschema:"New non-secret per-type settings as a JSON object"`
+	Config  *string `json:"config,omitempty" jsonschema:"New non-secret per-type settings as a JSON object, e.g. {\"subject_label\":\"prod\"} for email"`
 	Enabled *bool   `json:"enabled,omitempty" jsonschema:"Whether the channel accepts deliveries"`
 }
 
@@ -152,6 +156,20 @@ func (s *Services) broadcast(eventType string, data any) {
 	}
 }
 
+// readBackChannel returns the stored row, masked, so a response carries the dates and never a secret.
+func readBackChannel(ctx context.Context, svc *Services, id string) (*alert.NotificationChannel, error) {
+	ch, err := svc.Channels.GetChannel(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if ch == nil {
+		return nil, fmt.Errorf("channel %s not found after write", id)
+	}
+	ch.MarkSuspension()
+	ch.Redact()
+	return ch, nil
+}
+
 func listChannelsHandler(svc *Services) gomcp.ToolHandlerFor[listChannelsInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, _ listChannelsInput) (*gomcp.CallToolResult, any, error) {
 		if svc.Channels == nil {
@@ -161,13 +179,14 @@ func listChannelsHandler(svc *Services) gomcp.ToolHandlerFor[listChannelsInput, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("list channels: %w", err)
 		}
-		if channels == nil {
-			channels = []*alert.NotificationChannel{}
-		}
+		out := make([]*alert.NotificationChannel, 0, len(channels))
 		for _, ch := range channels {
-			ch.MarkSuspension()
+			cp := *ch
+			cp.MarkSuspension()
+			cp.Redact()
+			out = append(out, &cp)
 		}
-		return jsonResult(map[string]any{"channels": channels})
+		return jsonResult(map[string]any{"channels": out})
 	}
 }
 
@@ -185,6 +204,7 @@ func getChannelHandler(svc *Services) gomcp.ToolHandlerFor[getChannelInput, any]
 		}
 
 		ch.MarkSuspension()
+		ch.Redact()
 		out := map[string]any{"channel": ch}
 		if health, err := svc.Channels.GetChannelHealth(ctx, ch.ID); err == nil {
 			out["health"] = health
@@ -223,6 +243,9 @@ func createChannelHandler(svc *Services) gomcp.ToolHandlerFor[createChannelInput
 		if err := validateChannelDestination(ctx, svc, input.Type, input.URL); err != nil {
 			return errResult("field=url: " + err.Error())
 		}
+		if _, err := alert.ParseHeaders(input.Headers); err != nil {
+			return errResult("field=headers: " + err.Error())
+		}
 		config := normalizeConfig(input.Config)
 		if err := validateChannelCredentials(svc, input.Type, input.Secret, config); err != nil {
 			return errResult(err.Error())
@@ -249,12 +272,12 @@ func createChannelHandler(svc *Services) gomcp.ToolHandlerFor[createChannelInput
 			}
 			return nil, nil, fmt.Errorf("create channel: %w", err)
 		}
-		ch.ID = id
-		ch.HasSecret = ch.Secret != ""
-
-		ch.MarkSuspension()
-		svc.broadcast(event.ChannelCreated, ch)
-		return jsonResult(ch)
+		stored, err := readBackChannel(ctx, svc, id)
+		if err != nil {
+			return nil, nil, fmt.Errorf("create channel: read back: %w", err)
+		}
+		svc.broadcast(event.ChannelCreated, stored)
+		return jsonResult(stored)
 	}
 }
 
@@ -297,6 +320,9 @@ func updateChannelHandler(svc *Services) gomcp.ToolHandlerFor[updateChannelInput
 			ch.URL = *input.URL
 		}
 		if input.Headers != nil {
+			if _, err := alert.ParseHeaders(*input.Headers); err != nil {
+				return errResult("field=headers: " + err.Error())
+			}
 			ch.Headers = *input.Headers
 		}
 		if input.Secret != nil {
@@ -326,11 +352,12 @@ func updateChannelHandler(svc *Services) gomcp.ToolHandlerFor[updateChannelInput
 		if err := svc.Channels.UpdateChannel(ctx, ch); err != nil {
 			return nil, nil, fmt.Errorf("update channel: %w", err)
 		}
-		ch.HasSecret = ch.Secret != ""
-
-		ch.MarkSuspension()
-		svc.broadcast(event.ChannelUpdated, ch)
-		return jsonResult(ch)
+		stored, err := readBackChannel(ctx, svc, input.ID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("update channel: read back: %w", err)
+		}
+		svc.broadcast(event.ChannelUpdated, stored)
+		return jsonResult(stored)
 	}
 }
 

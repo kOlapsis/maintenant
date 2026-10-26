@@ -90,18 +90,27 @@ spec:
             httpGet:
               path: /api/v1/health
               port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
             periodSeconds: {{ .Values.startupProbe.periodSeconds }}
             failureThreshold: {{ .Values.startupProbe.failureThreshold }}
           livenessProbe:
             httpGet:
               path: /api/v1/health
               port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
             initialDelaySeconds: 5
             periodSeconds: 30
           readinessProbe:
             httpGet:
               path: /api/v1/health
               port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
             initialDelaySeconds: 3
             periodSeconds: 10
           resources:

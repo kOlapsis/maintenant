@@ -110,9 +110,19 @@ In a container, `0.0.0.0:8443` is the address inside the container: publish the 
     - traefik.tcp.services.maintenant-grpc.loadbalancer.server.port=8443
     ```
 
-=== "Self-signed (development only)"
+=== "Self-signed, pinned by fingerprint (no PKI)"
 
-    No certificate configuration needed. The server generates a self-signed cert in-memory at startup and logs a warning. Agents must pass `--grpc-insecure-skip-tls-verify`. **Do not use in production.**
+    No certificate configuration needed. On first start the server generates a self-signed certificate valid for ten years and keeps it next to the database: `grpc-server.crt`, and its key `grpc-server.key` (mode `0600`). Later starts reuse it, so its fingerprint never changes. The server logs the SHA-256 fingerprint at every start:
+
+    ```
+    level=INFO msg="agent gRPC TLS certificate" fingerprint_sha256=9f2e…  self_signed=true
+    ```
+
+    The token creation response carries the same value (`grpc_server_fingerprint_sha256`, with `grpc_server_self_signed: true`), and every generated install command passes it to the agent with `--grpc-server-fingerprint <fingerprint>` (`MAINTENANT_GRPC_SERVER_FINGERPRINT` in the Kubernetes Deployment). The agent then accepts the server only if the certificate it presents has that exact fingerprint: no CA and no hostname check are needed, and a server presenting any other certificate is refused before the agent sends anything. The fingerprint is 64 hexadecimal digits; upper case and colons (`AB:CD:…`) are accepted.
+
+    If the files are deleted, unreadable or expired, the server generates a new certificate and logs a warning: the fingerprint changes and every pinned agent must be given the new one. A data directory the server cannot write stops the start.
+
+    `--grpc-insecure-skip-tls-verify` still exists as a workaround: it disables certificate verification entirely and the agent logs a warning on every connection. Existing agents that use it keep working; move them to `--grpc-server-fingerprint` by restarting them with the fingerprint from the server log.
 
 ---
 
@@ -259,7 +269,8 @@ Every flag has an environment variable with the same effect (`--server` is `MAIN
 | `--ca-cert` | PEM bundle of extra root CAs (`MAINTENANT_CA_CERT`), added to the system roots. Applies to the connection to the server, and to the endpoint probes and certificate scans of the agent. |
 | `--proxyLabels` | Create endpoints from Traefik and Caddy labels (`MAINTENANT_PROXY_LABELS`). Each agent reads its own setting, independently of the server. |
 | `--agentSpoolMaxMemoryBytes`, `--agentSpoolMaxDiskBytes`, `--agentSpoolMaxAgeSeconds` | Bounds of the outage spool (16 MB, 128 MB and 24 h by default). `0` memory writes every event to disk, `0` disk lifts the size limit, `0` age sets no age limit. The spool is off only when both budgets are `0`. |
-| `--grpc-insecure-skip-tls-verify` | Skip TLS verification: **development only**, for self-signed servers. |
+| `--grpc-server-fingerprint` | SHA-256 fingerprint of the server certificate to trust (`MAINTENANT_GRPC_SERVER_FINGERPRINT`). Set by the generated install commands when the server certificate is self-signed. Needs a `grpcs://` server URL. |
+| `--grpc-insecure-skip-tls-verify` | Skip TLS verification: a workaround to avoid, warned on every connection. Use `--grpc-server-fingerprint` instead. |
 
 The full reference (server-side variables, rate limits, stale thresholds) is in [Multi-Host Monitoring → Configuration Reference](../features/multihost.md#configuration-reference).
 
@@ -275,7 +286,7 @@ The full reference (server-side variables, rate limits, stale thresholds) is in 
 
 !!! failure "Host stays `disconnected`"
     - Confirm the gRPC port/subdomain is reachable from the agent host (firewall, DNS, reverse-proxy route), and that `MAINTENANT_GRPC_LISTEN` is not left on its loopback default.
-    - If the server certificate comes from a private CA, give the agent that CA with `MAINTENANT_CA_CERT`. If it is self-signed, the agent must either trust it the same way or run with `--grpc-insecure-skip-tls-verify` (dev only). With a real (Let's Encrypt) certificate, no flag is needed.
+    - If the server certificate comes from a private CA, give the agent that CA with `MAINTENANT_CA_CERT`. If it is self-signed, start the agent with `--grpc-server-fingerprint` set to the fingerprint the server logs; an agent log saying `server certificate fingerprint <received> does not match the pinned <expected>` means the server certificate changed or the agent points at another server. With a real (Let's Encrypt) certificate, no flag is needed.
     - If the agent log says the agent is unknown to the server or revoked, see [Managing agents](#managing-agents).
 
     These cause a *permanent* failure. A host that connects then drops at a fixed interval is a different problem, see below.

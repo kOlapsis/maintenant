@@ -406,7 +406,7 @@ func TestStatusAPIDetailsTheMonitorsOfEachComponent(t *testing.T) {
 	svc := NewService(Deps{
 		Components: &mockComponentStore{visibleComponents: []Component{{
 			ID: "c1", DisplayName: "API", CompositionMode: CompositionExplicit, Visible: true,
-			Monitors: []MonitorRef{{Type: "endpoint", ID: "e1", Name: "https://api.example.com"}},
+			Monitors: []MonitorRef{{Type: "endpoint", ID: "e1", Name: "https://api.example.com", Label: "Public API"}},
 		}}},
 		Logger:        logger,
 		MonitorStatus: func(context.Context, string, string) string { return StatusMajorOutage },
@@ -418,14 +418,14 @@ func TestStatusAPIDetailsTheMonitorsOfEachComponent(t *testing.T) {
 
 	var body struct {
 		Components []struct {
-			ID       string       `json:"id"`
-			Monitors []MonitorRef `json:"monitors"`
+			ID       string          `json:"id"`
+			Monitors []PublicMonitor `json:"monitors"`
 		} `json:"components"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	want := MonitorRef{Type: "endpoint", ID: "e1", Name: "https://api.example.com", Status: StatusMajorOutage}
+	want := PublicMonitor{Type: "endpoint", Status: StatusMajorOutage, Label: "Public API"}
 	if len(body.Components) != 1 || len(body.Components[0].Monitors) != 1 || body.Components[0].Monitors[0] != want {
 		t.Fatalf("components %+v, want c1 with the monitor %+v", body.Components, want)
 	}

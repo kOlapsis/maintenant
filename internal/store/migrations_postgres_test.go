@@ -128,6 +128,9 @@ func TestMigratePostgres_ConcurrentCatchUp(t *testing.T) {
 		"DROP INDEX uq_image_updates_agent_name_image_tag",                                                        // 41
 		"ALTER TABLE image_updates DROP COLUMN agent_id",                                                          // 41
 		"CREATE UNIQUE INDEX uq_image_updates_name_image_tag ON image_updates(container_name, image, latest_tag)", // 41
+		"DROP INDEX uq_heartbeats_ping_token",                                                                     // 42
+		"ALTER TABLE heartbeats DROP COLUMN ping_token",                                                           // 42
+		"ALTER TABLE status_component_monitors DROP COLUMN label",                                                 // 43
 	} {
 		_, err = db.ReadDB().Exec(undo)
 		require.NoError(t, err, undo)

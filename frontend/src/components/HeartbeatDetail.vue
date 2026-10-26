@@ -8,14 +8,20 @@ import { ref, onMounted } from 'vue'
 import {
   getHeartbeat,
   listExecutions,
+  rotatePingToken,
+  updateHeartbeat,
+  type CreateHeartbeatInput,
   type HeartbeatDetailResponse,
   type HeartbeatExecution,
 } from '@/services/heartbeatApi'
+import { ApiError } from '@/services/apiFetch'
 import HeartbeatStatusBadge from './HeartbeatStatusBadge.vue'
 import HeartbeatSnippets from './HeartbeatSnippets.vue'
 import HeartbeatGantt from './HeartbeatGantt.vue'
+import HeartbeatForm from './HeartbeatForm.vue'
 import type { HeartbeatTimelineEntry } from './HeartbeatGantt.vue'
-import { formatInterval, nextExpectedPing } from '@/utils/scheduleFormat'
+import { formatInterval } from '@/utils/scheduleFormat'
+import { useConfirm } from '@/composables/useConfirm'
 import UiButton from './ui/UiButton.vue'
 
 const props = defineProps<{
@@ -24,12 +30,19 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
+  refresh: []
 }>()
 
 const detail = ref<HeartbeatDetailResponse | null>(null)
 const executions = ref<HeartbeatExecution[]>([])
 const loading = ref(true)
 const expandedPayload = ref<string | null>(null)
+const rotating = ref(false)
+const rotateError = ref<string | null>(null)
+const editing = ref(false)
+const saving = ref(false)
+const saveError = ref<string | null>(null)
+const confirm = useConfirm()
 
 onMounted(async () => {
   try {
@@ -43,6 +56,45 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+async function handleRotate() {
+  const ok = await confirm({
+    title: 'Rotate ping token',
+    message: 'The current ping URL stops working at once. Every job that pings it must switch to the new URL.',
+    confirmLabel: 'Rotate',
+    destructive: true,
+  })
+  if (!ok) return
+  rotating.value = true
+  rotateError.value = null
+  try {
+    const heartbeat = await rotatePingToken(props.heartbeatId)
+    const { snippets } = await getHeartbeat(props.heartbeatId)
+    detail.value = { heartbeat, snippets }
+    emit('refresh')
+  } catch (e) {
+    rotateError.value = e instanceof Error ? e.message : 'Failed to rotate ping token'
+    // the panel keeps showing the current token
+  } finally {
+    rotating.value = false
+  }
+}
+
+async function handleSave(data: CreateHeartbeatInput) {
+  saving.value = true
+  saveError.value = null
+  try {
+    const heartbeat = await updateHeartbeat(props.heartbeatId, data)
+    detail.value = { ...detail.value, heartbeat }
+    editing.value = false
+    emit('refresh')
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) saveError.value = 'This heartbeat no longer exists.'
+    else saveError.value = e instanceof Error ? e.message : 'Failed to save the heartbeat'
+  } finally {
+    saving.value = false
+  }
+}
 
 function formatTime(iso: string | undefined): string {
   if (!iso) return '-'
@@ -98,14 +150,34 @@ const outcomeColors: Record<string, { bg: string; color: string }> = {
       <h2 class="text-lg font-bold" style="color: var(--mnt-text-primary)">
         {{ detail?.heartbeat.name || 'Loading...' }}
       </h2>
-      <UiButton variant="ghost" size="sm" @click="emit('close')">
-        Close
-      </UiButton>
+      <div class="flex items-center gap-2">
+        <UiButton v-if="detail && !editing" variant="secondary" size="sm" @click="saveError = null; editing = true">
+          Edit
+        </UiButton>
+        <UiButton variant="ghost" size="sm" @click="emit('close')">
+          Close
+        </UiButton>
+      </div>
     </div>
 
     <div v-if="loading" class="py-8 text-center" style="color: var(--mnt-text-muted)">Loading...</div>
 
     <template v-else-if="detail">
+      <div
+        v-if="editing"
+        class="mb-6 rounded-lg border p-3"
+        style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-subtle)"
+      >
+        <HeartbeatForm
+          :initial="detail.heartbeat"
+          submit-label="Save"
+          :busy="saving"
+          :error="saveError"
+          @submit="handleSave"
+          @cancel="editing = false"
+        />
+      </div>
+
       <!-- Status overview -->
       <div class="mb-6 flex flex-wrap items-center gap-4 text-sm">
         <HeartbeatStatusBadge :status="detail.heartbeat.status" />
@@ -133,8 +205,8 @@ const outcomeColors: Record<string, { bg: string; color: string }> = {
             ({{ detail.heartbeat.grace_seconds }}s grace period)
           </span>
         </p>
-        <p v-if="detail.heartbeat.last_ping_at" class="mt-1 text-xs" style="color: var(--mnt-text-muted)">
-          Next expected: {{ nextExpectedPing(detail.heartbeat.last_ping_at, detail.heartbeat.interval_seconds).toLocaleString() }}
+        <p v-if="detail.heartbeat.next_deadline_at" class="mt-1 text-xs" style="color: var(--mnt-text-muted)">
+          Next expected: {{ formatTime(detail.heartbeat.next_deadline_at) }}
         </p>
       </div>
 
@@ -143,9 +215,15 @@ const outcomeColors: Record<string, { bg: string; color: string }> = {
         class="mb-6 rounded-lg p-3"
         style="background: var(--mnt-bg-elevated)"
       >
-        <p class="mb-1 text-xs font-medium" style="color: var(--mnt-text-muted)">Ping URL</p>
+        <div class="mb-1 flex items-center justify-between gap-2">
+          <p class="text-xs font-medium" style="color: var(--mnt-text-muted)">Ping URL</p>
+          <UiButton variant="ghost" size="sm" :loading="rotating" @click="handleRotate">
+            Rotate token
+          </UiButton>
+        </div>
+        <p v-if="rotateError" class="mb-2 text-xs" style="color: var(--mnt-status-down)">{{ rotateError }}</p>
         <code class="block break-all text-sm" style="color: var(--mnt-text-primary)">
-          /ping/{{ detail.heartbeat.id }}
+          /ping/{{ detail.heartbeat.ping_token }}
         </code>
       </div>
 

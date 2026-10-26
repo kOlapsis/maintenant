@@ -37,6 +37,7 @@ type AgentConfig struct {
 	NodeName            string
 	AgentVersion        string
 	InsecureSkipVerify  bool
+	ServerFingerprint   string
 	ProxyLabels         bool
 	SpoolMaxMemoryBytes int64
 	SpoolMaxDiskBytes   int64
@@ -80,7 +81,7 @@ func Run(ctx context.Context, cfg AgentConfig, logger *slog.Logger) error {
 		return fmt.Errorf("identity: %w", err)
 	}
 
-	grpcClient, err := NewClient(ctx, cfg.ServerURL, cfg.InsecureSkipVerify, logger)
+	grpcClient, err := NewClientWithFingerprint(ctx, cfg.ServerURL, cfg.ServerFingerprint, cfg.InsecureSkipVerify, logger)
 	if err != nil {
 		return fmt.Errorf("connect to server: %w", err)
 	}

@@ -5,8 +5,7 @@ package heartbeat
 
 import "fmt"
 
-// GenerateSnippets returns integration code snippets for a heartbeat monitor.
-// token is the heartbeat's ping token (its id).
+// GenerateSnippets returns integration code snippets that ping a heartbeat through its ping token.
 func GenerateSnippets(baseURL, token string) map[string]string {
 	pingURL := baseURL + "/ping/" + token
 	startURL := pingURL + "/start"

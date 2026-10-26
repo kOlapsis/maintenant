@@ -137,7 +137,7 @@ func ParseEndpointLabels(labels map[string]string, logger *slog.Logger) ([]*Pars
 
 		// Validate timeout <= interval
 		if cfg.Timeout > cfg.Interval {
-			logger.Warn("endpoint timeout > interval, adjusting", "endpoint", ep.Target, "timeout", cfg.Timeout, "interval", cfg.Interval)
+			logger.Info("endpoint timeout > interval, adjusting", "endpoint", ep.Target, "timeout", cfg.Timeout, "interval", cfg.Interval)
 			cfg.Timeout = cfg.Interval
 		}
 
@@ -223,10 +223,11 @@ func applyConfigLabels(cfg *EndpointConfig, labels map[string]string, logger *sl
 	if v, ok := labels["http.method"]; ok {
 		v = strings.ToUpper(strings.TrimSpace(v))
 		switch v {
-		case "GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS":
+		case "GET", "HEAD":
 			cfg.Method = v
 		default:
-			logger.Warn("invalid HTTP method", "value", v)
+			logger.Warn("http method not allowed on a label-declared endpoint, using GET", "value", v)
+			cfg.Method = "GET"
 		}
 	}
 	if v, ok := labels["http.expected-status"]; ok {
@@ -242,7 +243,14 @@ func applyConfigLabels(cfg *EndpointConfig, labels map[string]string, logger *sl
 	}
 	if v, ok := labels["http.headers"]; ok {
 		headers := parseHeaders(v)
-		if headers != nil {
+		for k := range headers {
+			switch strings.ToLower(k) {
+			case "authorization", "cookie", "proxy-authorization":
+				logger.Warn("header ignored on a label-declared endpoint", "header", k)
+				delete(headers, k)
+			}
+		}
+		if len(headers) > 0 {
 			cfg.Headers = headers
 		}
 	}

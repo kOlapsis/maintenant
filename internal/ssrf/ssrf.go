@@ -16,6 +16,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"syscall"
 	"time"
 
@@ -108,4 +110,31 @@ func NewHTTPClient(timeout time.Duration, allowPrivate bool) *http.Client {
 		transport.DialContext = dialer.DialContext
 	}
 	return &http.Client{Timeout: timeout, Transport: transport}
+}
+
+// IsBlockedForProbe reports whether a label-declared monitor must not connect to ip: link-local, multicast or unspecified addresses.
+func IsBlockedForProbe(ip net.IP) bool {
+	return ip == nil || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified()
+}
+
+// ProbeControl is the dial hook of label-declared monitors: it refuses the addresses IsBlockedForProbe rejects.
+func ProbeControl(_, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf("probe guard: %w", err)
+	}
+	ip := net.ParseIP(host)
+	if IsBlockedForProbe(ip) {
+		return fmt.Errorf("probe guard: blocked connection to %s", host)
+	}
+	return nil
+}
+
+// ProbeGuardDisabled reports whether MAINTENANT_LABEL_ENDPOINTS_ALLOW_LINK_LOCAL lifts the probe guard (tests only).
+func ProbeGuardDisabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("MAINTENANT_LABEL_ENDPOINTS_ALLOW_LINK_LOCAL"))) {
+	case "true", "1", "yes", "on":
+		return true
+	}
+	return false
 }

@@ -50,7 +50,7 @@ func TestBuildInstallTemplates_ReturnsFourModes(t *testing.T) {
 }
 
 func TestBuildInstallStandalone_PipesTheInstallerInAgentMode(t *testing.T) {
-	out := buildInstallStandalone("grpcs://h:8443", "mnt_enr_xyz")
+	out := buildInstallStandalone("grpcs://h:8443", "mnt_enr_xyz", "")
 
 	assert.True(t, strings.HasPrefix(out, "curl -fsSL https://install.maintenant.dev | sudo bash -s -- "), out)
 	assert.Contains(t, out, "--mode agent")
@@ -59,7 +59,7 @@ func TestBuildInstallStandalone_PipesTheInstallerInAgentMode(t *testing.T) {
 }
 
 func TestBuildInstallDockerRun_ContainsDockerSocketMount(t *testing.T) {
-	out := buildInstallDockerRun("grpcs://h:8443", "mnt_enr_xyz")
+	out := buildInstallDockerRun("grpcs://h:8443", "mnt_enr_xyz", "")
 	if !strings.HasPrefix(out, "docker run -d") {
 		t.Errorf("docker_run template should start with `docker run -d`, got:\n%s", out)
 	}
@@ -75,7 +75,7 @@ func TestBuildInstallDockerRun_ContainsDockerSocketMount(t *testing.T) {
 }
 
 func TestBuildInstallDockerCompose_HasServicesBlock(t *testing.T) {
-	out := buildInstallDockerCompose("grpcs://h:8443", "mnt_enr_xyz")
+	out := buildInstallDockerCompose("grpcs://h:8443", "mnt_enr_xyz", "")
 	if !strings.HasPrefix(out, "services:\n") {
 		t.Errorf("docker_compose template should start with `services:`, got:\n%s", out)
 	}
@@ -121,7 +121,7 @@ func decodeOne[T any](t *testing.T, objs map[string][]json.RawMessage, kind stri
 }
 
 func TestBuildInstallKubernetes_OneAgentPerCluster(t *testing.T) {
-	objs := kubernetesManifest(t, buildInstallKubernetes("grpcs://h:8443", "mnt_enr_xyz"))
+	objs := kubernetesManifest(t, buildInstallKubernetes("grpcs://h:8443", "mnt_enr_xyz", ""))
 
 	assert.Empty(t, objs["DaemonSet"], "one pod per node duplicates the cluster topology")
 	secret := decodeOne[corev1.Secret](t, objs, "Secret")
@@ -150,7 +150,7 @@ func TestBuildInstallKubernetes_OneAgentPerCluster(t *testing.T) {
 }
 
 func TestBuildInstallKubernetes_StateSurvivesAReschedule(t *testing.T) {
-	objs := kubernetesManifest(t, buildInstallKubernetes("grpcs://h:8443", "mnt_enr_xyz"))
+	objs := kubernetesManifest(t, buildInstallKubernetes("grpcs://h:8443", "mnt_enr_xyz", ""))
 	pvc := decodeOne[corev1.PersistentVolumeClaim](t, objs, "PersistentVolumeClaim")
 	dep := decodeOne[appsv1.Deployment](t, objs, "Deployment")
 
@@ -176,7 +176,7 @@ func TestBuildInstallKubernetes_StateSurvivesAReschedule(t *testing.T) {
 }
 
 func TestBuildInstallKubernetes_Hardened(t *testing.T) {
-	objs := kubernetesManifest(t, buildInstallKubernetes("grpcs://h:8443", "mnt_enr_xyz"))
+	objs := kubernetesManifest(t, buildInstallKubernetes("grpcs://h:8443", "mnt_enr_xyz", ""))
 	dep := decodeOne[appsv1.Deployment](t, objs, "Deployment")
 
 	podSC := dep.Spec.Template.Spec.SecurityContext
@@ -199,7 +199,7 @@ func TestBuildInstallKubernetes_Hardened(t *testing.T) {
 }
 
 func TestBuildInstallKubernetes_GrantsWhatTheRuntimeReads(t *testing.T) {
-	objs := kubernetesManifest(t, buildInstallKubernetes("grpcs://h:8443", "mnt_enr_xyz"))
+	objs := kubernetesManifest(t, buildInstallKubernetes("grpcs://h:8443", "mnt_enr_xyz", ""))
 
 	role := decodeOne[rbacv1.ClusterRole](t, objs, "ClusterRole")
 	assert.Equal(t, kubernetes.ReadRules(), role.Rules)

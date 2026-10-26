@@ -5,6 +5,10 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -69,24 +73,24 @@ var clientKeepalive = keepalive.ClientParameters{
 	PermitWithoutStream: true,
 }
 
-// NewClient dials the server at serverURL and returns a ready-to-use Client.
-// serverURL should start with "grpcs://" (TLS) or "grpc://" (plaintext, not recommended).
-// If insecureSkipVerify is true, TLS certificate validation is skipped (debug only).
-func NewClient(ctx context.Context, serverURL string, insecureSkipVerify bool, logger *slog.Logger) (*Client, error) {
+// NewClientWithFingerprint dials serverURL and trusts only a server certificate whose SHA-256 fingerprint matches.
+func NewClientWithFingerprint(ctx context.Context, serverURL string, fingerprint string, insecureSkipVerify bool, logger *slog.Logger) (*Client, error) {
 	target, useTLS, err := parseServerURL(serverURL)
+	if err != nil {
+		return nil, err
+	}
+	pinned, err := normalizeFingerprint(fingerprint)
 	if err != nil {
 		return nil, err
 	}
 
 	var creds credentials.TransportCredentials
-	if useTLS {
-		tlsCfg := trust.ClientTLSConfig()
-		tlsCfg.InsecureSkipVerify = insecureSkipVerify // #nosec G402 -- explicit opt-in flag, warning logged at boot.
-		if insecureSkipVerify {
-			logger.Warn("TLS certificate verification is disabled — do not use in production")
-		}
-		creds = credentials.NewTLS(tlsCfg)
-	} else {
+	switch {
+	case !useTLS && pinned != "":
+		return nil, errors.New("a fingerprint needs a TLS server URL (grpcs://)")
+	case useTLS:
+		creds = credentials.NewTLS(clientTLSConfig(pinned, insecureSkipVerify, logger))
+	default:
 		logger.Warn("connecting to agent server without TLS — plaintext gRPC")
 		creds = insecure.NewCredentials()
 	}
@@ -103,6 +107,51 @@ func NewClient(ctx context.Context, serverURL string, insecureSkipVerify bool, l
 		conn:   conn,
 		client: agentpb.NewIngestClient(conn),
 	}, nil
+}
+
+// NewClient dials the server at serverURL and returns a ready-to-use Client.
+// serverURL should start with "grpcs://" (TLS) or "grpc://" (plaintext, not recommended).
+// If insecureSkipVerify is true, TLS certificate validation is skipped (debug only).
+func NewClient(ctx context.Context, serverURL string, insecureSkipVerify bool, logger *slog.Logger) (*Client, error) {
+	return NewClientWithFingerprint(ctx, serverURL, "", insecureSkipVerify, logger)
+}
+
+func normalizeFingerprint(fp string) (string, error) {
+	fp = strings.ToLower(strings.ReplaceAll(fp, ":", ""))
+	if fp == "" {
+		return "", nil
+	}
+	if b, err := hex.DecodeString(fp); err != nil || len(b) != sha256.Size {
+		return "", errors.New("server fingerprint must be a SHA-256 in hex (64 digits, colons allowed)")
+	}
+	return fp, nil
+}
+
+// clientTLSConfig verifies the server by its pinned fingerprint when one is given, by the trust chain otherwise.
+func clientTLSConfig(pinned string, insecureSkipVerify bool, logger *slog.Logger) *tls.Config {
+	cfg := trust.ClientTLSConfig()
+	cfg.InsecureSkipVerify = insecureSkipVerify || pinned != "" // #nosec G402 -- pinning replaces chain verification; skip-verify is an explicit opt-in warned on every connection.
+	if pinned != "" {
+		cfg.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+			if len(rawCerts) == 0 {
+				return errors.New("server presented no certificate")
+			}
+			sum := sha256.Sum256(rawCerts[0])
+			if got := hex.EncodeToString(sum[:]); got != pinned {
+				err := fmt.Errorf("server certificate fingerprint %s does not match the pinned %s", got, pinned)
+				logger.Error("agent: TLS connection refused", "err", err)
+				return err
+			}
+			return nil
+		}
+	}
+	if insecureSkipVerify {
+		cfg.VerifyConnection = func(tls.ConnectionState) error {
+			logger.Warn("TLS certificate verification is disabled — do not use in production")
+			return nil
+		}
+	}
+	return cfg
 }
 
 // Register calls the unary RegisterAgent RPC.

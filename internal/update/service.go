@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/uid"
@@ -201,6 +203,9 @@ func (s *Service) ListImageUpdates(ctx context.Context, opts ListImageUpdatesOpt
 
 // GenerateUpdateCommand produces a shell command to update a container to latestTag, whose manifest is latestDigest.
 func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag, latestDigest string) string {
+	if unsafeFields(c) {
+		return ""
+	}
 	repo, currentTag, _ := ParseImageRef(c.Image)
 
 	if c.RuntimeType == "kubernetes" || c.SwarmService != "" {
@@ -217,22 +222,27 @@ func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag, latestDigest
 
 	// Docker Compose
 	if isCompose(c) {
+		svc := shellQuote(c.OrchestrationUnit)
 		// Compose pulls the tag written in the compose file, so a new tag has to be written there first.
 		if latestTag != currentTag {
-			return fmt.Sprintf("cd %s\n# Set the image of service %s to %s:%s in the compose file, then:\ndocker compose pull %s\ndocker compose up -d %s",
-				composeDir(c), c.OrchestrationUnit, repo, latestTag, c.OrchestrationUnit, c.OrchestrationUnit)
+			return fmt.Sprintf("cd %s\n# Set the image of service %s to %s in the compose file, then:\ndocker compose pull %s\ndocker compose up -d %s",
+				composeDir(c), svc, shellQuote(repo+":"+latestTag), svc, svc)
 		}
 		return fmt.Sprintf("cd %s\ndocker compose pull %s\ndocker compose up -d --force-recreate %s",
-			composeDir(c), c.OrchestrationUnit, c.OrchestrationUnit)
+			composeDir(c), svc, svc)
 	}
 
 	// Standalone Docker container
-	return fmt.Sprintf("docker pull %s:%s\ndocker stop %s && docker rm %s\ndocker run -d --name %s %s:%s",
-		repo, latestTag, c.Name, c.Name, c.Name, repo, latestTag)
+	ref, name := shellQuote(repo+":"+latestTag), shellQuote(c.Name)
+	return fmt.Sprintf("docker pull %s\ndocker stop %s && docker rm %s\ndocker run -d --name %s %s",
+		ref, name, name, name, ref)
 }
 
 // GenerateRollbackCommand produces a shell command that puts a container back on the image it ran before the update, or "" when that image cannot be named.
 func (s *Service) GenerateRollbackCommand(c ContainerInfo, u *ImageUpdate) string {
+	if unsafeFields(c) {
+		return ""
+	}
 	ref := previousImageRef(u.Image, u.CurrentTag, u.PreviousDigest)
 	if ref == "" {
 		return ""
@@ -247,19 +257,20 @@ func (s *Service) GenerateRollbackCommand(c ContainerInfo, u *ImageUpdate) strin
 
 	// Docker Compose
 	if isCompose(c) {
-		svc := c.OrchestrationUnit
+		svc, qref := shellQuote(c.OrchestrationUnit), shellQuote(ref)
 		if u.LatestTag == u.CurrentTag {
 			// The compose file keeps the same tag: point that tag back at the previous image locally.
 			return fmt.Sprintf("cd %s\ndocker pull %s\ndocker tag %s %s\ndocker compose up -d --pull never --force-recreate %s",
-				composeDir(c), ref, ref, imageWithoutDigest(u.Image), svc)
+				composeDir(c), qref, qref, shellQuote(imageWithoutDigest(u.Image)), svc)
 		}
 		return fmt.Sprintf("cd %s\n# Set the image of service %s back to %s in the compose file, then:\ndocker compose up -d %s",
-			composeDir(c), svc, ref, svc)
+			composeDir(c), svc, qref, svc)
 	}
 
 	// Standalone Docker container
+	ref, name := shellQuote(ref), shellQuote(c.Name)
 	return fmt.Sprintf("docker pull %s\ndocker stop %s && docker rm %s\ndocker run -d --name %s %s",
-		ref, c.Name, c.Name, c.Name, ref)
+		ref, name, name, name, ref)
 }
 
 // previousImageRef names the image a container ran before an update: by digest when known,
@@ -289,12 +300,12 @@ func kubectlSetImage(c ContainerInfo, ref string) string {
 		kind = "pod"
 	}
 	return fmt.Sprintf("kubectl set image %s/%s %s=%s -n %s",
-		kind, c.OrchestrationUnit, podContainer(c), ref, c.OrchestrationGroup)
+		shellQuote(kind), shellQuote(c.OrchestrationUnit), shellQuote(podContainer(c)), shellQuote(ref), shellQuote(c.OrchestrationGroup))
 }
 
 // swarmServiceUpdate points the Swarm service that runs the task at ref.
 func swarmServiceUpdate(c ContainerInfo, ref string) string {
-	return fmt.Sprintf("docker service update --image %s %s", ref, c.SwarmService)
+	return fmt.Sprintf("docker service update --image %s %s", shellQuote(ref), shellQuote(c.SwarmService))
 }
 
 // podContainer names the container of a Kubernetes pod that runs the workload's image.
@@ -310,10 +321,31 @@ func isCompose(c ContainerInfo) bool {
 }
 
 func composeDir(c ContainerInfo) string {
-	if c.ComposeWorkingDir == "" {
+	d := c.ComposeWorkingDir
+	if d == "" || !filepath.IsAbs(d) || filepath.Clean(d) != d || hasControl(d) {
 		return "<compose-project-dir>"
 	}
-	return c.ComposeWorkingDir
+	return shellQuote(d)
+}
+
+// shellQuote leaves a plain word as is and wraps anything else in POSIX single quotes.
+func shellQuote(s string) string {
+	plainRune := func(r rune) bool {
+		return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_./:@-", r)
+	}
+	if s != "" && strings.IndexFunc(s, func(r rune) bool { return !plainRune(r) }) < 0 {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+func hasControl(s string) bool {
+	return strings.ContainsFunc(s, unicode.IsControl)
+}
+
+// unsafeFields reports a control character in a value written into a command, which quoting cannot neutralise.
+func unsafeFields(c ContainerInfo) bool {
+	return slices.ContainsFunc([]string{c.Name, c.OrchestrationUnit, c.OrchestrationGroup, c.SwarmService, c.PodContainer, c.ControllerKind}, hasControl)
 }
 
 // GenerateFixCommand produces a shell command to update a container to a specific CVE fix version.

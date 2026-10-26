@@ -176,8 +176,8 @@ func (s *StatusComponentStoreImpl) CreateComponent(ctx context.Context, c *statu
 	if c.CompositionMode == status.CompositionExplicit {
 		for _, ref := range c.Monitors {
 			if _, err := s.writer.Exec(ctx,
-				`INSERT INTO status_component_monitors (component_id, monitor_type, monitor_id) VALUES (?, ?, ?)`,
-				c.ID, ref.Type, ref.ID,
+				`INSERT INTO status_component_monitors (component_id, monitor_type, monitor_id, label) VALUES (?, ?, ?, ?)`,
+				c.ID, ref.Type, ref.ID, ref.Label,
 			); err != nil {
 				return "", fmt.Errorf("insert monitor ref: %w", err)
 			}
@@ -219,11 +219,10 @@ func (s *StatusComponentStoreImpl) UpdateComponent(ctx context.Context, c *statu
 }
 
 // deltaApplyMonitorRefs computes the diff between stored refs and desired refs,
-// deletes removed entries, and inserts new ones.
+// deletes removed entries, inserts new ones and updates changed labels.
 func (s *StatusComponentStoreImpl) deltaApplyMonitorRefs(ctx context.Context, componentID string, desired []status.MonitorRef) error {
-	// Load current refs.
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT monitor_type, monitor_id FROM status_component_monitors WHERE component_id = ?`,
+		`SELECT monitor_type, monitor_id, label FROM status_component_monitors WHERE component_id = ?`,
 		componentID)
 	if err != nil {
 		return fmt.Errorf("load current monitor refs: %w", err)
@@ -236,24 +235,24 @@ func (s *StatusComponentStoreImpl) deltaApplyMonitorRefs(ctx context.Context, co
 		t string
 		i string
 	}
-	current := make(map[refKey]struct{})
+	current := make(map[refKey]string)
 	for rows.Next() {
 		var k refKey
-		if err := rows.Scan(&k.t, &k.i); err != nil {
+		var label string
+		if err := rows.Scan(&k.t, &k.i, &label); err != nil {
 			return fmt.Errorf("scan monitor ref: %w", err)
 		}
-		current[k] = struct{}{}
+		current[k] = label
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate monitor refs: %w", err)
 	}
 
-	desiredSet := make(map[refKey]struct{}, len(desired))
+	desiredSet := make(map[refKey]string, len(desired))
 	for _, ref := range desired {
-		desiredSet[refKey{ref.Type, ref.ID}] = struct{}{}
+		desiredSet[refKey{ref.Type, ref.ID}] = ref.Label
 	}
 
-	// Delete refs no longer desired.
 	for k := range current {
 		if _, ok := desiredSet[k]; !ok {
 			if _, err := s.writer.Exec(ctx,
@@ -265,14 +264,22 @@ func (s *StatusComponentStoreImpl) deltaApplyMonitorRefs(ctx context.Context, co
 		}
 	}
 
-	// Insert new refs.
-	for k := range desiredSet {
-		if _, ok := current[k]; !ok {
+	for k, label := range desiredSet {
+		currentLabel, ok := current[k]
+		switch {
+		case !ok:
 			if _, err := s.writer.Exec(ctx,
-				`INSERT INTO status_component_monitors (component_id, monitor_type, monitor_id) VALUES (?, ?, ?)`,
-				componentID, k.t, k.i,
+				`INSERT INTO status_component_monitors (component_id, monitor_type, monitor_id, label) VALUES (?, ?, ?, ?)`,
+				componentID, k.t, k.i, label,
 			); err != nil {
 				return fmt.Errorf("insert monitor ref: %w", err)
+			}
+		case currentLabel != label:
+			if _, err := s.writer.Exec(ctx,
+				`UPDATE status_component_monitors SET label = ? WHERE component_id = ? AND monitor_type = ? AND monitor_id = ?`,
+				label, componentID, k.t, k.i,
+			); err != nil {
+				return fmt.Errorf("update monitor ref label: %w", err)
 			}
 		}
 	}
@@ -306,7 +313,7 @@ func (s *StatusComponentStoreImpl) hydrateMonitorRefs(ctx context.Context, comps
 
 	// #nosec G202 -- only generated "?" placeholders are concatenated; ids are bound.
 	rows, err := s.db.QueryContext(ctx,
-		"SELECT component_id, monitor_type, monitor_id FROM status_component_monitors WHERE component_id IN ("+placeholders+") ORDER BY component_id, monitor_type, monitor_id",
+		"SELECT component_id, monitor_type, monitor_id, label FROM status_component_monitors WHERE component_id IN ("+placeholders+") ORDER BY component_id, monitor_type, monitor_id",
 		ids...)
 	if err != nil {
 		return fmt.Errorf("hydrate monitor refs: %w", err)
@@ -327,7 +334,7 @@ func (s *StatusComponentStoreImpl) hydrateMonitorRefs(ctx context.Context, comps
 	for rows.Next() {
 		var compID string
 		var ref status.MonitorRef
-		if err := rows.Scan(&compID, &ref.Type, &ref.ID); err != nil {
+		if err := rows.Scan(&compID, &ref.Type, &ref.ID, &ref.Label); err != nil {
 			return fmt.Errorf("scan monitor ref: %w", err)
 		}
 		if i, ok := idx[compID]; ok {

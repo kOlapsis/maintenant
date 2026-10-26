@@ -22,7 +22,7 @@ NL='
 '
 
 # Kept in step with internal/app/flags.go by internal/app/install_script_test.go.
-BOOL_FLAGS="proxyLabels disableOsEolRefresh disableTelemetry allowPrivateWebhooks \
+BOOL_FLAGS="proxyLabels disableOsEolRefresh disableTelemetry allowPrivateWebhooks smtpAllowPlaintext \
 mcp mcpAllowUnauthenticated grpc-tls-insecure grpc-insecure-skip-tls-verify embedded-agent \
 require-state-dir require-existing-data"
 VALUE_FLAGS="addr baseUrl corsOrigins trustedProxies db state-dir sqlite-synchronous organisationName runtime logLevel \
@@ -31,6 +31,7 @@ smtpHost smtpPort smtpUsername smtpPassword smtpFrom \
 mcpClientId mcpClientSecret mcpAllowedRedirectUris k8sNamespaces k8sExcludeNamespaces \
 statusUrl containerDownAfter retentionSnapshots retentionInterval retentionBatchSize \
 mode server enrollment-token label nodeName grpc-listen grpc-url grpc-tls-cert grpc-tls-key \
+grpc-server-fingerprint \
 agentRateLimitPerSecond agentStaleThresholdSeconds \
 agentSpoolMaxMemoryBytes agentSpoolMaxDiskBytes agentSpoolMaxAgeSeconds \
 data-dir ca-cert database-url"
@@ -117,6 +118,7 @@ or "--flag=true|false". Run "maintenant --help" for what each flag does.
   --smtpUsername <user>
   --smtpPassword <pass>
   --smtpFrom <addr>
+  --smtpAllowPlaintext
   --mcp
   --mcpClientId <id>
   --mcpClientSecret <secret>
@@ -134,7 +136,8 @@ or "--flag=true|false". Run "maintenant --help" for what each flag does.
   --grpc-tls-cert <path>
   --grpc-tls-key <path>
   --grpc-tls-insecure
-  --grpc-insecure-skip-tls-verify
+  --grpc-server-fingerprint <sha256>
+  --grpc-insecure-skip-tls-verify   (avoid: disables certificate verification)
   --agentRateLimitPerSecond <int>
   --agentStaleThresholdSeconds <int>
   --agentSpoolMaxMemoryBytes <bytes>
@@ -152,6 +155,10 @@ Examples:
   # Native agent reporting to an existing server
   install.sh --mode agent --server grpcs://maintenant.example.com:8443 \
              --enrollment-token TOKEN --label web-01
+
+  # Native agent pinning a self-signed server certificate by its fingerprint
+  install.sh --mode agent --server grpcs://203.0.113.10:8443 \
+             --grpc-server-fingerprint SHA256_HEX --enrollment-token TOKEN
 
   # Offline, from a binary and its SHA256SUMS copied onto this host
   install.sh --binary ./maintenant-v1.2.3-linux-amd64 --sha256sums ./SHA256SUMS

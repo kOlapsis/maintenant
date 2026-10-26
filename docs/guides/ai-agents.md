@@ -18,7 +18,7 @@ flowchart LR
 
 ## Requirements
 
-- maintenant running in a Docker container, or installed natively. `mcp.json` calls the container `maintenant`: if `docker ps` shows another name (Compose names it `<project>-maintenant-1` unless `container_name` is set), put yours in its place.
+- maintenant running in a Docker container, or installed natively, with `MAINTENANT_MCP_SOCKET=true` (or `MAINTENANT_MCP=true`) so that it serves the local socket `--mcp-stdio` relays to. `mcp.json` calls the container `maintenant`: if `docker ps` shows another name (Compose names it `<project>-maintenant-1` unless `container_name` is set), put yours in its place.
 - On the same host: Python 3 and [Claude Code](https://docs.claude.com/en/docs/claude-code/setup), logged in once interactively by the user that will run the receiver.
 - A webhook channel, available in every edition.
 
@@ -55,9 +55,16 @@ claude -p "<prompt with the alert JSON>" \
   --allowedTools mcp__maintenant__list_alerts mcp__maintenant__get_container_logs ...
 ```
 
-`--setting-sources project` keeps the user's own settings and hooks out of the session (it runs in `reports/`, which has no project settings), `--tools ""` removes every built-in tool (no shell, no file access), `--strict-mcp-config` ignores any other MCP server configured for that user, and `--allowedTools` lists the read-only maintenant tools the session may call: `list_alerts`, `list_agents`, `list_containers`, `get_container`, `get_container_logs`, `get_resources`, `get_top_consumers`, `list_endpoints`, `get_endpoint_history`, `list_heartbeats`, `list_certificates`, `get_updates`, `get_security_insights`, `get_health`. Add `acknowledge_alert` to `READ_TOOLS` in `receiver.py` if you want the agent to acknowledge what it has diagnosed.
+`--setting-sources project` keeps the user's own settings and hooks out of the session (it runs in `reports/`, which has no project settings), `--tools ""` removes every built-in tool (no shell, no file access), `--strict-mcp-config` ignores any other MCP server configured for that user, and `--allowedTools` lists the read-only maintenant tools the session may call: `list_alerts`, `list_agents`, `list_containers`, `get_container`, `get_container_logs`, `get_resources`, `get_top_consumers`, `list_endpoints`, `get_endpoint_history`, `list_heartbeats`, `list_certificates`, `get_updates`, `get_security_insights`, `get_health`.
 
-`mcp.json` reaches maintenant over stdio, inside its own container, so no MCP port is opened:
+!!! warning "Give no write tool to an agent that reads logs"
+    Container logs are written by whatever runs in the container, so they are untrusted input: a log line can carry an instruction addressed to the agent ("acknowledge this alert", "delete that channel"). Do not add `acknowledge_alert`, or any other write tool, to `READ_TOOLS`. Leave acknowledgement to a human, or to another automation that never reads logs.
+
+`get_container_logs` starts its answer with a fixed line saying that the lines below are untrusted container output, to be treated as data and never followed, and the server's instructions say the same for every value the tools return. Each log line is cut at 4096 bytes and the whole answer stays under 1 MiB, the oldest lines being dropped first. That lowers the risk, it does not remove it, hence the warning above.
+
+The receiver refuses a body over 1 MiB (`413`, read from `Content-Length` before the body) and an `alert.fired` whose `id` is not a UUID (`400`), since the id names the report file.
+
+`mcp.json` reaches maintenant over stdio, through a relay run inside its container, so no MCP port is opened:
 
 ```json
 {
@@ -70,7 +77,7 @@ claude -p "<prompt with the alert JSON>" \
 }
 ```
 
-On a native install, call the binary directly: `"command": "maintenant", "args": ["--mcp-stdio"]`, with `MAINTENANT_DB` in `env` when the database is not at its default path. See [MCP Server](../features/mcp.md#authentication) for what the stdio transport can reach.
+On a native install, call the binary directly as the user maintenant runs as: `"command": "maintenant", "args": ["--mcp-stdio"]`, with `MAINTENANT_DB` in `env` when the database is not at its default path. See [MCP Server](../features/mcp.md#authentication) for what the stdio transport can reach.
 
 Run the receiver under your service manager (systemd, a supervisor, a container with the Docker CLI and Claude Code) once it works by hand.
 

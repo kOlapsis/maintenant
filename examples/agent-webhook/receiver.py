@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -17,6 +18,8 @@ TOKEN = os.environ.get("RECEIVER_TOKEN", "")
 MCP_CONFIG = os.environ.get("RECEIVER_MCP_CONFIG", str(HERE / "mcp.json"))
 REPORTS = pathlib.Path(os.environ.get("RECEIVER_REPORTS", HERE / "reports"))
 TIMEOUT = int(os.environ.get("RECEIVER_TIMEOUT", "600"))
+MAX_BODY = 1_048_576
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 READ_TOOLS = [
     "list_alerts",
@@ -87,14 +90,23 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         try:
-            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
-        except ValueError:
+            length = int(self.headers.get("Content-Length", 0))
+            if length > MAX_BODY:
+                self.send_response(413)
+                self.end_headers()
+                return
+            if length < 0:
+                raise ValueError("negative Content-Length")
+            body = json.loads(self.rfile.read(length))
+            event, alert = body.get("event"), body.get("alert") or {}
+            if event == "alert.fired" and not UUID_RE.fullmatch(str(alert.get("id", ""))):
+                raise ValueError("alert id is not a UUID")
+        except (ValueError, AttributeError):
             self.send_response(400)
             self.end_headers()
             return
         self.send_response(202)
         self.end_headers()
-        event, alert = body.get("event"), body.get("alert") or {}
         print(f"{event} {alert.get('severity', '')} {alert.get('message', '')}", flush=True)
         if event == "alert.fired":
             jobs.put(alert)

@@ -54,6 +54,7 @@ func serve(a *App, method, target, body string, headers map[string]string) *http
 		r = strings.NewReader(body)
 	}
 	req := httptest.NewRequest(method, target, r)
+	req.Host = "localhost"
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}

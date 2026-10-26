@@ -112,7 +112,7 @@ describe('PublicStatusPage live updates', () => {
       component_id: 'c1',
       name: 'Public API',
       status: 'major_outage',
-      monitors: [{ type: 'endpoint', id: 'e1', name: 'https://api.example.com', status: 'major_outage' }],
+      monitors: [{ type: 'endpoint', status: 'major_outage', label: 'Checkout' }],
     })
     emit('status.global_changed', { status: 'major_outage', message: 'Major Outage' })
     await flushPromises()
@@ -130,7 +130,7 @@ describe('PublicStatusPage live updates', () => {
         ...statusSnapshot(false),
         components: [{
           id: 'c1', name: 'API', status: 'degraded',
-          monitors: [{ type: 'endpoint', id: 'e1', name: 'https://api.example.com', status: 'degraded' }],
+          monitors: [{ type: 'endpoint', status: 'degraded', label: 'Checkout' }],
         }],
       })
     })
@@ -138,7 +138,7 @@ describe('PublicStatusPage live updates', () => {
 
     await wrapper.find('[aria-controls="breakdown-c1"]').trigger('click')
 
-    expect(wrapper.find('#breakdown-c1').text()).toContain('https://api.example.com')
+    expect(wrapper.find('#breakdown-c1').text()).toContain('Checkout')
   })
 
   it('ignores a component the page does not show', async () => {

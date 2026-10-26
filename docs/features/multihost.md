@@ -95,13 +95,15 @@ Both files are required: a certificate without its key (or the reverse) stops th
 
 If the certificate comes from a private CA, list that CA in `MAINTENANT_CA_CERT` on every agent (see [Trusting a private CA](#trusting-a-private-ca)).
 
-**Self-signed (development only)**
+**Self-signed, pinned by fingerprint**
 
-Omit both cert and key. The server generates a self-signed certificate in-memory, logs a warning, and agents must connect with `--grpc-insecure-skip-tls-verify`.
+Omit both cert and key. On first start the server generates a self-signed certificate valid for ten years and keeps it next to the database, in `grpc-server.crt` and `grpc-server.key` (mode `0600`). Every later start reuses it, so its SHA-256 fingerprint stays the same. The fingerprint is logged at startup (`fingerprint_sha256=…`), returned by the token creation endpoint (`grpc_server_fingerprint_sha256`, `grpc_server_self_signed`), and written into every generated install command as `--grpc-server-fingerprint <fingerprint>`. An agent started with it accepts only a server presenting that exact certificate, without a CA or a hostname check. Deleting the two files makes the server generate a new certificate, with a new fingerprint to give to every agent; a damaged or expired pair is replaced the same way, with a warning in the log.
+
+With a provided certificate the fingerprint is still logged and returned, but the install commands do not pin it: the trust chain is verified instead, and a renewed certificate keeps working.
 
 ### Embedded agent
 
-With `--embedded-agent` (`MAINTENANT_EMBEDDED_AGENT`), a server also runs an agent of its own that enrolls itself under the label `embedded`, with its state in an `embedded-agent` directory next to the database. It dials the local listener with the scheme the listener serves: over TLS with verification off by default, and over plaintext h2c when `MAINTENANT_GRPC_TLS_INSECURE=true`. It needs `--mode=server` and a Personal or Pro edition, and is not started in demo mode. Unlike the server's own runtime, this agent is an enrolled host and counts toward the host limit.
+With `--embedded-agent` (`MAINTENANT_EMBEDDED_AGENT`), a server also runs an agent of its own that enrolls itself under the label `embedded`, with its state in an `embedded-agent` directory next to the database. It dials the local listener with the scheme the listener serves: over TLS pinned to the fingerprint of the served certificate, and over plaintext h2c when `MAINTENANT_GRPC_TLS_INSECURE=true`. It needs `--mode=server` and a Personal or Pro edition, and is not started in demo mode. Unlike the server's own runtime, this agent is an enrolled host and counts toward the host limit.
 
 ---
 
@@ -371,9 +373,27 @@ The Agents page shows each agent's runtime (the one the agent detected, reported
 | Key compromise | Revoke the agent from the UI; re-enrolling generates a new keypair |
 | Edition enforcement | All `/api/v1/agents/*` endpoints return `403 EDITION_REQUIRED` below Personal, naming the capability and the edition that grants it |
 
+### gRPC listener limits
+
+These bounds are fixed, not configurable:
+
+| Limit | Value | Beyond it |
+|-------|-------|-----------|
+| Size of a received message | 1 MiB (1,048,576 bytes) | `ResourceExhausted`, the message is not processed |
+| Concurrent streams per connection | 32 | the extra stream is refused |
+| Connection handshake | 30 s | the connection is closed |
+| Connection without any stream | 5 min | closed with `GOAWAY`; the agent reconnects. Server keep-alive pings every 60 s |
+| Authentication of a `Push` stream, from the challenge to a verified answer | 30 s | `DeadlineExceeded` `authentication timed out`, the stream is closed |
+| `RegisterAgent` calls and `Push` openings per source address | 10 per minute, burst of 10 | `ResourceExhausted` `too many connection attempts from this address` |
+| `hostname` / `os_arch` / `agent_version` at enrollment | 253 / 32 / 64 characters | `InvalidArgument` naming the field |
+| Containers in one inventory | 10,000 | the inventory is refused whole (`invalid_argument` stream error), nothing is written |
+| Labels on one container | 256 labels | same as above |
+
+`agent_id` must be a UUID, at enrollment and in the authentication answer; it is stored and matched in lower case. An unknown enrollment token is refused with `NotFound` by a read, before any write transaction. The per-address quota applies only before authentication, and it is keyed on the TCP peer address: agents behind the same NAT, or a gRPC listener behind a TCP proxy, share one quota. Authenticated streams keep their per-agent event limit (`MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND`).
+
 ### `--grpc-insecure-skip-tls-verify`
 
-Available for development and testing against self-signed certificates. A boot-time warning is logged. **Do not use in production.**
+A workaround that disables certificate verification: anyone on the network path could impersonate the server. The agent logs a warning on every connection, reconnections included. Agents enrolled with it keep working; restart them with `--grpc-server-fingerprint` set to the fingerprint the server logs to verify the server again. Given together with a fingerprint, the fingerprint is still checked.
 
 ---
 
@@ -398,7 +418,8 @@ Available for development and testing against self-signed certificates. A boot-t
 | `MAINTENANT_RUNTIME` / `--runtime` | _(auto-detected)_ | Override runtime detection: `docker`, `swarm` (agent only) or `kubernetes` |
 | `MAINTENANT_DATA_DIR` / `--data-dir` | `/var/lib/maintenant` | Directory of the agent's identity, liveness file and spool. The image healthcheck reads the variable, so prefer it over the flag |
 | `MAINTENANT_CA_CERT` / `--ca-cert` | none | PEM bundle of extra root CAs added to the system store for every outbound HTTPS and gRPC connection. An agent uses it for its server, its probes and its scans. A bundle that cannot be read, or holds no valid certificate, stops startup |
-| `MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY` / `--grpc-insecure-skip-tls-verify` | `false` | Skip TLS cert verification (agent, dev only) |
+| `MAINTENANT_GRPC_SERVER_FINGERPRINT` / `--grpc-server-fingerprint` | none | SHA-256 fingerprint of the server certificate to trust (agent). 64 hex digits, colons and upper case accepted. Needs a `grpcs://` server URL |
+| `MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY` / `--grpc-insecure-skip-tls-verify` | `false` | Skip TLS cert verification (agent). A workaround to avoid, warned on every connection |
 | `MAINTENANT_PROXY_LABELS` / `--proxyLabels` | `false` | Create endpoints from Traefik and Caddy labels. Read by each agent from its own environment, see [Reverse proxy labels](../guides/docker-labels.md#reverse-proxy-labels-traefik-caddy) |
 | `MAINTENANT_AGENT_SPOOL_MAX_MEMORY_BYTES` / `--agentSpoolMaxMemoryBytes` | `16777216` (16 MB) | Buffer held in memory before spilling to disk (agent) |
 | `MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES` / `--agentSpoolMaxDiskBytes` | `134217728` (128 MB) | Spool ceiling; past it the oldest events are dropped. `0` on both budgets disables the spool, and `0` alone lifts the ceiling |

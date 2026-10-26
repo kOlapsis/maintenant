@@ -10,7 +10,7 @@ The REST API lives under `/api/v1/`. Requests and responses are JSON unless a ro
 
 maintenant has no built-in authentication for the dashboard or the REST API. Every `/api/` route answers anyone who can reach the listener, so put the instance behind a reverse proxy or an authentication proxy (see [Security](../security.md)). Three surfaces are open on purpose:
 
-- `/ping/{uuid}`: heartbeat pings. The UUID is the only secret.
+- `/ping/{token}`: heartbeat pings. The ping token is the only secret.
 - `/status/`: the public status page, its JSON snapshot, its event stream and its subscription links.
 - `/mcp`: protected by its own OAuth 2.0 flow (see [MCP and OAuth routes](#mcp-and-oauth-routes)).
 
@@ -80,7 +80,7 @@ The local runtime is itself an agent, identified by the sentinel id `00000000-00
 
 ### Limits
 
-- **Rate limits**: per client IP, in token buckets. `/api/` allows 50 requests per second (burst 200). `/ping/`, `/status/`, `/mcp` and `/oauth/` share a tighter bucket of 10 requests per second (burst 20). Status page subscriptions are limited to 5 per hour. Client addresses behind a reverse proxy are only read from forwarded headers for the proxies listed in `MAINTENANT_TRUSTED_PROXIES`.
+- **Rate limits**: per client IP, in token buckets. `/api/` allows 50 requests per second (burst 200). `/status/`, `/mcp` and `/oauth/` share a tighter bucket of 10 requests per second (burst 20). `/ping/` has its own: 60 pings per minute per known token, whatever the address, and 10 per second (burst 20) per address for unknown tokens. Status page subscriptions are limited to 5 per hour. Client addresses behind a reverse proxy are only read from forwarded headers for the proxies listed in `MAINTENANT_TRUSTED_PROXIES`.
 - **Body size**: 1 MiB for `/api/` by default (`MAINTENANT_MAX_BODY_SIZE`), whatever the method. A value that is not a positive whole number of bytes stops the server at startup. Past the limit the JSON decoding fails and the route answers its invalid body error. Public `/status/` routes accept 4 KiB.
 - **Timeout**: 10 seconds for every route except the event streams.
 
@@ -108,7 +108,7 @@ A demo build of maintenant is read-only. Every request other than `GET`, `HEAD` 
 `GET /api/v1/health` always answers `200`:
 
 ```json
-{ "status": "ok", "version": "1.9.0", "runtime": { "name": "docker", "connected": true }, "storage": { "engine": "sqlite", "connected": true, "peers": 0 } }
+{ "status": "ok", "version": "1.11.0", "runtime": { "name": "docker", "connected": true }, "storage": { "engine": "sqlite", "connected": true, "peers": 0 } }
 ```
 
 `version`, `runtime` and `storage` are left out when they are not known. The `storage` object reports the engine backing this instance, whether it answers, and how many other instances beat on the same database. `engine` is `sqlite` or `postgres`. It never carries the connection string, the host or any credential.
@@ -203,7 +203,7 @@ Endpoint monitors are discovered from labels or created through the API (a stand
 | `POST` | `/api/v1/endpoints/{id}/check` | Probe now and return the refreshed endpoint | — |
 | `GET` | `/api/v1/endpoints/{id}/uptime/daily` | Daily uptime percentages | — |
 
-An endpoint has `id`, `endpoint_type` (`http` or `tcp`), `target`, `status` (`up`, `down`, `degraded` or `unknown`), `alert_state` (`normal` or `alerting`), the consecutive counters, the last check fields, `source` (`label` or `standalone`), `name`, `agent_id` and a `config` object (`interval` and `timeout` as duration strings such as `30s`, `failure_threshold`, `recovery_threshold`, `method`, `expected_status`, `tls_verify`, `headers`, `max_redirects`). A new standalone endpoint defaults to a 30-second interval, a 10-second timeout, failure threshold 3, recovery threshold 2, method `GET`, expected status `2xx`, TLS verification on and 5 redirects.
+An endpoint has `id`, `endpoint_type` (`http` or `tcp`), `target`, `status` (`up`, `down`, `degraded` or `unknown`), `alert_state` (`normal` or `alerting`), the consecutive counters, the last check fields, `source` (`label` or `standalone`), `name` (present only when `source` is `standalone`, on the list, the detail and the creation answer), `agent_id` and a `config` object (`interval` and `timeout` as duration strings such as `30s`, `failure_threshold`, `recovery_threshold`, `method`, `expected_status`, `tls_verify`, `headers`, `max_redirects`). A new standalone endpoint defaults to a 30-second interval, a 10-second timeout, failure threshold 3, recovery threshold 2, method `GET`, expected status `2xx`, TLS verification on and 5 redirects.
 
 - `GET /api/v1/endpoints` query parameters: `status`, `container` (container name), `type`, `source`, `include_inactive=true` and `agent_id`. The answer is `{ "endpoints": [...], "total" }`. `stale` and `agent_offline` mark an endpoint probed by an agent with no live stream.
 - `POST /api/v1/endpoints` body: `name` (required), `target` (required; an absolute `http` or `https` URL for `http`, a `host:port` address with a port from 1 to 65535 for `tcp`), `endpoint_type` (required, `http` or `tcp`), `interval` (duration, at least 5s, default 30s; an interval below 5s in a `maintenant.endpoint.*.interval` label is raised to 5s), `timeout` (duration, at least 1s, default 10s, not above the interval), `method` (default `GET`) and `headers` (object). Thresholds, expected status, TLS verification and redirects cannot be set through the API. Answers `201` with `{ "endpoint": {...} }`.
@@ -235,18 +235,20 @@ All routes are open in every edition, except that creating a heartbeat monitor i
 | `DELETE` | `/api/v1/heartbeats/{id}` | Delete a heartbeat monitor | — |
 | `POST` | `/api/v1/heartbeats/{id}/pause` | Pause deadline checking | — |
 | `POST` | `/api/v1/heartbeats/{id}/resume` | Resume deadline checking | — |
+| `POST` | `/api/v1/heartbeats/{id}/rotate-token` | Replace the ping token | — |
 | `GET` | `/api/v1/heartbeats/{id}/executions` | List executions | — |
 | `GET` | `/api/v1/heartbeats/{id}/pings` | List raw pings | — |
 | `GET` | `/api/v1/heartbeats/{id}/uptime/daily` | Daily uptime percentages | — |
 
-A heartbeat has `id` (which is also its ping token), `name`, `status` (`new`, `up`, `down`, `started` or `paused`), `alert_state`, `interval_seconds`, `grace_seconds`, the last ping and deadline fields, the consecutive counters and timestamps. The deadline is the last ping plus the interval plus the grace period.
+A heartbeat has `id`, `ping_token` (the secret of its ping URL, distinct from the id), `name`, `status` (`new`, `up`, `down`, `started` or `paused`), `alert_state`, `interval_seconds`, `grace_seconds`, the last ping and deadline fields, the consecutive counters and timestamps. The deadline is the last ping plus the interval plus the grace period.
 
 - `POST /api/v1/heartbeats` body: `name` (required, 1 to 255 characters), `interval_seconds` (required, 60 to 604800) and `grace_seconds` (0 to the interval, default 0). Answers `201` with the heartbeat object. The cap counts every heartbeat, paused and agent-relayed ones included.
-- `PUT /api/v1/heartbeats/{id}` takes the same fields, all optional.
+- `PUT /api/v1/heartbeats/{id}` takes the same fields, all optional; the grace period must not exceed the resulting interval. When `interval_seconds` or `grace_seconds` is given and the heartbeat is `up` or `started`, `next_deadline_at` moves by the difference between the new and the old interval plus grace; other statuses keep their deadline. The `id` and the `ping_token` never change.
 - `GET /api/v1/heartbeats`: query parameters `status` and `agent_id`; answers `{ "heartbeats", "total" }`.
 - `GET /api/v1/heartbeats/{id}` answers `{ "heartbeat", "snippets" }`; `snippets` holds ready-to-paste `curl`, `wget`, `python`, `go`, `bash` and `docker_healthcheck` snippets once `MAINTENANT_BASE_URL` is set.
 - `executions` (`limit` default 20, at most 500, and `offset`) answers `{ "executions", "total" }`, newest first; each has an `outcome` of `success`, `failure`, `timeout` or `in_progress`. `pings` (`limit` default 50, at most 500, and `offset`) answers `{ "pings", "total" }` with `expected_at` and `grace_deadline` computed for each ping.
-- `pause`, `resume` and `PUT` answer `200` with the heartbeat; `DELETE` answers `204`. Deleting is a hard delete: the monitor, its pings, executions, pauses and daily uptime are removed, and its id answers `404` afterwards, on these routes and on `/ping/`.
+- `rotate-token` answers `200` with the heartbeat and its new `ping_token`; the old token answers `404` on `/ping/` from the next request on, and an unknown id answers `404 HEARTBEAT_NOT_FOUND`.
+- `pause`, `resume` and `PUT` answer `200` with the heartbeat; `DELETE` answers `204`. Deleting is a hard delete: the monitor, its pings, executions, pauses and daily uptime are removed, and its id answers `404` afterwards on these routes, and its token on `/ping/`.
 
 Errors:
 
@@ -256,15 +258,15 @@ Errors:
 
 ### Ping endpoints (public)
 
-These routes need no credentials: the UUID of the heartbeat is the secret. They share the tight rate limit of `/ping/` and answer `403 DEMO_MODE` in demo mode.
+These routes need no credentials: the ping token of the heartbeat is the secret. A known token is limited to 60 pings per minute, an unknown one counts against the caller's address (10 per second, burst 20). They answer `403 DEMO_MODE` in demo mode.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET/POST` | `/ping/{uuid}` | Simple ping (success) |
-| `GET/POST` | `/ping/{uuid}/start` | Signal job start |
-| `GET/POST` | `/ping/{uuid}/{exit_code}` | Ping with exit code (0 = success) |
+| `GET/POST` | `/ping/{token}` | Simple ping (success) |
+| `GET/POST` | `/ping/{token}/start` | Signal job start |
+| `GET/POST` | `/ping/{token}/{exit_code}` | Ping with exit code (0 = success) |
 
-- `/ping/{uuid}` answers `200 {"ok": true, "id": "<ping id>"}`, where `id` is the ping as listed by `GET /api/v1/heartbeats/{id}/pings`; `id` is absent when the ping could not be stored. `/ping/{uuid}/start` answers `200 {"ok": true}`. `/ping/{uuid}/{exit_code}` answers `200 {"ok": true, "exit_code": n}`. A non-zero exit code raises an alert.
+- `/ping/{token}` answers `200 {"ok": true, "id": "<ping id>"}`, where `id` is the ping as listed by `GET /api/v1/heartbeats/{id}/pings`; `id` is absent when the ping could not be stored. `/ping/{token}/start` answers `200 {"ok": true}`. `/ping/{token}/{exit_code}` answers `200 {"ok": true, "exit_code": n}`. A non-zero exit code raises an alert.
 - Errors: `404 HEARTBEAT_NOT_FOUND` (unknown or deleted heartbeat), `400 INVALID_EXIT_CODE` (not an integer between 0 and 255, checked before the lookup) and `500 INTERNAL_ERROR`.
 - A `POST` body of up to 10 KiB is read but never stored.
 - The `source_ip` of a ping is the client address resolved like the rate limit does: forwarded headers are believed only when the connection comes from a proxy listed in `MAINTENANT_TRUSTED_PROXIES`.
@@ -460,14 +462,20 @@ Channels are silent by default. They only fire when referenced by an [Alert Trig
 | `slack` | Slack webhook URL | Pro |
 | `teams` | Teams webhook URL | Pro |
 
-A channel has `id`, `name`, `type`, `url`, `headers` (a string holding a JSON object), `config` (a string holding JSON, for example `{"thread_id": "42"}` on Telegram), `has_secret`, `enabled`, `health` (`healthy` or `failing`, on the list only), `suspended`, `required_edition` and timestamps. The secret (a Telegram bot token) is never returned, only `has_secret`; the URL and headers are returned as stored.
+A channel has `id`, `name`, `type`, `url`, `headers` (a string holding a JSON object), `config` (a string holding JSON, for example `{"thread_id": "42"}` on Telegram or `{"subject_label": "prod-paris"}` on email), `has_secret`, `has_headers`, `has_url_secret`, `enabled`, `health` (`healthy` or `failing`, on the list only), `suspended`, `required_edition` and timestamps. Secrets never come back, on the list, in the `POST` and `PUT` answers or in the `channel.created` and `channel.updated` SSE events:
 
-- `POST` body: `name` (required), `url` (required), `type`, `headers`, `secret` (required for Telegram), `config` and `enabled` (default `true`). A URL must be HTTPS and must not resolve to a private or internal address, unless `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS` is set. Answers `201` with the channel.
-- `PUT` takes the same fields, all optional. A secret cannot be cleared. A request that only sets `enabled` to `false` is always accepted, even after the edition dropped.
+- The secret (a Telegram bot token) is never returned, only `has_secret`.
+- Header values are replaced by `***`: `headers` comes back as the same names, sorted, for example `{"Authorization":"***","X-Trace":"***"}`, with `has_headers: true`. Without any header, `headers` is absent and `has_headers` is `false`.
+- The `url` of a `slack`, `discord` or `teams` channel is cut after the host (`https://hooks.slack.com`), with `has_url_secret: true`. Other types return their `url` whole, with `has_url_secret: false`.
+
+Deliveries always use the stored values.
+
+- `POST` body: `name` (required), `url` (required), `type`, `headers`, `secret` (required for Telegram), `config` and `enabled` (default `true`). A URL must be HTTPS and must not resolve to a private or internal address, unless `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS` is set. `headers` is empty or a string holding a JSON object whose names are not empty and whose values are all strings, such as `"{\"Authorization\":\"Bearer x\"}"`; anything else answers `400 INVALID_INPUT` and nothing is written. Answers `201` with the stored channel, masked, with its timestamps.
+- `PUT` takes the same fields, all optional, and answers `200` with the stored channel, masked, with its timestamps. An absent `headers` or `url` keeps the stored value, so the masked values never need to be sent back; `headers: "{}"` or `""` clears the headers. A secret cannot be cleared. A request that only sets `enabled` to `false` is always accepted, even after the edition dropped.
 - A `webhook` channel receives `{ "event": "alert.fired" | "alert.resolved", "alert": {...}, "timestamp": "..." }`. `alert` holds the fields of the [`alert.fired` SSE event](#sse-event-stream), plus `url`, the link to the alert in the UI (`<MAINTENANT_BASE_URL>/alerts/history?alert=<id>`). `url` is absent when the base URL has no host a recipient could open, as with the default built from a listen address such as `:8080` or `0.0.0.0:8080`.
-- `test` answers `404 NOT_FOUND` for an unknown channel. Otherwise it answers `200`: `{ "status": "delivered", "response_code": n }` or `{ "status": "failed", "error": "..." }`.
+- `test` sends a fake alert through the channel. A `webhook` channel receives `{"event":"test","alert":{"id":"","source":"test","alert_type":"test","severity":"info","status":"active","message":"maintenant test notification","entity_type":"test","entity_id":"","entity_name":"test","agent_id":"00000000-0000-0000-0000-000000000000","fired_at":"...","created_at":"..."},"timestamp":"..."}`, without `url` since the alert has no id; the other types receive their usual message built from the same alert, except `email`, whose subject is always `[<subject_label or maintenant>] TEST: Test notification`. An `email` channel puts `config.subject_label` (at most 64 characters, no control character, otherwise `400 VALIDATION_ERROR`) between the brackets of every subject. `test` answers `404 NOT_FOUND` for an unknown channel. Otherwise it answers `200`: `{ "status": "delivered", "response_code": n }` or `{ "status": "failed", "error": "..." }`.
 - Creating, updating or testing a channel of a type the edition does not open answers `403 EDITION_REQUIRED` (`feature` is the capability: `slack`, `teams`, `smtp` or `telegram`). After a downgrade such a channel is `suspended`: it stops delivering and `GET /api/v1/edition` lists it under `suspended_channels`.
-- Errors: `400 INVALID_BODY`, `400 VALIDATION_ERROR`, `404 NOT_FOUND` and `409 DUPLICATE_NAME` on create.
+- Errors: `400 INVALID_BODY`, `400 INVALID_INPUT` (malformed `headers`), `400 VALIDATION_ERROR`, `404 NOT_FOUND` and `409 DUPLICATE_NAME` on create.
 
 ---
 
@@ -870,6 +878,7 @@ The SSE `event:` field is the event type, and `data:` holds the JSON payload onl
 | `endpoint.recovery` | An alerting endpoint reaches its recovery threshold | `endpoint_id`, `container_name`, `target`, `consecutive_successes`, `threshold`, `timestamp` |
 | `endpoint.config_error` | An endpoint label cannot be parsed | `endpoint_id` (`null`), `container_name`, `label_key`, `error`, `timestamp`, plus `agent_id` for an agent's container |
 | `heartbeat.created` | A heartbeat monitor is created | `heartbeat_id`, `name`, `status` |
+| `heartbeat.updated` | A heartbeat monitor is edited | `heartbeat_id`, `name`, `interval_seconds`, `grace_seconds`, plus `next_deadline_at` when the heartbeat has a deadline |
 | `heartbeat.ping_received` | A ping arrives (`ping_type`: `success`, `start` or `exit_code`) | `heartbeat_id`, `ping_type`, `status`, plus `exit_code` or `agent_id` |
 | `heartbeat.status_changed` | A heartbeat changes status (ping, missed deadline, pause, resume) | `heartbeat_id`, `old_status`, `new_status`, `agent_id` on a ping |
 | `heartbeat.alert` | A deadline is missed or a ping carries a non-zero exit code | `heartbeat_id`, `name`, `alert_type`, `details` |

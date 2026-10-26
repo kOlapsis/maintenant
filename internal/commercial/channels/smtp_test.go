@@ -108,7 +108,7 @@ func TestBuildMIMEKeepsHeaderInjectionOut(t *testing.T) {
 
 func TestSMTPSenderDeliversAnAccentedSubject(t *testing.T) {
 	host, port, data, _ := smtpStub(t)
-	s := NewSMTPSender(SMTPConfig{Host: host, Port: port, From: "maintenant@example.com"})
+	s := NewSMTPSender(SMTPConfig{Host: host, Port: port, From: "maintenant@example.com", AllowPlaintext: true})
 
 	require.NoError(t, s.Send(context.Background(), "visitor@example.com", "Mise à jour : réseau dégradé", "body"))
 
@@ -119,7 +119,7 @@ func TestSMTPSenderDeliversAnAccentedSubject(t *testing.T) {
 
 func TestSMTPSenderDeliversPlainText(t *testing.T) {
 	host, port, data, rcpt := smtpStub(t)
-	s := NewSMTPSender(SMTPConfig{Host: host, Port: port, From: "maintenant@example.com"})
+	s := NewSMTPSender(SMTPConfig{Host: host, Port: port, From: "maintenant@example.com", AllowPlaintext: true})
 
 	require.NoError(t, s.Send(context.Background(), "visitor@example.com", "Confirm", "Open https://status.example.com/status/confirm?token=abc"))
 

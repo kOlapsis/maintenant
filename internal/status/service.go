@@ -383,18 +383,23 @@ func (s *Service) HandleAlertEvent(ctx context.Context, evt alert.Event) {
 
 // BroadcastComponentChange sends a component's status and monitors to the dashboard, and to the public page only when the component is visible there.
 func (s *Service) BroadcastComponentChange(ctx context.Context, comp *Component) {
-	payload := map[string]any{
-		"component_id": comp.ID,
-		"name":         comp.DisplayName,
-		"status":       s.DeriveComponentStatus(ctx, comp),
-		"monitors":     s.componentMonitors(ctx, comp),
+	refs := s.componentMonitors(ctx, comp)
+	status := s.DeriveComponentStatus(ctx, comp)
+	payload := func(monitors any) map[string]any {
+		return map[string]any{
+			"component_id": comp.ID,
+			"name":         comp.DisplayName,
+			"status":       status,
+			"monitors":     monitors,
+		}
 	}
-	if !comp.Visible {
-		s.broadcastAdmin(event.StatusComponentChanged, payload)
-		return
+	if comp.Visible && s.publicBroadcaster != nil {
+		s.publicBroadcaster(event.StatusComponentChanged, payload(PublicMonitors(refs)))
 	}
-	s.Broadcast(event.StatusComponentChanged, payload)
-	s.broadcastGlobalStatus(ctx)
+	s.broadcastAdmin(event.StatusComponentChanged, payload(refs))
+	if comp.Visible {
+		s.broadcastGlobalStatus(ctx)
+	}
 }
 
 // componentMonitors lists the monitors a component aggregates, each with its current status.
@@ -408,7 +413,7 @@ func (s *Service) componentMonitors(ctx context.Context, c *Component) []Monitor
 	}
 	var out []MonitorRef
 	for _, ref := range refs {
-		mr := MonitorRef{Type: ref.Type, ID: ref.ID, Name: ref.Name}
+		mr := MonitorRef{Type: ref.Type, ID: ref.ID, Name: ref.Name, Label: ref.Label}
 		if s.monitorStatus != nil {
 			mr.Status = s.monitorStatus(ctx, ref.Type, ref.ID)
 		}

@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/mattn/go-sqlite3"
@@ -110,6 +111,14 @@ func OpenWithOptions(dbPath string, opts Options, logger *slog.Logger) (*DB, err
 		return nil, err
 	}
 	dsn := sqliteDSN(dbPath, synchronous)
+
+	f, err := os.OpenFile(dbPath, os.O_RDWR|os.O_CREATE, 0o600) // #nosec G304 -- operator-configured database path
+	if err != nil {
+		return nil, fmt.Errorf("create sqlite file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return nil, fmt.Errorf("create sqlite file: %w", err)
+	}
 
 	db, err := sql.Open(driverName, dsn)
 	if err != nil {

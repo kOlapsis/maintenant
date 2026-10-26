@@ -285,6 +285,19 @@ func (s *AgentStore) InsertToken(ctx context.Context, t *agent.EnrollmentToken) 
 	return nil
 }
 
+// TokenExists reports whether an enrollment token with this hash is stored, whatever its state.
+func (s *AgentStore) TokenExists(ctx context.Context, tokenHash string) (bool, error) {
+	var one int
+	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM enrollment_tokens WHERE token_hash = ?`, tokenHash).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check token exists: %w", err)
+	}
+	return true, nil
+}
+
 // EnrollAtomic enforces the per-edition host cap, consumes the one-time token,
 // and inserts the agent as a single serialized transaction. Because the count,
 // the token consume, and the insert run in one writer-goroutine transaction, no
@@ -293,6 +306,17 @@ func (s *AgentStore) InsertToken(ctx context.Context, t *agent.EnrollmentToken) 
 // ErrHostLimitReached, ErrTokenNotFound, ErrTokenAlreadyConsumed, or
 // ErrTokenExpired.
 func (s *AgentStore) EnrollAtomic(ctx context.Context, limit int, tokenCleartext string, a *agent.Agent) error {
+	var err error
+	// A concurrent read can make SQLite refuse the write upgrade once (BUSY_SNAPSHOT); retrying the whole transaction is its documented remedy.
+	for attempt := 0; attempt < 3; attempt++ {
+		if err = s.enrollTx(ctx, limit, tokenCleartext, a); !IsBusy(err) {
+			return err
+		}
+	}
+	return err
+}
+
+func (s *AgentStore) enrollTx(ctx context.Context, limit int, tokenCleartext string, a *agent.Agent) error {
 	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
 		if err := tx.Serialize(ctx, "agents"); err != nil {
 			return err

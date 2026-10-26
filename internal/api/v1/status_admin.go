@@ -108,11 +108,17 @@ func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *htt
 			WriteError(w, http.StatusBadRequest, "validation", "explicit-mode components require at least one monitor")
 			return
 		}
-		for _, m := range req.Monitors {
+		for i, m := range req.Monitors {
 			if !validTypes[m.Type] {
 				WriteError(w, http.StatusBadRequest, "validation", "invalid monitor type: "+m.Type)
 				return
 			}
+			label, err := status.ValidateMonitorLabel(m.Label)
+			if err != nil {
+				WriteError(w, http.StatusBadRequest, "validation", err.Error())
+				return
+			}
+			req.Monitors[i].Label = label
 		}
 	} else { // match-all
 		if !validTypes[req.MatchAllType] {
@@ -212,11 +218,17 @@ func (h *StatusAdminHandler) HandleUpdateComponent(w http.ResponseWriter, r *htt
 			return
 		}
 		validTypes := map[string]bool{"container": true, "endpoint": true, "heartbeat": true, "certificate": true}
-		for _, m := range req.Monitors {
+		for i, m := range req.Monitors {
 			if !validTypes[m.Type] {
 				WriteError(w, http.StatusBadRequest, "validation", "invalid monitor type: "+m.Type)
 				return
 			}
+			label, err := status.ValidateMonitorLabel(m.Label)
+			if err != nil {
+				WriteError(w, http.StatusBadRequest, "validation", err.Error())
+				return
+			}
+			req.Monitors[i].Label = label
 		}
 		existing.Monitors = req.Monitors
 	}

@@ -132,7 +132,7 @@ function toggleMonitor(m: MonitorRef) {
   if (idx >= 0) {
     selectedMonitors.value.splice(idx, 1)
   } else {
-    selectedMonitors.value.push({ type: m.type, id: m.id, name: m.name })
+    selectedMonitors.value.push({ type: m.type, id: m.id, name: m.name, label: '' })
   }
 }
 
@@ -168,7 +168,7 @@ function startEditComp(c: StatusComponent) {
   editingCompId.value = c.id
   compositionMode.value = c.composition_mode
   matchAllType.value = c.match_all_type ?? 'container'
-  selectedMonitors.value = (c.monitors ?? []).map(m => ({ type: m.type, id: m.id, name: m.name }))
+  selectedMonitors.value = (c.monitors ?? []).map(m => ({ type: m.type, id: m.id, name: m.name, label: m.label ?? '' }))
   activeTypeTab.value = 'container'
   searchQuery.value = ''
   matchAllCount.value = null
@@ -197,14 +197,14 @@ async function submitCompForm() {
         auto_incident: compForm.value.auto_incident,
       }
       if (compositionMode.value === 'explicit') {
-        updates.monitors = selectedMonitors.value.map(m => ({ type: m.type, id: m.id }))
+        updates.monitors = selectedMonitors.value.map(m => ({ type: m.type, id: m.id, label: m.label ?? '' }))
       }
       await updateComponent(editingCompId.value, updates)
     } else {
       if (compositionMode.value === 'explicit') {
         await createComponent({
           composition_mode: 'explicit',
-          monitors: selectedMonitors.value.map(m => ({ type: m.type, id: m.id })),
+          monitors: selectedMonitors.value.map(m => ({ type: m.type, id: m.id, label: m.label ?? '' })),
           display_name: compForm.value.display_name,
           visible: compForm.value.visible,
           auto_incident: compForm.value.auto_incident,
@@ -373,17 +373,29 @@ function componentSummary(c: StatusComponent): string {
           <!-- Explicit mode: per-type tabbed multi-select -->
           <div v-if="compositionMode === 'explicit'" class="space-y-3">
             <!-- Selected monitors chips -->
-            <div v-if="selectedMonitors.length > 0" class="flex flex-wrap gap-1.5">
-              <ChipToggle
+            <div v-if="selectedMonitors.length > 0" class="space-y-1.5">
+              <div
                 v-for="m in selectedMonitors"
                 :key="`${m.type}-${m.id}`"
-                removable
-                :remove-label="`Remove ${m.name}`"
-                @remove="removeSelectedMonitor(m)"
+                class="flex flex-wrap items-center gap-2"
               >
-                <span class="text-[10px] uppercase tracking-wider text-mnt-muted">{{ m.type[0] }}</span>
-                {{ m.name }}
-              </ChipToggle>
+                <ChipToggle
+                  removable
+                  :remove-label="`Remove ${m.name}`"
+                  @remove="removeSelectedMonitor(m)"
+                >
+                  <span class="text-[10px] uppercase tracking-wider text-mnt-muted">{{ m.type[0] }}</span>
+                  {{ m.name }}
+                </ChipToggle>
+                <TextInput
+                  v-model="m.label"
+                  size="sm"
+                  maxlength="80"
+                  placeholder="Public label"
+                  :aria-label="`Public label for ${m.name}`"
+                  class="min-w-0 flex-1"
+                />
+              </div>
             </div>
             <p v-else class="text-xs text-mnt-muted">No monitors selected. Pick at least one below.</p>
 

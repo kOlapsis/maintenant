@@ -17,6 +17,8 @@ import (
 type PingHandler struct {
 	svc      *heartbeat.Service
 	clientIP *ratelimit.ClientIPResolver
+	ipRL     *ratelimit.Limiter
+	tokenRL  *ratelimit.Limiter
 }
 
 // NewPingHandler creates a ping handler that records the source address the way the rate limit resolves it.
@@ -28,7 +30,10 @@ func NewPingHandler(svc *heartbeat.Service, clientIP *ratelimit.ClientIPResolver
 func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
 	uuid := r.PathValue("uuid")
 	if uuid == "" {
-		WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this UUID")
+		WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this token")
+		return
+	}
+	if !h.allow(w, r, uuid) {
 		return
 	}
 
@@ -49,7 +54,7 @@ func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
 	_, pingID, err := h.svc.RecordPing(r.Context(), uuid, sourceIP, r.Method, payload, nil)
 	if err != nil {
 		if errors.Is(err, heartbeat.ErrHeartbeatNotFound) {
-			WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this UUID")
+			WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this token")
 			return
 		}
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to process ping")
@@ -67,7 +72,10 @@ func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
 func (h *PingHandler) HandleStartPing(w http.ResponseWriter, r *http.Request) {
 	uuid := r.PathValue("uuid")
 	if uuid == "" {
-		WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this UUID")
+		WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this token")
+		return
+	}
+	if !h.allow(w, r, uuid) {
 		return
 	}
 
@@ -76,7 +84,7 @@ func (h *PingHandler) HandleStartPing(w http.ResponseWriter, r *http.Request) {
 	_, err := h.svc.ProcessStartPing(r.Context(), uuid, sourceIP, r.Method)
 	if err != nil {
 		if errors.Is(err, heartbeat.ErrHeartbeatNotFound) {
-			WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this UUID")
+			WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this token")
 			return
 		}
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to process start ping")
@@ -90,7 +98,10 @@ func (h *PingHandler) HandleStartPing(w http.ResponseWriter, r *http.Request) {
 func (h *PingHandler) HandleExitCodePing(w http.ResponseWriter, r *http.Request) {
 	uuid := r.PathValue("uuid")
 	if uuid == "" {
-		WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this UUID")
+		WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this token")
+		return
+	}
+	if !h.allow(w, r, uuid) {
 		return
 	}
 
@@ -118,7 +129,7 @@ func (h *PingHandler) HandleExitCodePing(w http.ResponseWriter, r *http.Request)
 	_, err = h.svc.ProcessExitCodePing(r.Context(), uuid, exitCode, sourceIP, r.Method, payload)
 	if err != nil {
 		if errors.Is(err, heartbeat.ErrHeartbeatNotFound) {
-			WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this UUID")
+			WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this token")
 			return
 		}
 		if errors.Is(err, heartbeat.ErrInvalidExitCode) {
@@ -130,4 +141,25 @@ func (h *PingHandler) HandleExitCodePing(w http.ResponseWriter, r *http.Request)
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "exit_code": exitCode})
+}
+
+// SetLimiters sets the per-address bucket for unknown tokens and the per-token bucket for known ones.
+func (h *PingHandler) SetLimiters(ipRL, tokenRL *ratelimit.Limiter) {
+	h.ipRL, h.tokenRL = ipRL, tokenRL
+}
+
+// allow counts a known token against its own bucket and an unknown one against the caller's address, answering 429 when refused.
+func (h *PingHandler) allow(w http.ResponseWriter, r *http.Request, token string) bool {
+	if hb, _ := h.svc.GetHeartbeatByPingToken(r.Context(), token); hb != nil {
+		if h.tokenRL != nil && !h.tokenRL.Allow(token) {
+			h.tokenRL.Reject(w)
+			return false
+		}
+		return true
+	}
+	if h.ipRL != nil && !h.ipRL.AllowRequest(r) {
+		h.ipRL.Reject(w)
+		return false
+	}
+	return true
 }

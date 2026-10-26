@@ -48,8 +48,7 @@ func (m *mockStore) nextStrID() string {
 	return fmt.Sprintf("id-%d", m.nextID)
 }
 
-// seed inserts a heartbeat directly, bypassing service logic. h.ID (the token)
-// is the key.
+// seed inserts a heartbeat directly, bypassing service logic.
 func (m *mockStore) seed(h *Heartbeat) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -79,6 +78,30 @@ func (m *mockStore) GetHeartbeatByID(_ context.Context, id string) (*Heartbeat, 
 	}
 	cp := *h
 	return &cp, nil
+}
+
+func (m *mockStore) GetHeartbeatByPingToken(_ context.Context, token string) (*Heartbeat, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, h := range m.heartbeats {
+		if h.PingToken == token {
+			cp := *h
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *mockStore) RotatePingToken(_ context.Context, id, token string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	h, ok := m.heartbeats[id]
+	if !ok {
+		return ErrHeartbeatNotFound
+	}
+	h.PingToken = token
+	h.UpdatedAt = time.Now()
+	return nil
 }
 
 func (m *mockStore) ListHeartbeats(_ context.Context, _ ListHeartbeatsOpts) ([]*Heartbeat, error) {
@@ -343,11 +366,11 @@ func newService(store *mockStore, lc LicenseChecker) *Service {
 	})
 }
 
-// seedHeartbeat creates a heartbeat in the mock store ready for ping tests. The
-// token is the heartbeat's id.
+// seedHeartbeat creates a heartbeat in the mock store ready for ping tests, its id equal to its token as after the upgrade.
 func seedHeartbeat(store *mockStore, token string, status HeartbeatStatus, alertState AlertState) *Heartbeat {
 	h := &Heartbeat{
 		ID:              token,
+		PingToken:       token,
 		Name:            "test-heartbeat",
 		Status:          status,
 		AlertState:      alertState,
@@ -375,7 +398,8 @@ func TestService_CreateHeartbeat_ValidInput(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, h)
 
-	assert.Equal(t, "uuid-001", h.ID)
+	assert.Equal(t, "uuid-001", h.PingToken)
+	assert.NotEqual(t, h.PingToken, h.ID)
 	assert.Equal(t, "my-job", h.Name)
 	assert.Equal(t, StatusNew, h.Status)
 	assert.Equal(t, AlertNormal, h.AlertState)
@@ -557,6 +581,7 @@ func TestService_ProcessPing_StartedToUpCompletionCalculatesDuration(t *testing.
 	startedAt := time.Now().Add(-5 * time.Second)
 	h := &Heartbeat{
 		ID:                  "uuid-ping-5",
+		PingToken:           "uuid-ping-5",
 		Name:                "job",
 		Status:              StatusStarted,
 		AlertState:          AlertNormal,
@@ -849,6 +874,7 @@ func TestService_ProcessExitCodePing_StartedToUpCalculatesDuration(t *testing.T)
 	startedAt := time.Now().Add(-10 * time.Second)
 	h := &Heartbeat{
 		ID:                  "uuid-exit-6",
+		PingToken:           "uuid-exit-6",
 		Name:                "job",
 		Status:              StatusStarted,
 		AlertState:          AlertNormal,

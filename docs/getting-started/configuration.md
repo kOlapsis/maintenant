@@ -21,6 +21,7 @@ Conventions used below:
 | `MAINTENANT_ADDR` | `127.0.0.1:8080` | HTTP listen address (`host:port`). The container image keeps this default, so set `0.0.0.0:8080` when running in a container. See [Choosing a Bind Address](#choosing-a-bind-address). An agent opens no HTTP port. |
 | `MAINTENANT_BASE_URL` | `http://<MAINTENANT_ADDR>` | Public URL at which this instance is reached. It builds the heartbeat ping URLs, the links in status page emails and the issuer and resource URLs of the [MCP](../features/mcp.md) OAuth server. Set it to your real public URL (for example `https://maintenant.example.com`) as soon as a proxy sits in front. |
 | `MAINTENANT_STATUS_URL` | — | Canonical public URL of the status page (for example `https://status.example.com`). `GET /api/v1/edition` reports it as `status_url`, and the admin UI's *View public status page* link opens it, falling back to the relative `/status` when it is not set. |
+| `MAINTENANT_ALLOWED_HOSTS` | derived from `MAINTENANT_BASE_URL`, `MAINTENANT_STATUS_URL`, `localhost` and the listen address | Comma-separated host names (`now.example.com,monitor.lan`) the API and the dashboard answer to; any other `Host` header gets `421 misdirected_request`. IP addresses are always accepted, so only names need to be listed. A port in an entry is ignored. When set, the list replaces the hosts derived from the two URLs; `localhost` and the host of `MAINTENANT_ADDR` are always accepted. The pings, the status page, its files, `/mcp` and `/oauth/` answer any host. See [Security](../security.md#host-header). |
 | `MAINTENANT_ORGANISATION_NAME` | `Maintenant` | Organisation name shown on the public status page. |
 | `MAINTENANT_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. Any other value means `info`. Logs are JSON lines on stdout. |
 | `MAINTENANT_MAX_BODY_SIZE` | `1048576` | Maximum request body size in bytes, for every HTTP method, on the API and ping routes. It must be a positive whole number: any other value stops the startup with an error that names the variable. |
@@ -55,6 +56,7 @@ Conventions used below:
 | `MAINTENANT_TRUSTED_PROXIES` | unset (none) | Comma-separated IPs or CIDRs (`10.0.0.0/8,192.168.1.4`) of the reverse proxies whose `X-Forwarded-For`, `X-Real-IP` and `X-Forwarded-Host` headers are believed. Without it no forwarded header is read: every rate limit and quota counts against the address that opened the connection, which is the proxy. An invalid list stops the startup. See [Security](../security.md). |
 | `MAINTENANT_CA_CERT` | — | Path to a PEM bundle of extra root CAs, added to the system roots and never replacing them, for hosts signed by a private PKI. It applies to every HTTPS connection maintenant opens itself: HTTP probes and certificate checks, webhooks and notification channels, outbound heartbeats, SMTP STARTTLS and implicit TLS, the license server, OSV, GitHub, endoflife.date, image registries and an agent's gRPC connection to its server. It does not apply to the Docker and Kubernetes APIs or to the PostgreSQL connection (use `sslrootcert` in the connection string). The file must be readable by the runtime user (uid 65534 in the image). An unreadable or invalid bundle stops the startup. |
 | `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS` | `false` | **Development only.** Allow `http://` and private, loopback or link-local targets for notification channels and webhook subscriptions (API and MCP). They are otherwise HTTPS-only and checked against private addresses when saved and again when connecting. Outbound heartbeats keep that protection. Never set it in production. |
+| `MAINTENANT_LABEL_ENDPOINTS_ALLOW_LINK_LOCAL` | `false` | **Tests only.** `true` lets endpoint, TCP and certificate checks declared by a label connect to link-local (including `169.254.169.254`), multicast and unspecified addresses, which they otherwise refuse. API-created monitors are never restricted. Never set it in production. |
 
 ### MCP
 
@@ -64,11 +66,13 @@ Conventions used below:
 | `MAINTENANT_MCP_CLIENT_ID` | — | OAuth 2 client ID for `/mcp`. |
 | `MAINTENANT_MCP_CLIENT_SECRET` | — | OAuth 2 client secret for `/mcp`. Use at least 32 characters (`openssl rand -hex 32`): a shorter secret logs a warning at startup. |
 | `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` | — | Comma-separated redirect URIs accepted by `/oauth/authorize`, matched exactly. Loopback addresses (`localhost`, `127.0.0.1`, `::1`) are always accepted, so the list is only needed for hosted clients such as `https://claude.ai/api/mcp/auth_callback`. |
+| `MAINTENANT_MCP_SOCKET` | `false` | Serve the local `mcp.sock` socket (mode `0600`, next to the database) that `--mcp-stdio` relays to, without opening `/mcp`. `MAINTENANT_MCP=true` serves it too; with neither, `--mcp-stdio` cannot reach the instance. Never served in agent mode. |
+| `MAINTENANT_MCP_READ_ONLY` | `false` | Register only the 34 read-only MCP tools, on `/mcp` and on the local socket: the 17 write tools do not exist. See [MCP Server](../features/mcp.md#read-only-mode). |
 | `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED` | `false` | Serve `/mcp` with no authentication. Without it, `MAINTENANT_MCP=true` without both credentials stops the startup. Trusted networks only. |
 
 ### Notifications (SMTP)
 
-One SMTP configuration serves the email alert channel (Personal) and the status page subscriber emails (Pro, see [Public Status Page](../features/status-page.md)). Mails are plain text. On port 465 maintenant uses implicit TLS. On any other port it connects in plain text and upgrades with STARTTLS when the server announces it: if the upgrade then fails, the send fails instead of falling back to plain text, and a server that does not announce STARTTLS receives the mail unencrypted. Each send gives up after 30 seconds.
+One SMTP configuration serves the email alert channel (Personal) and the status page subscriber emails (Pro, see [Public Status Page](../features/status-page.md)). Mails are plain text. On port 465 maintenant uses implicit TLS. On any other port it connects in plain text and requires STARTTLS: if the upgrade fails, the send fails instead of falling back to plain text, and a server that does not announce STARTTLS receives nothing unless `MAINTENANT_SMTP_ALLOW_PLAINTEXT` is true. Each send gives up after 30 seconds.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -77,6 +81,7 @@ One SMTP configuration serves the email alert channel (Personal) and the status 
 | `MAINTENANT_SMTP_USERNAME` | — | Username for `AUTH PLAIN`. Authentication is attempted only when it is set. |
 | `MAINTENANT_SMTP_PASSWORD` | — | Password for `AUTH PLAIN`. |
 | `MAINTENANT_SMTP_FROM` | `maintenant@localhost` | Sender address. |
+| `MAINTENANT_SMTP_ALLOW_PLAINTEXT` | `false` | Sends mail in clear to a server that does not announce STARTTLS (port 465 ignores it). Credentials are still refused in clear unless the server is `localhost`. A warning is logged at startup when it is true. |
 
 ### License
 
@@ -108,10 +113,11 @@ These variables drive [Multi-Host Monitoring](../features/multihost.md). The [Ag
 | `MAINTENANT_DATA_DIR` | `/var/lib/maintenant` | Agent: directory holding `identity.json`, the spool database `spool.db` and the liveness file. The container entrypoint and healthcheck read it too. |
 | `MAINTENANT_GRPC_LISTEN` | `127.0.0.1:8443` | Server: address of the agent gRPC listener. It starts in `server` and `embedded` modes when the edition allows agents (Personal or Pro). The default is loopback, so remote agents cannot connect until you change it; in a container use `0.0.0.0:8443` and publish the port. |
 | `MAINTENANT_GRPC_URL` | — | Server: gRPC URL shown to agents in the enrollment commands. When empty it is derived from the `Host` of the web request (`X-Forwarded-Host` only from a trusted proxy), with the `grpcs://` scheme. |
-| `MAINTENANT_GRPC_TLS_CERT` | — | Server: PEM certificate for the gRPC listener. It must be set together with the key: one without the other stops the startup. With neither, a self-signed certificate is generated in memory at every start and a warning is logged. Not for production. |
+| `MAINTENANT_GRPC_TLS_CERT` | — | Server: PEM certificate for the gRPC listener. It must be set together with the key: one without the other stops the startup. With neither, a self-signed certificate is generated once and kept next to the database (`grpc-server.crt`, `grpc-server.key`); agents pin it with `MAINTENANT_GRPC_SERVER_FINGERPRINT`. |
 | `MAINTENANT_GRPC_TLS_KEY` | — | Server: PEM private key matching the certificate above. |
 | `MAINTENANT_GRPC_TLS_INSECURE` | `false` | Server: serve gRPC as plain h2c, without TLS. Only behind a reverse proxy that terminates TLS and forwards gRPC. The embedded agent then connects with `grpc://`. |
-| `MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY` | `false` | Agent: skip the verification of the server's certificate. Debug only: a private PKI is handled by `MAINTENANT_CA_CERT`. |
+| `MAINTENANT_GRPC_SERVER_FINGERPRINT` | — | Agent: SHA-256 fingerprint of the server certificate to trust, logged by the server at startup and set by the generated install commands for a self-signed certificate. Needs a `grpcs://` server URL. |
+| `MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY` | `false` | Agent: skip the verification of the server's certificate, with a warning on every connection. A workaround: pin the certificate with `MAINTENANT_GRPC_SERVER_FINGERPRINT`, or trust a private PKI with `MAINTENANT_CA_CERT`. |
 | `MAINTENANT_EMBEDDED_AGENT` | `false` | Server mode: also run an agent for the machine that hosts the server. Personal edition or above. |
 | `MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND` | `1000` | Server: gRPC calls per second allowed for each agent. |
 | `MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS` | `60` | Server: seconds without a heartbeat before an agent is reported stale. |

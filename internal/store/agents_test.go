@@ -203,11 +203,11 @@ func TestAgentStore_Delete_CascadePurge(t *testing.T) {
 			 VALUES (?, ?, 'key', ?, 'http', 'http://localhost', ?, ?, ?)`,
 			uid.EndpointLabel(agentID, "ctr-"+agentID, "key"), "ctr-"+agentID, "ext-ep-"+agentID, now, now, agentID)
 		require.NoError(t, err)
-		// heartbeat (id is the ping token)
+		// heartbeat
 		_, err = db.Writer().Exec(ctx,
-			`INSERT INTO heartbeats (id, name, interval_seconds, grace_seconds, created_at, updated_at, agent_id)
-			 VALUES (?, ?, 60, 30, ?, ?, ?)`,
-			"hb-"+agentID, "hb-name-"+agentID, now, now, agentID)
+			`INSERT INTO heartbeats (id, name, interval_seconds, grace_seconds, created_at, updated_at, agent_id, ping_token)
+			 VALUES (?, ?, 60, 30, ?, ?, ?, ?)`,
+			"hb-"+agentID, "hb-name-"+agentID, now, now, agentID, "hb-"+agentID)
 		require.NoError(t, err)
 		// resource_snapshot
 		_, err = db.Writer().Exec(ctx,

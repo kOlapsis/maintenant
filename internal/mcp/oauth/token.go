@@ -77,7 +77,7 @@ func (s *OAuthServer) handleAuthorizationCode(w http.ResponseWriter, r *http.Req
 	}
 
 	familyID := uuid.New().String()
-	s.issueTokenPair(w, r, clientID, authCode.Scope, familyID)
+	s.issueTokenPair(w, r, clientID, grantedScope(authCode.Scope), familyID)
 }
 
 func (s *OAuthServer) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +122,7 @@ func (s *OAuthServer) handleRefreshToken(w http.ResponseWriter, r *http.Request)
 	}
 
 	s.logger.Info("refresh token rotated", "client_id", clientID, "family_id", storedToken.FamilyID)
-	s.issueTokenPair(w, r, clientID, storedToken.Scope, storedToken.FamilyID)
+	s.issueTokenPair(w, r, clientID, grantedScope(storedToken.Scope), storedToken.FamilyID)
 }
 
 func (s *OAuthServer) issueTokenPair(w http.ResponseWriter, r *http.Request, clientID, scope, familyID string) {
@@ -170,6 +170,7 @@ func (s *OAuthServer) issueTokenPair(w http.ResponseWriter, r *http.Request, cli
 		"token_type":    "Bearer",
 		"expires_in":    int(s.accessTTL.Seconds()),
 		"refresh_token": refreshToken,
+		"scope":         scope,
 	})
 }
 

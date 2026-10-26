@@ -15,6 +15,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/app"
 	"github.com/kolapsis/maintenant/internal/commercial"
 	_ "github.com/kolapsis/maintenant/internal/kubernetes"
+	"github.com/kolapsis/maintenant/internal/mcp"
 	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/trust"
 )
@@ -87,6 +88,21 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(logOutput, &slog.HandlerOptions{
 		Level: slogLevelFrom(cfg.LogLevel),
 	}))
+	if mcpStdio {
+		if cfg.Mode == "agent" {
+			logger.Error("--mcp-stdio is not accepted in agent mode", "fix", "run it against the server")
+			os.Exit(2)
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		err := mcp.Relay(ctx, mcp.SocketPath(cfg.DBPath), os.Stdin, os.Stdout)
+		stop()
+		if err != nil {
+			logger.Error("MCP stdio relay failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if cfg.MultiHost.InsecureSkipVerify {
 		logger.Warn("insecure TLS verification disabled — do not use in production")
 	}
@@ -146,7 +162,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// --copy-store-to runs the copy and exits, like --mcp-stdio: the binary has
+	// --copy-store-to runs the copy and exits: the binary has
 	// no subcommands and this feature does not introduce any.
 	if target := visited["copy-store-to"]; target != "" {
 		if cfg.Mode == "agent" {
@@ -179,6 +195,7 @@ func main() {
 			NodeName:            cfg.MultiHost.NodeName,
 			AgentVersion:        version,
 			InsecureSkipVerify:  cfg.MultiHost.InsecureSkipVerify,
+			ServerFingerprint:   cfg.MultiHost.ServerFingerprint,
 			ProxyLabels:         cfg.ProxyLabels,
 			SpoolMaxMemoryBytes: cfg.MultiHost.AgentSpoolMaxMemoryBytes,
 			SpoolMaxDiskBytes:   cfg.MultiHost.AgentSpoolMaxDiskBytes,
@@ -202,14 +219,6 @@ func main() {
 			logger.Error("failed to initialize application", "error", err)
 		}
 		os.Exit(1)
-	}
-
-	if mcpStdio {
-		if err := application.RunMCPStdio(ctx); err != nil {
-			logger.Error("MCP stdio server error", "error", err)
-			os.Exit(1)
-		}
-		return
 	}
 
 	if err := application.Start(ctx); err != nil {

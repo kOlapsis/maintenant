@@ -57,10 +57,10 @@ const (
 	MaxNameLength      = 255
 )
 
-// Heartbeat represents a passive heartbeat monitor. Its ID is the public ping
-// token (a UUID), which doubles as the primary key.
+// Heartbeat is a passive monitor, keyed by its id and pinged through its secret, rotatable ping token.
 type Heartbeat struct {
 	ID                   string          `json:"id"`
+	PingToken            string          `json:"ping_token"`
 	Name                 string          `json:"name"`
 	Status               HeartbeatStatus `json:"status"`
 	AlertState           AlertState      `json:"alert_state"`
@@ -78,9 +78,9 @@ type Heartbeat struct {
 	AgentID              string          `json:"agent_id"`
 }
 
-// PingURL returns the relative ping URL for this heartbeat. The id is the token.
+// PingURL returns the relative ping URL for this heartbeat.
 func (h *Heartbeat) PingURL() string {
-	return "/ping/" + h.ID
+	return "/ping/" + h.PingToken
 }
 
 // HeartbeatPing represents a raw ping event.

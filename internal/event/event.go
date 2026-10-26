@@ -17,6 +17,7 @@ const (
 // Heartbeat monitoring events.
 const (
 	HeartbeatCreated       = "heartbeat.created"
+	HeartbeatUpdated       = "heartbeat.updated"
 	HeartbeatPingReceived  = "heartbeat.ping_received"
 	HeartbeatStatusChanged = "heartbeat.status_changed"
 	HeartbeatAlert         = "heartbeat.alert"

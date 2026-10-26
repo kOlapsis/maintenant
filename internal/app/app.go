@@ -8,9 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -118,6 +121,8 @@ type App struct {
 	rl             *ratelimit.Limiter
 	apiRL          *ratelimit.Limiter
 	subscribeRL    *ratelimit.Limiter
+	pingRL         *ratelimit.Limiter
+	pingTokenRL    *ratelimit.Limiter
 	licenseMgr     extension.EditionSource
 	ext            extpoint.Set
 	mcpServer      *gomcp.Server
@@ -172,8 +177,11 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	clientIP := ratelimit.NewClientIPResolver(trustedProxies)
 
 	// --- Rate limiters ---
-	// Public surfaces (/ping/, /status/, /mcp, /oauth/) take the tight bucket.
+	// Public surfaces (/status/, /mcp, /oauth/) take the tight bucket.
 	a.rl = ratelimit.New(10, 20, clientIP)
+	// Pings: unknown tokens per address, known tokens per token whatever the address.
+	a.pingRL = ratelimit.New(10, 20, clientIP)
+	a.pingTokenRL = ratelimit.New(1, 60, nil)
 	// /api/ gets its own, far looser one: a dashboard load fans out dozens of
 	// parallel calls, so the tight bucket would 429 ordinary use. This is a
 	// flood ceiling, not a quota — it must never be reachable by the UI.
@@ -387,6 +395,11 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		Username: cfg.SMTP.Username,
 		Password: cfg.SMTP.Password,
 		From:     cfg.SMTP.From,
+
+		AllowPlaintext: cfg.SMTP.AllowPlaintext,
+	}
+	if cfg.SMTP.AllowPlaintext {
+		logger.Warn("SMTP plaintext allowed: a server without STARTTLS receives mail in clear", "variable", "MAINTENANT_SMTP_ALLOW_PLAINTEXT")
 	}
 	a.notifier = alert.NewNotifier(channelStore, logger, cfg.AllowPrivateWebhooks, alert.WithBaseURL(cfg.BaseURL))
 	if a.ext.Channels != nil {
@@ -679,6 +692,8 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		AllowPrivateWebhooks: cfg.AllowPrivateWebhooks,
 		TrustedProxies:       trustedProxies,
 		DemoMode:             cfg.DemoMode,
+		PingIPLimiter:        a.pingRL,
+		PingTokenLimiter:     a.pingTokenRL,
 	})
 
 	// --- MCP Server ---
@@ -723,6 +738,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		Version:  cfg.Version,
 		Logger:   logger.With("component", "mcp"),
 		DemoMode: cfg.DemoMode,
+		ReadOnly: cfg.MCP.ReadOnly,
 	}
 	a.mcpServer = mcp.NewServer(mcpSvc)
 
@@ -746,12 +762,6 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	a.srv = a.buildHTTPServer()
 
 	return a, nil
-}
-
-// RunMCPStdio runs the MCP server over stdin/stdout, then returns.
-func (a *App) RunMCPStdio(ctx context.Context) error {
-	a.logger.Info("starting MCP server in stdio mode")
-	return a.mcpServer.Run(ctx, &gomcp.StdioTransport{})
 }
 
 // multihostPlanAllowed reports whether the multi-host plan may run.
@@ -793,11 +803,22 @@ func multihostPlanPermitted(capabilityGranted bool, licenseStatus string) bool {
 	return capabilityGranted || licenseStatus == extension.LicenseStatusUpdateWindowEnded
 }
 
+// warnDefaultAllowedHosts warns when the server listens beyond the loopback with only the derived host list.
+func (a *App) warnDefaultAllowedHosts() {
+	if a.cfg.AllowedHosts != "" {
+		return
+	}
+	h := hostname(a.cfg.Addr)
+	if ip := net.ParseIP(h); h == "localhost" || (ip != nil && ip.IsLoopback()) {
+		return
+	}
+	a.logger.Warn("MAINTENANT_ALLOWED_HOSTS is not set, accepting IP addresses and the default host names only",
+		"hosts", slices.Sorted(maps.Keys(a.cfg.AllowedHostSet())))
+}
+
 // Start begins all background services and the HTTP server.
 // It blocks until ctx is canceled, then performs a graceful shutdown.
 func (a *App) Start(ctx context.Context) error {
-	// Checked here rather than in New(): this is the only path that listens, so
-	// --mcp-stdio keeps working without OAuth credentials it has no use for.
 	if err := a.cfg.ValidateHTTP(); err != nil {
 		return err
 	}
@@ -814,6 +835,7 @@ func (a *App) Start(ctx context.Context) error {
 		}
 		defer func() { _ = ln.Close() }()
 		httpLn = ln
+		a.warnDefaultAllowedHosts()
 	}
 
 	// Derived so an early return (e.g. a failed gRPC listener below) cancels every
@@ -877,6 +899,8 @@ func (a *App) Start(ctx context.Context) error {
 	go a.rl.Start(ctx)
 	go a.apiRL.Start(ctx)
 	go a.subscribeRL.Start(ctx)
+	go a.pingRL.Start(ctx)
+	go a.pingTokenRL.Start(ctx)
 	go a.resourceSvc.Start(ctx)
 	go a.certSvc.Start(ctx)
 	if a.maintScheduler != nil {
@@ -954,6 +978,7 @@ func (a *App) Start(ctx context.Context) error {
 				TLSCertFile: a.cfg.MultiHost.TLSCertFile,
 				TLSKeyFile:  a.cfg.MultiHost.TLSKeyFile,
 				Insecure:    a.cfg.MultiHost.InsecureGRPC,
+				DataDir:     filepath.Dir(a.cfg.DBPath),
 			}); err != nil {
 				return fmt.Errorf("start agent gRPC server: %w", err)
 			}
@@ -968,6 +993,14 @@ func (a *App) Start(ctx context.Context) error {
 	// Starts a local agent goroutine that connects to the local gRPC endpoint.
 	if a.serveAgents != nil && a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && a.multihostPlanAllowed() && !a.cfg.DemoMode {
 		a.startEmbeddedAgent(ctx)
+	}
+
+	if a.cfg.Mode != "agent" && (a.cfg.MCP.Enabled || a.cfg.MCP.Socket) {
+		if err := mcp.ServeSocket(ctx, a.mcpServer, mcp.SocketPath(a.cfg.DBPath), a.logger); err != nil {
+			a.logger.Warn("local MCP socket unavailable, --mcp-stdio cannot reach this instance", "error", err)
+		}
+	} else if a.cfg.Mode != "agent" {
+		a.logger.Info("local MCP socket not served", "enable", "MAINTENANT_MCP=true or MAINTENANT_MCP_SOCKET=true")
 	}
 
 	// HTTP server — never in agent mode: an agent only streams to the server and
@@ -1056,12 +1089,16 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 	}
 
 	grpcURL := embeddedAgentURL(a.cfg.MultiHost)
+	var fingerprint string
+	if a.agentSessions != nil {
+		fingerprint, _ = a.agentSessions.GRPCServerCertificate()
+	}
 	agentCfg := agent.AgentConfig{
 		DataDir:             agentDataDir,
 		ServerURL:           grpcURL,
 		Label:               "embedded",
 		AgentVersion:        a.cfg.Version,
-		InsecureSkipVerify:  true, // loopback TLS
+		ServerFingerprint:   fingerprint,
 		ProxyLabels:         a.cfg.ProxyLabels,
 		SpoolMaxMemoryBytes: a.cfg.MultiHost.AgentSpoolMaxMemoryBytes,
 		SpoolMaxDiskBytes:   a.cfg.MultiHost.AgentSpoolMaxDiskBytes,
