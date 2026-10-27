@@ -20,25 +20,26 @@
     - opensvc_current_name.stdout | default('') | trim != opensvc_cluster_name
   changed_when: true
 
-- name: Ask the forming node for a join token
+- name: Ask the joining node for a join token
   ansible.builtin.command: >-
-    om daemon auth --role join --duration {{ opensvc_join_token_duration }} -o json
-  delegate_to: "{{ opensvc_former }}"
-  run_once: true
-  register: opensvc_auth
-  changed_when: false
-  no_log: true
-
-- name: Join the cluster
-  ansible.builtin.command: >-
-    om cluster join
-    --node {{ hostvars[opensvc_former].ansible_facts.hostname }}
-    --token {{ (opensvc_auth.stdout | from_json).token
-               | default((opensvc_auth.stdout | from_json).access_token) }}
-    --timeout {{ opensvc_join_timeout }}
+    om daemon auth --role join --duration {{ opensvc_join_token_duration }}
+  register: opensvc_join_token
   when:
     - inventory_hostname != opensvc_former
     - opensvc_former not in opensvc_members.stdout
+  changed_when: false
+  no_log: true
+
+- name: Enroll the joining node from the forming node
+  ansible.builtin.command: >-
+    om cluster enroll
+    --node {{ ansible_facts.hostname }}
+    --timeout {{ opensvc_join_timeout }}
+    --wait
+  environment:
+    OSVC_JOIN_TOKEN: "{{ opensvc_join_token.stdout | trim }}"
+  delegate_to: "{{ opensvc_former }}"
+  when: opensvc_join_token is not skipped
   throttle: 1
   no_log: true
   changed_when: true

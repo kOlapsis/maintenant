@@ -1,19 +1,4 @@
 ---
-# create leaves an orchestrate=ha service frozen, and the daemon never starts a
-# frozen service. An unfreeze sent before the daemon has evaluated it is rejected.
-- name: Wait for the daemon to see the new service frozen
-  ansible.builtin.command:
-    argv: [om, cluster, status, -o, json]
-  register: opensvc_service_created
-  changed_when: false
-  retries: 12
-  delay: 2
-  until: >-
-    ((opensvc_service_created.stdout | from_json).cluster.object[opensvc_service_name] | default({})).frozen
-    | default('') == 'frozen'
-  run_once: true
-  listen: Hand the service to the orchestrator
-
 # om3 never starts an instance whose resources are not flagged provisioned; Ansible prepared them.
 - name: Flag the resources as provisioned
   ansible.builtin.command:
@@ -24,9 +9,12 @@
   loop: "{{ ansible_play_hosts }}"
   listen: Hand the service to the orchestrator
 
-- name: Unfreeze the service
+# create flags every instance stopped on purpose, and only a start the user asks for lowers that flag.
+- name: Start the service
   ansible.builtin.command:
-    argv: [om, "{{ opensvc_service_name }}", unfreeze]
+    argv: [om, "{{ opensvc_service_name }}", start, --wait]
+  register: opensvc_service_started
   changed_when: true
+  failed_when: false
   run_once: true
   listen: Hand the service to the orchestrator

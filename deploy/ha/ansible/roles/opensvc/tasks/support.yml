@@ -1,0 +1,22 @@
+---
+- name: Install sos, the data collector OpenSVC support asks for
+  ansible.builtin.apt:
+    name: sos
+    state: present
+
+- name: Create the journald drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    mode: "0755"
+
+# journald writes to disk every 5 minutes by default, and a fenced node loses what it had not written.
+- name: Have journald write to disk every second
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/maintenant-ha.conf
+    mode: "0644"
+    content: |
+      [Journal]
+      Storage=persistent
+      SyncIntervalSec=1s
+  notify: Restart journald

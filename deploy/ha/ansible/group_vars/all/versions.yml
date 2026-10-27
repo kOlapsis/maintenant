@@ -10,22 +10,24 @@
 # run.json.versions, so that two runs can be compared (see
 # specs/030-ha-opensvc/contracts/run-report.md).
 
-# OpenSVC om3. Pinned to a release-candidate tag: om3 has no GA, and 31 RCs
-# were published in six months. Never a branch, never "latest". If a GA is
+# OpenSVC om3. Pinned to a release-candidate tag: om3 has no GA, and 53 RCs
+# were published in eight months. Never a branch, never "latest". If a GA is
 # published before the freeze, it replaces this tag and the campaign is
 # replayed.
 #
-# The state of the art recorded v3.0.0-rc31 on 2026-08-24. That tag is not
-# installable: packages.opensvc.com carries no rc31 on any branch. The bench
-# therefore runs the newest release the prod branch actually ships with a
-# server package, rc30, and stays on the prod branch: uat has rc32 to rc35, but
-# evidence built on a pre-validation channel is worth less than evidence built
-# on the channel OpenSVC promotes.
+# The bench runs the newest release the prod branch ships with a server
+# package for bookworm, and stays on the prod branch: evidence built on a
+# pre-validation channel is worth less than evidence built on the channel
+# OpenSVC promotes. rc30 carried the campaign until 2026-10-18; rc53 replaces
+# it on 2026-10-26 because the enroll and create --wait the deployment now
+# relies on only exist from rc44 on.
+# rc47 replaces rc53 on 2026-10-27: OpenSVC found a DRBD regression in rc53
+# and asked to step back.
 #
 # apt is pinned to opensvc_package_version, so an upgrade cannot move the bench
 # off this release without someone editing this file (FR-059).
-opensvc_version: "v3.0.0-rc30"
-opensvc_package_version: "3.0.0~rc30.0.g0e9175401+deb12"
+opensvc_version: "v3.0.0-rc47"
+opensvc_package_version: "3.0.0~rc47.0.g8740aaf62+deb12"
 opensvc_apt_branch: "prod"
 
 # DRBD 9, from the vendor packages. Protocol C, after-sb-* set to disconnect,

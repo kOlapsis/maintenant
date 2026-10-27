@@ -14,7 +14,8 @@ synchronous_standby_names = '{{ postgres_ha_peer_name }}'
 
 max_wal_senders = 5
 max_replication_slots = 5
-wal_keep_size = 0
+# A rewound standby replays from the last common checkpoint, older than what the new primary's first checkpoint keeps.
+wal_keep_size = 1GB
 max_slot_wal_keep_size = {{ postgres_ha_max_slot_wal_keep_size }}
 
 hot_standby = on

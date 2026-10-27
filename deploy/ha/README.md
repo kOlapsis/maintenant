@@ -80,8 +80,15 @@ Modes are `ip-only` (the default: service address failover, no replicated backen
 measurement is attached to a release, so a silent upgrade would quietly invalidate the
 evidence. apt is pinned to the exact package version for the same reason.
 
-The bench runs om3 **v3.0.0-rc30 from the prod branch, on Debian 12**. The state of the art had recorded rc31, which turns out to be installable nowhere: packages.opensvc.com`
-publishes no rc31 on any branch. The prod branch ships `opensvc-server` for bookworm up to rc30 and, as of 2026-09-12, only `opensvc-client` for trixie — so Debian 13 cannot host a cluster node at all today. The uat branch does have rc32 to rc35 for trixie, but evidence built on a pre-validation channel is worth less than evidence built on the channel OpenSVC promotes.
+The bench runs om3 **v3.0.0-rc53 from the prod branch, on Debian 12**, the newest release that branch ships with `opensvc-server` for bookworm. As of 2026-10-26 it still ships only `opensvc-client` for trixie, so Debian 13 cannot host a cluster node. The uat branch is not used: evidence built on a pre-validation channel is worth less than evidence built on the channel OpenSVC promotes.
+
+The campaign ran on rc30 until 2026-10-18. rc53 replaces it because the deployment now relies on two things rc30 does not have: `om <path> create --wait`, which returns once every daemon knows the object, and `om cluster enroll`, which adds a node from inside the cluster. rc53 also changes what the roles wait for: a created object is no longer frozen but flagged *stopped on purpose*, and only a start asked by the user lowers that flag, so the role ends the deployment with `om <path> start --wait`. Every report before 2026-10-26 was taken on rc30.
+
+## Joining the cluster
+
+The nodes join by enrollment, the procedure the om3 book describes for rc47 and later. The joining node creates a token with the join role (`om daemon auth --role join`), and the forming node runs `om cluster enroll --node <joining node> --wait`, which returns once the new node's heartbeat beats in the cluster. The token reaches the command through `OSVC_JOIN_TOKEN`, never on a command line. A node is enrolled by its name, which `/etc/hosts` pins on every node: the certificate om3 generates names the node, not its interconnect address.
+
+Removing a node is the reverse: drain it (`om node drain --node <node> --wait`), then evict it from a node that stays (`om cluster evict --node <node> --wait`). An evicted node restarts as a single-node cluster with a secret of its own. The bench never removes a node; a failed node is repaired in place.
 
 ## The arbitrator
 
@@ -90,7 +97,7 @@ ignore" and both sides start the service, which is the one outcome the bench exi
 
 `cluster.quorum` has to go through `om cluster config`. om3 also accepts it in `node.conf` and reads it back from there, but the split decision only reads `cluster.conf`; the arbitrators are likewise reloaded only when the cluster configuration changes. A value read back from a file therefore proves nothing: the role and `lab status` read the daemon's own view.
 
-The witness is a plain HTTP endpoint on the third machine, served by nginx on port 1216, and om3 votes by issuing a GET on it. The port is written out in full and always will be: om3 implies port 1214 on a portless TCP arbitrator uri while its own listener sits on 1215, and the CHANGELOG and the keyword reference disagree about which — an implicit port would send the vote somewhere nobody chose (FR-021).
+The witness is a plain HTTP endpoint on the third machine, served by nginx on port 1216, and om3 votes by issuing a GET on it. The port is written out in full and always will be: up to rc30 the keyword reference said a portless TCP arbitrator uri implied port 1214 while the CHANGELOG said 1215. Since then the reference says it is the port of the cluster listener, `listener.port`, 1215 by default. An implicit port would still tie the vote to a setting of another component (FR-021).
 
 ## Fencing
 
@@ -103,7 +110,13 @@ same role serve the bench and a real deployment: `ha_fencing_command` shoots,
 Two things never happen quietly. A fence that cannot prove the peer went down exits
 non-zero. om3 only logs that and starts the service anyway, so the callout also leaves `/var/lib/maintenant-fence/failed-<node>` behind, and `maintenant-fence --guard`, the blocking pre-start of `ip#0`, refuses to start the service while such a file exists (FR-024). A later successful fence of the same node removes it; otherwise the operator makes sure the node is down, removes the file and starts the service. And the role exercises the mechanism at deploy time with the check command: a cluster should not discover during an incident that it was never able to fence.
 
+In `sqlite/drbd`, a node whose DRBD copy is `Outdated` neither fences nor starts, and leaves no mark. The peer that outdated it is alive and kept the DRBD quorum through the diskless vote, so it keeps the service. This is the inter-site partition (scenario 5): both nodes still reach the witness, so om3 grants the vote to both sides, and without this refusal the passive node would shoot the only node holding the data.
+
 `DEFAULT.stonith=true` is the other half, and it lives on the service rather than the node: a failover service without it never calls the callout at all. The service templates carry it.
+
+## Support data
+
+Every cluster node carries `sos`, and journald writes to disk every second instead of every five minutes, so a fenced node keeps its last logs. When a bench verification fails, `lab` keeps om3's view (`om mon`, `om <service> status`) and a sosreport of each node in the report, under `om/` and `sos/`; a node that is down at that moment gets its sosreport after the repair. The sosreport is the one OpenSVC support asks for, `sos report --enable-plugins opensvc --all-logs`. Its OpenSVC plugin copies `/var/lib/opensvc/sec`, the private key of the cluster CA included: look at what an archive holds before it leaves the bench.
 
 ## The loss window of `synchronous=NORMAL` in `sqlite/drbd`
 

@@ -56,13 +56,13 @@
 
 - name: Declare the service
   ansible.builtin.command:
-    argv: [om, "{{ opensvc_service_name }}", create, --config, "{{ opensvc_service_rendered }}", --force]
+    argv: [om, "{{ opensvc_service_name }}", create, --config, "{{ opensvc_service_rendered }}", --force, --wait]
   when: opensvc_service_render is changed or opensvc_service_existing.rc != 0
   changed_when: true
   run_once: true
   notify: Hand the service to the orchestrator
 
-- name: Unfreeze the service before waiting on it
+- name: Start the service before waiting on it
   ansible.builtin.meta: flush_handlers
 
 - name: Read the instance this node holds
@@ -149,6 +149,7 @@
     msg: |-
       {{ opensvc_service_name }} failed to start on {{ inventory_hostname }}. Last lines of the product:
       {{ opensvc_service_journal.stdout }}
+      {{ opensvc_service_started.stderr | default('') }}
       {{ opensvc_service_finished.stderr | default('') }}
   when: opensvc_service_journal is not skipped
 

@@ -8,7 +8,9 @@ it, nothing about RTO or RPO is proven (FR-050).
 ```text
 deploy/ha/reports/<YYYYMMDD-HHMMSS-mode>/
 ├── run.json   # timestamped data, stable format, comparable across runs
-└── run.md     # readable table, generated from run.json, never hand-edited
+├── run.md     # readable table, generated from run.json, never hand-edited
+├── om/        # om mon and om <service> status on each node, when a verification fails
+└── sos/       # a sosreport of each node at that moment, or after the repair for a node then down
 ```
 
 The timestamp is UTC, and `<mode>` is the replication mode played by the run, with its

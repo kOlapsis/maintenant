@@ -9,10 +9,17 @@
 # starts the service anyway, so a failure leaves a mark that --guard, run before
 # the service starts, refuses on (FR-024). Only a later successful shot of the
 # same node, or the operator, removes the mark.
+#
+# A node whose DRBD copy is Outdated neither shoots nor starts, and leaves no
+# mark: the peer that outdated it still holds the quorum and the data.
 
 set -eu
 
 failed_dir={{ fencing_failed_dir }}
+
+drbd_outdated() {
+	command -v drbdadm >/dev/null 2>&1 && drbdadm dstate all 2>/dev/null | grep -q '^Outdated/'
+}
 
 mode=fence
 case "${1:-}" in
@@ -23,6 +30,10 @@ case "${1:-}" in
 esac
 
 if [ "$mode" = guard ]; then
+	if drbd_outdated; then
+		echo "refused: the local DRBD copy is Outdated, its peer still runs the service" >&2
+		exit 1
+	fi
 	for mark in "$failed_dir"/failed-*; do
 		[ -e "$mark" ] || continue
 		echo "refused: fencing ${mark##*/failed-} failed at $(cat "$mark"); make sure that node is down, then remove $mark" >&2
@@ -57,6 +68,12 @@ shoot() {
 if [ "$mode" = check ]; then
 	shoot
 	exit 0
+fi
+
+if drbd_outdated; then
+	logger -t maintenant-fence -- "event=fence_refused target=$target reason=drbd_outdated"
+	echo "refused: the local DRBD copy is Outdated, $target still runs the service" >&2
+	exit 1
 fi
 
 if shoot; then

@@ -71,7 +71,7 @@ NODE_EVENT_TAGS="maintenant-svc maintenant-fence maintenant-pg systemd"
 # scenario command, is run through sudo on the machine it acts on.
 OM="sudo -n om"
 
-# Verified against om v3.0.0-rc30: the output flag is -o, not --format. This is
+# The output flag is -o, not --format (om v3.0.0-rc30 to rc53). This is
 # the only place the bench touches om's command line.
 OM_DAEMON_STATUS="$OM daemon status -o json --sections daemon,nodes,arbitrators"
 
@@ -258,10 +258,12 @@ node_status() {
 	fi
 	if ssh_to "$name" "$OM_DAEMON_STATUS" >/dev/null 2>&1; then
 		om="up"
-		# A frozen instance never fails over, so a bench left frozen is not green.
-		if ssh_to "$name" "$OM ${LAB_SERVICE_NAME:-maintenant} instance ls -o json" 2>/dev/null |
-			jq -e --arg n "$name" 'any(.items[]; .meta.node == $n and ((.data.status.frozen_at // "0001") | startswith("0001") | not))' >/dev/null 2>&1; then
+		# Neither a frozen instance nor one stopped on purpose fails over, so a bench left so is not green.
+		instances=$(ssh_to "$name" "$OM ${LAB_SERVICE_NAME:-maintenant} instance ls -o json" 2>/dev/null) || instances=""
+		if printf '%s' "$instances" | jq -e --arg n "$name" 'any(.items[]; .meta.node == $n and ((.data.status.frozen_at // "0001") | startswith("0001") | not))' >/dev/null 2>&1; then
 			om="frozen"
+		elif printf '%s' "$instances" | jq -e --arg n "$name" 'any(.items[]; .meta.node == $n and ((.data.status.stopped_at // "0001") | startswith("0001") | not))' >/dev/null 2>&1; then
+			om="stopped"
 		fi
 	elif ssh_to "$name" "command -v om" >/dev/null 2>&1; then
 		om="down"
@@ -1113,6 +1115,51 @@ build_scenario_summary() {
 		}'
 }
 
+# A sosreport of a node, as OpenSVC support asks for, kept in the report as
+# sos/<scenario>-<repetition>-<step>-<node>.tar.xz.
+capture_sos() {
+	cs_dir="${run_log%/*}/sos"
+	mkdir -p "$cs_dir"
+	cs_key=$(ssh_to "$1" "sudo -n sed -n 's/^MAINTENANT_LICENSE_KEY=//p' /etc/maintenant.env" 2>/dev/null) || cs_key=""
+	# The service configuration carries the licence key: it is blanked at its own length, which keeps the tar valid.
+	if ssh_to "$1" "sudo -n rm -rf /var/tmp/lab-sos && sudo -n mkdir -m 700 /var/tmp/lab-sos &&
+		sudo -n timeout 600 sos report --batch --quiet --enable-plugins opensvc --all-logs --tmp-dir /var/tmp/lab-sos >/dev/null &&
+		sudo -n sh -c 'cat /var/tmp/lab-sos/sosreport-*.tar.xz'" 2>>"$run_log" | xz -dc |
+		CS_KEY="$cs_key" python3 -c 'import os, sys; k = os.environ["CS_KEY"].encode(); d = sys.stdin.buffer.read(); sys.stdout.buffer.write(d.replace(k, b"X" * len(k)) if k else d)' |
+		xz -c >"$cs_dir/$2-$1.tar.xz" && [ "$(xz -dc "$cs_dir/$2-$1.tar.xz" | head -c 1 | wc -c)" -eq 1 ]; then
+		:
+	else
+		rm -f "$cs_dir/$2-$1.tar.xz"
+		printf '%s sosreport of %s failed\n' "$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)" "$1" >>"$run_log"
+	fi
+	ssh_to "$1" "sudo -n rm -rf /var/tmp/lab-sos" 2>/dev/null || true
+}
+
+# om3's own view of the cluster and of the service on every node, kept in the
+# report as om/<scenario>-<repetition>-<step>-<node>.txt, and a sosreport of
+# every node that answers. The others are listed in $TMP/sos-missing-<step>.
+capture_om() {
+	co_dir="${run_log%/*}/om"
+	mkdir -p "$co_dir"
+	co_pids=""
+	: >"$TMP/sos-missing-$1"
+	for co_host in $(group_hosts opensvc_cluster); do
+		{
+			date -u +%Y-%m-%dT%H:%M:%S.%NZ
+			ssh_to "$co_host" "timeout 20 $OM mon --color no; echo; timeout 20 $OM ${LAB_SERVICE_NAME:-maintenant} status --color no" 2>&1 ||
+				echo "capture rc=$?"
+		} >"$co_dir/$1-$co_host.txt"
+		if ssh_to "$co_host" true 2>/dev/null; then
+			capture_sos "$co_host" "$1" &
+			co_pids="$co_pids $!"
+		else
+			printf '%s\n' "$co_host" >>"$TMP/sos-missing-$1"
+		fi
+	done
+	# shellcheck disable=SC2086 # one pid per word
+	[ -z "$co_pids" ] || wait $co_pids
+}
+
 # Plays one scenario, every repetition, for the mode under test.
 run_all_scenario() {
 	number=$1
@@ -1224,6 +1271,7 @@ run_all_scenario() {
 			sleep "$RUN_ALL_VERIFY_INTERVAL"
 		done
 		t1=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
+		[ "$verify_ok" -eq 1 ] || capture_om "$padded-$rep-verify"
 
 		if heal_out=$(scenario_act repair "$number" 2>&1); then
 			repair_rc=0
@@ -1233,6 +1281,7 @@ run_all_scenario() {
 					break
 				fi
 				if [ "$(date +%s)" -ge "$deadline" ]; then
+					capture_om "$padded-$rep-repair"
 					repair_rc=1
 					heal_out="$heal_out
 $ver_out"
@@ -1244,6 +1293,11 @@ $ver_out"
 			repair_rc=$?
 		fi
 		printf '%s\n' "$heal_out" >>"$run_log"
+		if [ -s "$TMP/sos-missing-$padded-$rep-verify" ]; then
+			while read -r co_host; do
+				capture_sos "$co_host" "$padded-$rep-repaired"
+			done <"$TMP/sos-missing-$padded-$rep-verify"
+		fi
 		rm -f "$(injection_record "$number")"
 
 		green_after=1

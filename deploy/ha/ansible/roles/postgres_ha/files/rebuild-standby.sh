@@ -34,9 +34,14 @@ post_fork_commits() {
 	history=$(peer_sql "select convert_from(pg_read_binary_file('pg_wal/$peer_tli.history'), 'UTF8')") || return 1
 	fork=$(printf '%s\n' "$history" | awk -v t="$((0x$tli))" '$1 == t { print $2 }')
 	[ -n "$fork" ] || return 1
+	segsize=$(peer_sql "select setting from pg_settings where name = 'wal_segment_size'") || return 1
+	lsn=$(((0x${fork%/*} << 32) | 0x${fork#*/}))
+	per_id=$((0x100000000 / segsize))
+	startseg=$(printf '%s%08X%08X' "$tli" $((lsn / segsize / per_id)) $((lsn / segsize % per_id)))
+	# Without a start segment, pg_waldump reads the segment size from any file, a preallocated empty one included.
 	# pg_waldump fails at the end of the WAL whatever happens: only a read error counts.
 	dump=$(as_postgres env TZ=UTC "$PG_BINDIR/pg_waldump" --path="$PG_DATADIR/pg_wal" \
-		--timeline="$((0x$tli))" --start="$fork" --rmgr=Transaction 2>"$HA_RUN_DIR/waldump.err") ||
+		--start="$fork" --rmgr=Transaction "$startseg" 2>"$HA_RUN_DIR/waldump.err") ||
 		grep -q -e 'error in WAL record at' -e 'could not find a valid record after' "$HA_RUN_DIR/waldump.err" ||
 		return 1
 	commits=$(printf '%s\n' "$dump" | sed -n 's/.*desc: COMMIT \([0-9-]*\) \([0-9:.]*\) UTC.*/\1T\2Z/p')
@@ -48,6 +53,12 @@ post_fork_commits() {
 		last=$(printf '%s\n' "$commits" | tail -n 1)
 	fi
 	echo "count=$count first_commit=$first last_commit=$last timeline=$tli fork_lsn=$fork"
+}
+
+start_standby() {
+	as_postgres touch "$PG_DATADIR/standby.signal"
+	rm -f "$HA_FENCED"
+	start_local
 }
 
 mkdir -p "$HA_RUN_DIR"
@@ -65,9 +76,8 @@ fi
 if [ ! -f "$HA_FENCED" ]; then
 	mark_fenced "rebuild requested"
 fi
-if local_running; then
-	stop_local
-fi
+# A standby still starting refuses connections: only the unit tells it is running.
+stop_local
 
 fork_report=$(post_fork_commits) || fork_report="count=unknown"
 log_event "post_fork_commits $fork_report"
@@ -92,6 +102,13 @@ if [ "$full" = no ]; then
 	fi
 fi
 
+if [ "$full" = no ] && ! start_standby; then
+	stop_local
+	mark_fenced "the rewound standby did not start"
+	log_event "rewind_failed fallback=basebackup"
+	full=yes
+fi
+
 if [ "$full" = yes ]; then
 	method=basebackup
 	log_event "rebuild_started method=basebackup"
@@ -99,14 +116,13 @@ if [ "$full" = yes ]; then
 	find "$PG_DATADIR" -mindepth 1 -delete
 	as_postgres "$PG_BINDIR/pg_basebackup" -w -h "$HA_PEER_ADDRESS" -p "$PG_PORT" -U "$HA_USER" \
 		-D "$PG_DATADIR" -X stream -C -S "$HA_SELF_NAME" --checkpoint=fast
+	if ! start_standby; then
+		stop_local
+		mark_fenced "the rebuilt standby did not start"
+		exit 1
+	fi
 fi
 
-as_postgres touch "$PG_DATADIR/standby.signal"
-rm -f "$HA_FENCED"
-if ! start_local; then
-	mark_fenced "the rebuilt standby did not start"
-	exit 1
-fi
 if [ "$(local_sql 'select pg_is_in_recovery()')" != t ]; then
 	stop_local
 	mark_fenced "the rebuilt node came up as a primary"

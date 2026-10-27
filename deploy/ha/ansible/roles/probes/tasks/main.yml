@@ -91,3 +91,11 @@
   delay: 2
   until: probes_recording.stdout.split()[0] | int > 0
   loop: [availability, writes, observer]
+
+- name: Check the service acknowledges the writes
+  ansible.builtin.command: "grep -q '\"class\":\"ack\"' {{ probes_state_dir }}/writes.ndjson"
+  changed_when: false
+  retries: 10
+  delay: 2
+  register: probes_acked
+  until: probes_acked.rc == 0

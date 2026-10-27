@@ -1,7 +1,7 @@
 ---
 # Overridden by group_vars/all/versions.yml, which is where the freeze lives.
-opensvc_version: "v3.0.0-rc30"
-opensvc_package_version: "3.0.0~rc30.0.g0e9175401+deb12"
+opensvc_version: "v3.0.0-rc47"
+opensvc_package_version: "3.0.0~rc47.0.g8740aaf62+deb12"
 opensvc_apt_branch: prod
 
 # versions.yml carries the node image, and the package is built per codename.
@@ -22,7 +22,7 @@ opensvc_former: >-
        | map(attribute='inventory_hostname') | list)
       + groups['opensvc_cluster']) | first }}
 
-# A join token is short-lived; ask for one long enough to cover the join of
-# every peer in one play.
+# The token is created on the joining node and must outlive its enrollment.
 opensvc_join_token_duration: 10m
-opensvc_join_timeout: 60s
+# Also the lifetime om gives the token it hands to the enrolled node, so it covers the drain of that node.
+opensvc_join_timeout: 5m

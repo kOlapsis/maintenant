@@ -36,17 +36,20 @@
   delegate_to: localhost
   become: false
 
-# The ping token is the heartbeat id itself, so one value addresses both the
-# write path and the read-back.
-- name: Keep the heartbeat id at hand
+- name: Keep the heartbeat id and its ping token at hand
   ansible.builtin.set_fact:
-    probes_heartbeat_id: >-
-      {{ (probes_created.json.id | default(''))
-         or (probes_existing.json.heartbeats
-             | selectattr('name', 'equalto', probes_heartbeat_name)
-             | map(attribute='id') | first) }}
+    probes_heartbeat_id: "{{ probes_heartbeat.id }}"
+    probes_ping_token: "{{ probes_heartbeat.ping_token }}"
+  vars:
+    probes_heartbeat: >-
+      {{ probes_created.json
+         if probes_created is not skipped
+         else (probes_existing.json.heartbeats
+               | selectattr('name', 'equalto', probes_heartbeat_name) | first) }}
 
 - name: Refuse a deployment with nowhere to write
   ansible.builtin.assert:
-    that: probes_heartbeat_id | trim | length > 0
+    that:
+      - probes_heartbeat_id | trim | length > 0
+      - probes_ping_token | trim | length > 0
     fail_msg: "no heartbeat named {{ probes_heartbeat_name }} and none could be created"
