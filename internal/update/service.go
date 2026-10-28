@@ -104,16 +104,6 @@ func NewService(d Deps) *Service {
 	}
 }
 
-// SetEnricher sets the update enricher.
-func (s *Service) SetEnricher(e Enricher) {
-	s.enricher = e
-}
-
-// SetAlertChannel sets the alert engine's event channel for critical notifications.
-func (s *Service) SetAlertChannel(ch chan<- interface{}) {
-	s.alertChan = ch
-}
-
 // SetEventCallback sets the SSE broadcasting callback.
 func (s *Service) SetEventCallback(fn EventCallback) {
 	s.eventCallback = fn

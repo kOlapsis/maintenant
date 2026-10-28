@@ -19,7 +19,9 @@ func TestTryConnect_Timeout(t *testing.T) {
 	err = c.TryConnect(context.Background())
 	elapsed := time.Since(start)
 
-	assert.Error(t, err, "TryConnect on unreachable socket must return an error")
+	var unavailable *SocketUnavailableError
+	require.ErrorAs(t, err, &unavailable, "TryConnect on unreachable socket must return an error")
+	assert.Contains(t, err.Error(), "DOCKER_HOST", "the error tells how to reach the daemon")
 	assert.Less(t, elapsed, 5*time.Second, "TryConnect must return in ≤ 5s (bounded ~3s)")
 	assert.False(t, c.IsConnected(), "IsConnected must be false after failed TryConnect")
 }

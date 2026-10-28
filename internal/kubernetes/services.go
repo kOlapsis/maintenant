@@ -109,7 +109,7 @@ func (r *Runtime) selectableWorkloads(ctx context.Context, cs k8s.Interface) ([]
 	} else {
 		for _, d := range deployments.Items {
 			if keep(d.Namespace) {
-				out = append(out, selectableWorkload{fmt.Sprintf("%s/Deployment/%s", d.Namespace, d.Name), d.Namespace, d.Spec.Template.Labels})
+				out = append(out, selectableWorkload{workloadID(d.Namespace, "Deployment", d.Name), d.Namespace, d.Spec.Template.Labels})
 			}
 		}
 	}
@@ -122,7 +122,7 @@ func (r *Runtime) selectableWorkloads(ctx context.Context, cs k8s.Interface) ([]
 	} else {
 		for _, s := range statefulSets.Items {
 			if keep(s.Namespace) {
-				out = append(out, selectableWorkload{fmt.Sprintf("%s/StatefulSet/%s", s.Namespace, s.Name), s.Namespace, s.Spec.Template.Labels})
+				out = append(out, selectableWorkload{workloadID(s.Namespace, "StatefulSet", s.Name), s.Namespace, s.Spec.Template.Labels})
 			}
 		}
 	}
@@ -135,7 +135,7 @@ func (r *Runtime) selectableWorkloads(ctx context.Context, cs k8s.Interface) ([]
 	} else {
 		for _, d := range daemonSets.Items {
 			if keep(d.Namespace) {
-				out = append(out, selectableWorkload{fmt.Sprintf("%s/DaemonSet/%s", d.Namespace, d.Name), d.Namespace, d.Spec.Template.Labels})
+				out = append(out, selectableWorkload{workloadID(d.Namespace, "DaemonSet", d.Name), d.Namespace, d.Spec.Template.Labels})
 			}
 		}
 	}

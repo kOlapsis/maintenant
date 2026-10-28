@@ -137,24 +137,6 @@ func sortTagVersions(tags []string, variant string, requireDots bool, precision 
 	return result
 }
 
-// SortTags filters non-semver tags and returns sorted semver versions (ascending).
-func SortTags(tags []string) []*semver.Version {
-	var versions []*semver.Version
-	for _, tag := range tags {
-		v, err := semver.NewVersion(tag)
-		if err != nil {
-			continue
-		}
-		// Skip pre-release versions
-		if v.Prerelease() != "" {
-			continue
-		}
-		versions = append(versions, v)
-	}
-	sort.Sort(semver.Collection(versions))
-	return versions
-}
-
 // isFixedVersionTag reports whether a tag names a single release (major.minor.patch) rather than a line the registry moves.
 func isFixedVersionTag(tag string) bool {
 	versionPart, _ := splitVariant(tag)
@@ -209,7 +191,8 @@ func withinTrack(current, candidate *semver.Version, level string) bool {
 	}
 }
 
-// FindBestUpdate finds the best available update for the given current tag among all tags.
+// findBestUpdate finds the best available update for the given current tag among all tags,
+// restricted to candidates within the tracked level (TrackMajor, TrackMinor or TrackPatch).
 // For pinned semver tags (major.minor.patch): finds the highest version with the same
 // variant suffix (e.g. -alpine).
 // For floating tags (non-semver channels like "latest" or "lts", and partial versions
@@ -217,12 +200,6 @@ func withinTrack(current, candidate *semver.Version, level string) bool {
 // line, so a more precise tag underneath it is what the container runs, not an update.
 // Only a higher tag of the same shape counts; otherwise the same tag is returned so the
 // scanner compares digests.
-func FindBestUpdate(currentTag string, allTags []string) (bestTag string, updateType UpdateType) {
-	return findBestUpdate(currentTag, allTags, TrackMajor)
-}
-
-// findBestUpdate is FindBestUpdate restricted to candidates within the tracked level
-// (TrackMajor, TrackMinor or TrackPatch).
 func findBestUpdate(currentTag string, allTags []string, level string) (bestTag string, updateType UpdateType) {
 	versionPart, variant := splitVariant(currentTag)
 

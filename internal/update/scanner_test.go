@@ -142,7 +142,7 @@ func newTestScanner(reg registryQuerier, store UpdateStore) *Scanner {
 // --- T009: tag-include scanner integration test ---
 
 // TestScanner_TagInclude_FiltersTagsBeforeFindBestUpdate verifies that when
-// tag-include is set, only matching tags are evaluated by FindBestUpdate.
+// tag-include is set, only matching tags are evaluated by findBestUpdate.
 // A container on nginx:1.24 with include=^1\.25 should find 1.25.1 as an update
 // even though 1.26.0 is available — because 1.26.0 doesn't match the pattern.
 func TestScanner_TagInclude_FiltersTagsBeforeFindBestUpdate(t *testing.T) {
@@ -279,7 +279,7 @@ func TestScanner_TagExclude_RemovesMatchingTags(t *testing.T) {
 // --- T013b: tag filter composition with track ---
 
 // TestScanner_TagFilter_CompositionWithSemver verifies that tag filters reduce the tag
-// list first, then FindBestUpdate picks the best semver from the filtered set.
+// list first, then findBestUpdate picks the best semver from the filtered set.
 // tag-include=^7\.2 with current=7.0.0 should find the highest 7.2.x tag.
 func TestScanner_TagFilter_CompositionWithSemver(t *testing.T) {
 	reg := &stubRegistry{
@@ -562,14 +562,14 @@ func TestScanner_IncludeAndExclude_BothApply(t *testing.T) {
 	require.Len(t, results, 1)
 	// Include keeps [20.0.0, 20.1.0, 20.2.0-rc1, 20.3.0]
 	// Exclude removes [20.2.0-rc1]
-	// FindBestUpdate picks 20.3.0 (semver skips prereleases anyway, but exclude removes rc first)
+	// findBestUpdate picks 20.3.0 (semver skips prereleases anyway, but exclude removes rc first)
 	assert.Equal(t, "20.3.0", results[0].LatestTag)
 }
 
 // --- No labels — default behavior preserved ---
 
 // TestScanner_NoLabels_DefaultBehavior verifies that without tag filter labels,
-// the scanner uses the existing default behavior (variant filter via FindBestUpdate).
+// the scanner uses the existing default behavior (variant filter via findBestUpdate).
 func TestScanner_NoLabels_DefaultBehavior(t *testing.T) {
 	reg := &stubRegistry{
 		tags: map[string][]string{

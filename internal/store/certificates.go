@@ -148,7 +148,7 @@ func (s *CertificateStore) ListMonitors(ctx context.Context, opts certificate.Li
 
 	var monitors []*certificate.CertMonitor
 	for rows.Next() {
-		m, err := s.scanMonitorRow(rows)
+		m, err := s.scanMonitor(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -270,47 +270,19 @@ func (s *CertificateStore) GetLatestCheckResult(ctx context.Context, monitorID s
 }
 
 func (s *CertificateStore) ListCheckResults(ctx context.Context, monitorID string, opts certificate.ListChecksOpts) ([]*certificate.CertCheckResult, int, error) {
-	var total int
-	if err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM cert_check_results WHERE monitor_id=?`, monitorID).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count cert check results: %w", err)
-	}
-
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 500 {
-		limit = 500
-	}
-
-	query := `SELECT id, monitor_id, subject_cn, issuer_cn, issuer_org, sans_json,
+	return listPage(ctx, s.db, pageQuery{
+		what:     "cert check results",
+		countSQL: `SELECT COUNT(*) FROM cert_check_results WHERE monitor_id=?`,
+		selectSQL: `SELECT id, monitor_id, subject_cn, issuer_cn, issuer_org, sans_json,
 		serial_number, signature_algorithm, not_before, not_after,
 		chain_valid, chain_error, hostname_match, error_message, checked_at,
 		ocsp_stapled, ocsp_status, ocsp_produced_at, ocsp_next_update, ocsp_error
-	FROM cert_check_results WHERE monitor_id=? ORDER BY checked_at DESC`
-	query += fmt.Sprintf(` LIMIT %d`, limit)
-	if opts.Offset > 0 {
-		query += fmt.Sprintf(` OFFSET %d`, opts.Offset) // #nosec G202 -- integer formatting of an int option.
-	}
-
-	rows, err := s.db.QueryContext(ctx, query, monitorID)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list cert check results: %w", err)
-	}
-	defer func(rows *sql.Rows) {
-		_ = rows.Close()
-	}(rows)
-
-	var results []*certificate.CertCheckResult
-	for rows.Next() {
-		r, err := s.scanCheckResultRow(rows)
-		if err != nil {
-			return nil, 0, err
-		}
-		results = append(results, r)
-	}
-	return results, total, rows.Err()
+	FROM cert_check_results WHERE monitor_id=? ORDER BY checked_at DESC`,
+		args:         []any{monitorID},
+		limit:        opts.Limit,
+		offset:       opts.Offset,
+		defaultLimit: 50,
+	}, s.scanCheckResult)
 }
 
 // --- Chain entries ---
@@ -374,7 +346,7 @@ func (s *CertificateStore) ListDueScheduledMonitors(ctx context.Context, now tim
 
 	var monitors []*certificate.CertMonitor
 	for rows.Next() {
-		m, err := s.scanMonitorRow(rows)
+		m, err := s.scanMonitor(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -398,7 +370,7 @@ func (s *CertificateStore) ListMonitorsByExternalID(ctx context.Context, agentID
 
 	var monitors []*certificate.CertMonitor
 	for rows.Next() {
-		m, err := s.scanMonitorRow(rows)
+		m, err := s.scanMonitor(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -487,10 +459,6 @@ func (s *CertificateStore) scanMonitor(row rowScanner) (*certificate.CertMonitor
 	return &m, nil
 }
 
-func (s *CertificateStore) scanMonitorRow(rows *sql.Rows) (*certificate.CertMonitor, error) {
-	return s.scanMonitor(rows)
-}
-
 func (s *CertificateStore) scanCheckResult(row rowScanner) (*certificate.CertCheckResult, error) {
 	var r certificate.CertCheckResult
 	var subjectCN, issuerCN, issuerOrg, sansJSON, serialNumber, sigAlgo sql.NullString
@@ -576,10 +544,6 @@ func (s *CertificateStore) scanCheckResult(row rowScanner) (*certificate.CertChe
 	}
 
 	return &r, nil
-}
-
-func (s *CertificateStore) scanCheckResultRow(rows *sql.Rows) (*certificate.CertCheckResult, error) {
-	return s.scanCheckResult(rows)
 }
 
 // CountConfigured returns the number of certificate monitors. Operator-created

@@ -66,7 +66,7 @@ func TestDialInspectControl_HookErrorAbortsBeforeConnecting(t *testing.T) {
 	assert.Equal(t, int32(0), accepted.Load(), "no connection may be opened when the hook refuses")
 }
 
-func TestDialInspectControl_NilHookBehavesLikeDialInspect(t *testing.T) {
+func TestDialInspectControl_NilHookDialsNormally(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
 	defer srv.Close()
 	addr := strings.TrimPrefix(srv.URL, "https://")

@@ -103,13 +103,6 @@ func NewClientWithFingerprint(ctx context.Context, serverURL string, fingerprint
 	}, nil
 }
 
-// NewClient dials the server at serverURL and returns a ready-to-use Client.
-// serverURL should start with "grpcs://" (TLS) or "grpc://" (plaintext, not recommended).
-// If insecureSkipVerify is true, TLS certificate validation is skipped (debug only).
-func NewClient(ctx context.Context, serverURL string, insecureSkipVerify bool, logger *slog.Logger) (*Client, error) {
-	return NewClientWithFingerprint(ctx, serverURL, "", insecureSkipVerify, logger)
-}
-
 func normalizeFingerprint(fp string) (string, error) {
 	fp = strings.ToLower(strings.ReplaceAll(fp, ":", ""))
 	if fp == "" {

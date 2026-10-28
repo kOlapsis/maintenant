@@ -6,10 +6,7 @@ package store
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"fmt"
 	"log/slog"
-	"strings"
 )
 
 // certSNIConstraint is the SNI-aware identity constraint. It must stay
@@ -24,62 +21,13 @@ const certSNIConstraint = "UNIQUE(agent_id, hostname, port, server_name)"
 // installs and databases converted by this release get the new constraint
 // straight from uuid_schema.sql and skip the rebuild.
 func rebuildCertMonitorsForSNI(ctx context.Context, db *sql.DB, logger *slog.Logger) error {
-	var ddl string
-	err := db.QueryRowContext(ctx,
-		`SELECT sql FROM sqlite_master WHERE type='table' AND name='cert_monitors'`).Scan(&ddl)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("cert sni rebuild: probe ddl: %w", err)
-	}
-	if strings.Contains(ddl, certSNIConstraint) {
-		return nil
-	}
-
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("cert sni rebuild: acquire conn: %w", err)
-	}
-	defer func() { _ = conn.Close() }()
-
-	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=OFF"); err != nil {
-		return fmt.Errorf("cert sni rebuild: fk off: %w", err)
-	}
-
-	logger.Info("cert monitor SNI rebuild starting")
-
-	if err := runCertSNIRebuild(ctx, conn); err != nil {
-		return err
-	}
-
-	if err := foreignKeyCheck(ctx, conn); err != nil {
-		return err
-	}
-	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=ON"); err != nil {
-		return fmt.Errorf("cert sni rebuild: fk on: %w", err)
-	}
-
-	logger.Info("cert monitor SNI rebuild complete")
-	return nil
-}
-
-// runCertSNIRebuild performs the table rebuild inside one transaction.
-func runCertSNIRebuild(ctx context.Context, conn *sql.Conn) error {
-	tx, err := conn.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("cert sni rebuild: begin: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
-
-	stmts := []stmt{
-		// Keep this CREATE TABLE byte-identical to uuid_schema.sql.
-		{"create table", `CREATE TABLE cert_monitors_new (
+	return rebuildTable(ctx, db, logger, tableRebuild{
+		name:   "cert sni rebuild",
+		table:  "cert_monitors",
+		marker: certSNIConstraint,
+		stmts: []stmt{
+			// Keep this CREATE TABLE byte-identical to uuid_schema.sql.
+			{"create table", `CREATE TABLE cert_monitors_new (
     id              TEXT PRIMARY KEY NOT NULL,              -- uid.CertMonitor(agent,host,port[,server_name]) or minted (standalone)
     agent_id        TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000' REFERENCES agents(id) ON DELETE CASCADE,
     hostname        TEXT NOT NULL,
@@ -98,32 +46,22 @@ func runCertSNIRebuild(ctx context.Context, conn *sql.Conn) error {
     server_name     TEXT NOT NULL DEFAULT '',               -- SNI; '' = validate against hostname
     ` + certSNIConstraint + `
 )`},
-		{"copy rows", `INSERT INTO cert_monitors_new
-			(id, agent_id, hostname, port, source, endpoint_id, status, check_interval_seconds,
-			 warning_thresholds_json, last_alerted_threshold, last_check_at, next_check_at, last_error,
-			 created_at, external_id, server_name)
-			SELECT id, agent_id, hostname, port, source, endpoint_id, status, check_interval_seconds,
-			 warning_thresholds_json, last_alerted_threshold, last_check_at, next_check_at, last_error,
-			 created_at, external_id, server_name
-			FROM cert_monitors`},
-		{"drop old table", `DROP TABLE cert_monitors`},
-		{"rename", `ALTER TABLE cert_monitors_new RENAME TO cert_monitors`},
-		// DROP TABLE removed the old table's indexes — recreate them all.
-		{"index endpoint", `CREATE INDEX idx_cert_monitor_endpoint ON cert_monitors(endpoint_id) WHERE endpoint_id IS NOT NULL`},
-		{"index status", `CREATE INDEX idx_cert_monitor_status ON cert_monitors(status)`},
-		{"index next_check", `CREATE INDEX idx_cert_monitor_next_check ON cert_monitors(next_check_at) WHERE source IN ('standalone','label')`},
-		{"index external_id", `CREATE INDEX idx_cert_monitor_external_id ON cert_monitors(external_id) WHERE external_id != ''`},
-		{"index agent_id", `CREATE INDEX idx_cert_monitors_agent_id ON cert_monitors(agent_id)`},
-	}
-	for _, s := range stmts {
-		if _, err := tx.ExecContext(ctx, s.sql); err != nil {
-			return fmt.Errorf("cert sni rebuild: %s: %w", s.desc, err)
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("cert sni rebuild: commit: %w", err)
-	}
-	committed = true
-	return nil
+			{"copy rows", `INSERT INTO cert_monitors_new
+				(id, agent_id, hostname, port, source, endpoint_id, status, check_interval_seconds,
+				 warning_thresholds_json, last_alerted_threshold, last_check_at, next_check_at, last_error,
+				 created_at, external_id, server_name)
+				SELECT id, agent_id, hostname, port, source, endpoint_id, status, check_interval_seconds,
+				 warning_thresholds_json, last_alerted_threshold, last_check_at, next_check_at, last_error,
+				 created_at, external_id, server_name
+				FROM cert_monitors`},
+			{"drop old table", `DROP TABLE cert_monitors`},
+			{"rename", `ALTER TABLE cert_monitors_new RENAME TO cert_monitors`},
+			// DROP TABLE removed the old table's indexes — recreate them all.
+			{"index endpoint", `CREATE INDEX idx_cert_monitor_endpoint ON cert_monitors(endpoint_id) WHERE endpoint_id IS NOT NULL`},
+			{"index status", `CREATE INDEX idx_cert_monitor_status ON cert_monitors(status)`},
+			{"index next_check", `CREATE INDEX idx_cert_monitor_next_check ON cert_monitors(next_check_at) WHERE source IN ('standalone','label')`},
+			{"index external_id", `CREATE INDEX idx_cert_monitor_external_id ON cert_monitors(external_id) WHERE external_id != ''`},
+			{"index agent_id", `CREATE INDEX idx_cert_monitors_agent_id ON cert_monitors(agent_id)`},
+		},
+	})
 }

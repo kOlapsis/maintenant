@@ -63,8 +63,8 @@ func TestIsRedirectURIAllowed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := s.isRedirectURIAllowed(tt.uri); got != tt.want {
-				t.Errorf("isRedirectURIAllowed(%q) = %v, want %v", tt.uri, got, tt.want)
+			if got := s.redirectTarget(tt.uri) != nil; got != tt.want {
+				t.Errorf("redirectTarget(%q) allowed = %v, want %v", tt.uri, got, tt.want)
 			}
 		})
 	}

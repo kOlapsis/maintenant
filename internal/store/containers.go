@@ -150,7 +150,7 @@ func (s *ContainerStore) ListContainers(ctx context.Context, opts container.List
 
 	var containers []*container.Container
 	for rows.Next() {
-		c, err := s.scanContainerRow(rows)
+		c, err := s.scanContainer(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -388,10 +388,6 @@ const containerColumns = `id, agent_id, external_id, name, image, state, health_
 
 const transitionColumns = `id, container_id, previous_state, new_state, previous_health, new_health, exit_code, log_snippet, timestamp`
 
-type rowScanner interface {
-	Scan(dest ...interface{}) error
-}
-
 func (s *ContainerStore) scanContainer(row rowScanner) (*container.Container, error) {
 	var c container.Container
 	var healthStatus, orchestrationGroup, orchestrationUnit, customGroup sql.NullString
@@ -443,10 +439,6 @@ func (s *ContainerStore) scanContainer(row rowScanner) (*container.Container, er
 	}
 
 	return &c, nil
-}
-
-func (s *ContainerStore) scanContainerRow(rows *sql.Rows) (*container.Container, error) {
-	return s.scanContainer(rows)
 }
 
 func scanTransitionRow(rows rowScanner) (*container.StateTransition, error) {

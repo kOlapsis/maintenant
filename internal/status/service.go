@@ -220,11 +220,7 @@ func (s *Service) DeriveComponentStatus(ctx context.Context, c *Component) strin
 	return ComputeAggregateStatus(states)
 }
 
-// Severity returns a numeric severity for status comparison (higher = worse).
-func Severity(s string) int {
-	return statusSeverity(s)
-}
-
+// statusSeverity returns a numeric severity for status comparison (higher = worse).
 func statusSeverity(s string) int {
 	switch s {
 	case StatusMajorOutage:

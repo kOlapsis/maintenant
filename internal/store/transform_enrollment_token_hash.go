@@ -6,10 +6,8 @@ package store
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/mattn/go-sqlite3"
@@ -39,71 +37,43 @@ const enrollmentTokenHashColumn = "token_hash    TEXT NOT NULL UNIQUE" // #nosec
 // reason as the other rebuilds: migrations execute against the legacy integer
 // schema, where this table does not exist at all.
 func rebuildEnrollmentTokensForHashing(ctx context.Context, db *sql.DB, logger *slog.Logger) error {
-	var ddl string
-	err := db.QueryRowContext(ctx,
-		`SELECT sql FROM sqlite_master WHERE type='table' AND name='enrollment_tokens'`).Scan(&ddl)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("enrollment token hash rebuild: probe ddl: %w", err)
-	}
-	if strings.Contains(ddl, enrollmentTokenHashColumn) {
-		return nil
-	}
-
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("enrollment token hash rebuild: acquire conn: %w", err)
-	}
-	defer func() { _ = conn.Close() }()
-
-	// The copy hashes set-based rather than row-by-row in Go, so the whole
-	// rewrite stays inside the one transaction below.
-	if err := registerHashFunc(ctx, conn); err != nil {
-		return fmt.Errorf("enrollment token hash rebuild: register func: %w", err)
-	}
-
-	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=OFF"); err != nil {
-		return fmt.Errorf("enrollment token hash rebuild: fk off: %w", err)
-	}
-
-	// Dropping the old table marks its pages free without overwriting them, so
-	// the cleartext could stay legible in the file's slack space. secure_delete
-	// is SQLite's documented way to zero freed content instead.
-	//
-	// Precaution, not a guarantee: it cannot reach a copy of the file taken
-	// before the upgrade, nor blocks a copy-on-write filesystem or an SSD's
-	// wear-levelling still holds underneath. Revoking an outstanding token is
-	// the only thing that fully closes it — their 7-day TTL does the rest.
-	if _, err := conn.ExecContext(ctx, "PRAGMA secure_delete=ON"); err != nil {
-		return fmt.Errorf("enrollment token hash rebuild: secure_delete on: %w", err)
-	}
-
-	logger.Info("enrollment token hashing rebuild starting")
-
-	if err := runEnrollmentTokenHashRebuild(ctx, conn); err != nil {
-		return err
-	}
-
-	if err := foreignKeyCheck(ctx, conn); err != nil {
-		return err
-	}
-	// Return the freed pages to the file rather than leaving them on the
-	// freelist. The database is auto_vacuum=incremental, so this is bounded
-	// work rather than a full VACUUM rewrite.
-	if _, err := conn.ExecContext(ctx, "PRAGMA incremental_vacuum"); err != nil {
-		return fmt.Errorf("enrollment token hash rebuild: incremental_vacuum: %w", err)
-	}
-	if _, err := conn.ExecContext(ctx, "PRAGMA secure_delete=OFF"); err != nil {
-		return fmt.Errorf("enrollment token hash rebuild: secure_delete off: %w", err)
-	}
-	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=ON"); err != nil {
-		return fmt.Errorf("enrollment token hash rebuild: fk on: %w", err)
-	}
-
-	logger.Info("enrollment token hashing rebuild complete")
-	return nil
+	return rebuildTable(ctx, db, logger, tableRebuild{
+		name:   "enrollment token hash rebuild",
+		table:  "enrollment_tokens",
+		marker: enrollmentTokenHashColumn,
+		stmts:  enrollmentTokenHashStmts,
+		before: func(ctx context.Context, conn *sql.Conn) error {
+			// The copy hashes set-based rather than row-by-row in Go, so the whole
+			// rewrite stays inside the one transaction.
+			if err := registerHashFunc(ctx, conn); err != nil {
+				return fmt.Errorf("register func: %w", err)
+			}
+			// Dropping the old table marks its pages free without overwriting them, so
+			// the cleartext could stay legible in the file's slack space. secure_delete
+			// is SQLite's documented way to zero freed content instead.
+			//
+			// Precaution, not a guarantee: it cannot reach a copy of the file taken
+			// before the upgrade, nor blocks a copy-on-write filesystem or an SSD's
+			// wear-levelling still holds underneath. Revoking an outstanding token is
+			// the only thing that fully closes it — their 7-day TTL does the rest.
+			if _, err := conn.ExecContext(ctx, "PRAGMA secure_delete=ON"); err != nil {
+				return fmt.Errorf("secure_delete on: %w", err)
+			}
+			return nil
+		},
+		after: func(ctx context.Context, conn *sql.Conn) error {
+			// Return the freed pages to the file rather than leaving them on the
+			// freelist. The database is auto_vacuum=incremental, so this is bounded
+			// work rather than a full VACUUM rewrite.
+			if _, err := conn.ExecContext(ctx, "PRAGMA incremental_vacuum"); err != nil {
+				return fmt.Errorf("incremental_vacuum: %w", err)
+			}
+			if _, err := conn.ExecContext(ctx, "PRAGMA secure_delete=OFF"); err != nil {
+				return fmt.Errorf("secure_delete off: %w", err)
+			}
+			return nil
+		},
+	})
 }
 
 // registerHashFunc exposes the token hash and prefix helpers to SQL so the copy
@@ -121,22 +91,9 @@ func registerHashFunc(ctx context.Context, conn *sql.Conn) error {
 	})
 }
 
-// runEnrollmentTokenHashRebuild performs the table rebuild in one transaction.
-func runEnrollmentTokenHashRebuild(ctx context.Context, conn *sql.Conn) error {
-	tx, err := conn.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("enrollment token hash rebuild: begin: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
-
-	stmts := []stmt{
-		// Keep this CREATE TABLE byte-identical to uuid_schema.sql.
-		{"create table", `CREATE TABLE enrollment_tokens_new (
+var enrollmentTokenHashStmts = []stmt{
+	// Keep this CREATE TABLE byte-identical to uuid_schema.sql.
+	{"create table", `CREATE TABLE enrollment_tokens_new (
     id            TEXT PRIMARY KEY NOT NULL,                -- hex(sha256(token))[:16]
     ` + enrollmentTokenHashColumn + `,                     -- hex(sha256(token)); the cleartext is never stored
     token_prefix  TEXT NOT NULL DEFAULT '',                 -- leading non-secret chars, display only
@@ -145,27 +102,15 @@ func runEnrollmentTokenHashRebuild(ctx context.Context, conn *sql.Conn) error {
     consumed_at   BIGINT,
     consumed_by_agent_id TEXT                               -- audit only, no FK (agent may not exist yet)
 )`},
-		// A duplicate hash cannot happen (the source column is UNIQUE and the
-		// hash is injective over it), so the UNIQUE above stays satisfiable.
-		{"copy rows", `INSERT INTO enrollment_tokens_new
-			(id, token_hash, token_prefix, created_at, expires_at, consumed_at, consumed_by_agent_id)
-			SELECT id, mnt_token_hash(token), mnt_token_prefix(token),
-			       created_at, expires_at, consumed_at, consumed_by_agent_id
-			FROM enrollment_tokens`},
-		{"drop old table", `DROP TABLE enrollment_tokens`},
-		{"rename", `ALTER TABLE enrollment_tokens_new RENAME TO enrollment_tokens`},
-		// DROP TABLE removed the old table's index — recreate it.
-		{"index expires_at", `CREATE INDEX idx_enrollment_tokens_expires_at ON enrollment_tokens(expires_at)`},
-	}
-	for _, s := range stmts {
-		if _, err := tx.ExecContext(ctx, s.sql); err != nil {
-			return fmt.Errorf("enrollment token hash rebuild: %s: %w", s.desc, err)
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("enrollment token hash rebuild: commit: %w", err)
-	}
-	committed = true
-	return nil
+	// A duplicate hash cannot happen (the source column is UNIQUE and the
+	// hash is injective over it), so the UNIQUE above stays satisfiable.
+	{"copy rows", `INSERT INTO enrollment_tokens_new
+		(id, token_hash, token_prefix, created_at, expires_at, consumed_at, consumed_by_agent_id)
+		SELECT id, mnt_token_hash(token), mnt_token_prefix(token),
+		       created_at, expires_at, consumed_at, consumed_by_agent_id
+		FROM enrollment_tokens`},
+	{"drop old table", `DROP TABLE enrollment_tokens`},
+	{"rename", `ALTER TABLE enrollment_tokens_new RENAME TO enrollment_tokens`},
+	// DROP TABLE removed the old table's index — recreate it.
+	{"index expires_at", `CREATE INDEX idx_enrollment_tokens_expires_at ON enrollment_tokens(expires_at)`},
 }

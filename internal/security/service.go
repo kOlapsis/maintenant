@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
-	"time"
 )
 
 // AlertCallback is called when security insights change and an alert should be fired.
@@ -268,9 +267,4 @@ func (s *Service) hasChange(old map[InsightType]bool, new map[InsightType]bool) 
 		}
 	}
 	return false
-}
-
-// Now returns the current time (extracted for testing).
-func Now() time.Time {
-	return time.Now()
 }

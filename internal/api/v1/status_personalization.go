@@ -54,8 +54,7 @@ func (h *PersonalizationHandler) HandlePutSettings(w http.ResponseWriter, r *htt
 		Timezone     string `json:"timezone"`
 		DateFormat   string `json:"date_format"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		WriteError(w, http.StatusBadRequest, "validation_error", "invalid JSON")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -93,34 +92,10 @@ func (h *PersonalizationHandler) HandlePutSettings(w http.ResponseWriter, r *htt
 
 	resp := settingsToResponse(out)
 	if len(warnings) > 0 {
-		type withWarnings struct {
-			Version        int64                               `json:"version"`
-			Title          string                              `json:"title"`
-			Subtitle       string                              `json:"subtitle"`
-			Colors         settingsColorsResp                  `json:"colors"`
-			Announcement   settingsAnnouncementResp            `json:"announcement"`
-			FooterTextMD   string                              `json:"footer_text_md"`
-			FooterTextHTML string                              `json:"footer_text_html"`
-			Locale         string                              `json:"locale"`
-			Timezone       string                              `json:"timezone"`
-			DateFormat     string                              `json:"date_format"`
-			UpdatedAt      string                              `json:"updated_at"`
-			Warnings       map[string][]status.ContrastWarning `json:"warnings"`
-		}
-		WriteJSON(w, http.StatusOK, withWarnings{
-			Version:        out.Version,
-			Title:          out.Title,
-			Subtitle:       out.Subtitle,
-			Colors:         resp.Colors,
-			Announcement:   resp.Announcement,
-			FooterTextMD:   out.FooterTextMD,
-			FooterTextHTML: out.FooterTextHTML,
-			Locale:         out.Locale,
-			Timezone:       out.Timezone,
-			DateFormat:     out.DateFormat,
-			UpdatedAt:      out.UpdatedAt.Format("2006-01-02T15:04:05Z"),
-			Warnings:       map[string][]status.ContrastWarning{"contrast": warnings},
-		})
+		WriteJSON(w, http.StatusOK, struct {
+			settingsResp
+			Warnings map[string][]status.ContrastWarning `json:"warnings"`
+		}{resp, map[string][]status.ContrastWarning{"contrast": warnings}})
 		return
 	}
 	WriteJSON(w, http.StatusOK, resp)
@@ -238,8 +213,7 @@ func (h *PersonalizationHandler) HandleCreateFooterLink(w http.ResponseWriter, r
 		Label string `json:"label"`
 		URL   string `json:"url"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		WriteError(w, http.StatusBadRequest, "validation_error", "invalid JSON")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	link, err := h.svc.CreateFooterLink(r.Context(), req.Label, req.URL)
@@ -252,44 +226,32 @@ func (h *PersonalizationHandler) HandleCreateFooterLink(w http.ResponseWriter, r
 }
 
 func (h *PersonalizationHandler) HandleUpdateFooterLink(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if id == "" {
-		WriteError(w, http.StatusBadRequest, "validation_error", "invalid id")
+	id, ok := pathID(w, r)
+	if !ok {
 		return
 	}
 	var req struct {
 		Label string `json:"label"`
 		URL   string `json:"url"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		WriteError(w, http.StatusBadRequest, "validation_error", "invalid JSON")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	link, err := h.svc.UpdateFooterLink(r.Context(), id, req.Label, req.URL)
 	if err != nil {
-		if errors.Is(err, status.ErrNotFound) {
-			WriteError(w, http.StatusNotFound, "not_found", "footer link not found")
-			return
-		}
-		code, msg := mapLinkError(err)
-		WriteError(w, code, "validation_error", msg)
+		writeItemError(w, err, "footer link not found", mapLinkError)
 		return
 	}
 	WriteJSON(w, http.StatusOK, footerLinkToResponse(link))
 }
 
 func (h *PersonalizationHandler) HandleDeleteFooterLink(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if id == "" {
-		WriteError(w, http.StatusBadRequest, "validation_error", "invalid id")
+	id, ok := pathID(w, r)
+	if !ok {
 		return
 	}
 	if err := h.svc.DeleteFooterLink(r.Context(), id); err != nil {
-		if errors.Is(err, status.ErrNotFound) {
-			WriteError(w, http.StatusNotFound, "not_found", "footer link not found")
-			return
-		}
-		WriteError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		writeItemError(w, err, "footer link not found", nil)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -299,8 +261,7 @@ func (h *PersonalizationHandler) HandleReorderFooterLinks(w http.ResponseWriter,
 	var req struct {
 		IDs []string `json:"ids"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		WriteError(w, http.StatusBadRequest, "validation_error", "invalid JSON")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	links, err := h.svc.ReorderFooterLinks(r.Context(), req.IDs)
@@ -327,8 +288,7 @@ func (h *PersonalizationHandler) HandleCreateFAQItem(w http.ResponseWriter, r *h
 		Question string `json:"question"`
 		AnswerMD string `json:"answer_md"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		WriteError(w, http.StatusBadRequest, "validation_error", "invalid JSON")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	item, err := h.svc.CreateFAQItem(r.Context(), req.Question, req.AnswerMD)
@@ -341,44 +301,32 @@ func (h *PersonalizationHandler) HandleCreateFAQItem(w http.ResponseWriter, r *h
 }
 
 func (h *PersonalizationHandler) HandleUpdateFAQItem(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if id == "" {
-		WriteError(w, http.StatusBadRequest, "validation_error", "invalid id")
+	id, ok := pathID(w, r)
+	if !ok {
 		return
 	}
 	var req struct {
 		Question string `json:"question"`
 		AnswerMD string `json:"answer_md"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		WriteError(w, http.StatusBadRequest, "validation_error", "invalid JSON")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	item, err := h.svc.UpdateFAQItem(r.Context(), id, req.Question, req.AnswerMD)
 	if err != nil {
-		if errors.Is(err, status.ErrNotFound) {
-			WriteError(w, http.StatusNotFound, "not_found", "FAQ item not found")
-			return
-		}
-		code, msg := mapFAQError(err)
-		WriteError(w, code, "validation_error", msg)
+		writeItemError(w, err, "FAQ item not found", mapFAQError)
 		return
 	}
 	WriteJSON(w, http.StatusOK, faqItemToResponse(item))
 }
 
 func (h *PersonalizationHandler) HandleDeleteFAQItem(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if id == "" {
-		WriteError(w, http.StatusBadRequest, "validation_error", "invalid id")
+	id, ok := pathID(w, r)
+	if !ok {
 		return
 	}
 	if err := h.svc.DeleteFAQItem(r.Context(), id); err != nil {
-		if errors.Is(err, status.ErrNotFound) {
-			WriteError(w, http.StatusNotFound, "not_found", "FAQ item not found")
-			return
-		}
-		WriteError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		writeItemError(w, err, "FAQ item not found", nil)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -388,8 +336,7 @@ func (h *PersonalizationHandler) HandleReorderFAQ(w http.ResponseWriter, r *http
 	var req struct {
 		IDs []string `json:"ids"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		WriteError(w, http.StatusBadRequest, "validation_error", "invalid JSON")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	items, err := h.svc.ReorderFAQItems(r.Context(), req.IDs)
@@ -398,6 +345,38 @@ func (h *PersonalizationHandler) HandleReorderFAQ(w http.ResponseWriter, r *http
 		return
 	}
 	WriteJSON(w, http.StatusOK, map[string]interface{}{"items": faqItemsToResponse(items)})
+}
+
+// --- Request helpers ---
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		WriteError(w, http.StatusBadRequest, "validation_error", "invalid JSON")
+		return false
+	}
+	return true
+}
+
+func pathID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "validation_error", "invalid id")
+		return "", false
+	}
+	return id, true
+}
+
+// writeItemError answers 404 for a missing item, then the validation error mapErr gives, or a 500 when mapErr is nil.
+func writeItemError(w http.ResponseWriter, err error, notFound string, mapErr func(error) (int, string)) {
+	switch {
+	case errors.Is(err, status.ErrNotFound):
+		WriteError(w, http.StatusNotFound, "not_found", notFound)
+	case mapErr != nil:
+		code, msg := mapErr(err)
+		WriteError(w, code, "validation_error", msg)
+	default:
+		WriteError(w, http.StatusInternalServerError, "internal_error", err.Error())
+	}
 }
 
 // --- Response helpers ---
