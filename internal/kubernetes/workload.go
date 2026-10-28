@@ -116,93 +116,85 @@ func (r *Runtime) ListWorkloads(ctx context.Context, namespaces []string) ([]K8s
 	}
 	targetNS := r.resolveNamespaces(namespaces)
 
-	// Collect per-namespace workloads.
 	byNS := make(map[string][]K8sWorkload)
 	for _, ns := range targetNS {
 		byNS[ns] = nil
 	}
 
-	// Deployments.
-	depList, err := cs.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+	err = collectWorkloads(r, "deployments", targetNS, byNS, func() ([]appsv1.Deployment, error) {
+		l, err := cs.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		return l.Items, nil
+	}, mapDeploymentWorkload)
 	if err != nil {
-		if !k8serrors.IsForbidden(err) {
-			return nil, fmt.Errorf("list deployments: %w", err)
-		}
-		r.logger.Warn("RBAC: forbidden to list deployments", "error", err)
-	} else {
-		for i := range depList.Items {
-			dep := &depList.Items[i]
-			if !r.nsFilter.IsAllowed(dep.Namespace) {
-				continue
-			}
-			if len(targetNS) > 0 && !containsString(targetNS, dep.Namespace) {
-				continue
-			}
-			byNS[dep.Namespace] = append(byNS[dep.Namespace], mapDeploymentWorkload(dep))
-		}
+		return nil, err
 	}
 
-	// StatefulSets.
-	ssList, err := cs.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
+	err = collectWorkloads(r, "statefulsets", targetNS, byNS, func() ([]appsv1.StatefulSet, error) {
+		l, err := cs.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		return l.Items, nil
+	}, mapStatefulSetWorkload)
 	if err != nil {
-		if !k8serrors.IsForbidden(err) {
-			return nil, fmt.Errorf("list statefulsets: %w", err)
-		}
-		r.logger.Warn("RBAC: forbidden to list statefulsets", "error", err)
-	} else {
-		for i := range ssList.Items {
-			ss := &ssList.Items[i]
-			if !r.nsFilter.IsAllowed(ss.Namespace) {
-				continue
-			}
-			if len(targetNS) > 0 && !containsString(targetNS, ss.Namespace) {
-				continue
-			}
-			byNS[ss.Namespace] = append(byNS[ss.Namespace], mapStatefulSetWorkload(ss))
-		}
+		return nil, err
 	}
 
-	// DaemonSets.
-	dsList, err := cs.AppsV1().DaemonSets("").List(ctx, metav1.ListOptions{})
+	err = collectWorkloads(r, "daemonsets", targetNS, byNS, func() ([]appsv1.DaemonSet, error) {
+		l, err := cs.AppsV1().DaemonSets("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		return l.Items, nil
+	}, mapDaemonSetWorkload)
 	if err != nil {
-		if !k8serrors.IsForbidden(err) {
-			return nil, fmt.Errorf("list daemonsets: %w", err)
-		}
-		r.logger.Warn("RBAC: forbidden to list daemonsets", "error", err)
-	} else {
-		for i := range dsList.Items {
-			ds := &dsList.Items[i]
-			if !r.nsFilter.IsAllowed(ds.Namespace) {
-				continue
-			}
-			if len(targetNS) > 0 && !containsString(targetNS, ds.Namespace) {
-				continue
-			}
-			byNS[ds.Namespace] = append(byNS[ds.Namespace], mapDaemonSetWorkload(ds))
-		}
+		return nil, err
 	}
 
-	// Jobs.
-	jobList, err := cs.BatchV1().Jobs("").List(ctx, metav1.ListOptions{})
+	err = collectWorkloads(r, "jobs", targetNS, byNS, func() ([]batchv1.Job, error) {
+		l, err := cs.BatchV1().Jobs("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		return l.Items, nil
+	}, mapJobWorkload)
 	if err != nil {
-		if !k8serrors.IsForbidden(err) {
-			return nil, fmt.Errorf("list jobs: %w", err)
-		}
-		r.logger.Warn("RBAC: forbidden to list jobs", "error", err)
-	} else {
-		for i := range jobList.Items {
-			job := &jobList.Items[i]
-			if !r.nsFilter.IsAllowed(job.Namespace) {
-				continue
-			}
-			if len(targetNS) > 0 && !containsString(targetNS, job.Namespace) {
-				continue
-			}
-			byNS[job.Namespace] = append(byNS[job.Namespace], mapJobWorkload(job))
-		}
+		return nil, err
 	}
 
-	// Build sorted groups, skipping empty namespaces.
+	return groupWorkloads(byNS), nil
+}
+
+func collectWorkloads[T any, PT interface {
+	*T
+	metav1.Object
+}](r *Runtime, kind string, targetNS []string, byNS map[string][]K8sWorkload, list func() ([]T, error), mapFn func(PT) K8sWorkload) error {
+	items, err := list()
+	if err != nil {
+		if !k8serrors.IsForbidden(err) {
+			return fmt.Errorf("list %s: %w", kind, err)
+		}
+		r.logger.Warn("RBAC: forbidden to list "+kind, "error", err)
+		return nil
+	}
+	for i := range items {
+		item := PT(&items[i])
+		ns := item.GetNamespace()
+		if !r.nsFilter.IsAllowed(ns) {
+			continue
+		}
+		if len(targetNS) > 0 && !containsString(targetNS, ns) {
+			continue
+		}
+		byNS[ns] = append(byNS[ns], mapFn(item))
+	}
+	return nil
+}
+
+func groupWorkloads(byNS map[string][]K8sWorkload) []K8sWorkloadGroup {
 	var groups []K8sWorkloadGroup
 	var nsKeys []string
 	for ns := range byNS {
@@ -226,8 +218,7 @@ func (r *Runtime) ListWorkloads(ctx context.Context, namespaces []string) ([]K8s
 			Workloads: wls,
 		})
 	}
-
-	return groups, nil
+	return groups
 }
 
 // GetWorkload returns the detail for a single workload, its pods, and recent events.

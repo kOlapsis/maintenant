@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
@@ -269,10 +268,7 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	config := strings.TrimSpace(string(input.Config))
-	if config == "null" {
-		config = ""
-	}
+	config := alert.NormalizeConfig(string(input.Config))
 	if v, ok := h.channelValidator(input.Type); ok {
 		if err := v.ValidateCredentials(input.Secret, config); err != nil {
 			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
@@ -345,72 +341,36 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// A request that only switches the channel off never needs the edition that
-	// opens the type: an operator whose licence expired must still be able to
-	// silence a channel, and deleting it to do so is not a way out (FR-001d).
-	extends := input.Name != nil || input.Type != nil || input.URL != nil ||
-		input.Headers != nil || input.Secret != nil || input.Config != nil ||
-		(input.Enabled != nil && *input.Enabled)
-	if extends {
-		// Both the type it has and the type it would become: a downgraded
-		// instance may neither keep editing a gated channel nor turn a plain
-		// one into a gated one.
+	patch := alert.ChannelPatch{
+		Name: input.Name, Type: input.Type, URL: input.URL, Headers: input.Headers,
+		Secret: input.Secret, Enabled: input.Enabled,
+	}
+	if input.Config != nil {
+		patch.Config = new(string(*input.Config))
+	}
+	if patch.Extends() {
 		if refuseChannelCapability(w, ch.Type) {
 			return
 		}
-		if input.Type != nil && refuseChannelCapability(w, *input.Type) {
+		if patch.Type != nil && refuseChannelCapability(w, *patch.Type) {
 			return
 		}
 	}
 
-	if input.Name != nil {
-		ch.Name = *input.Name
-	}
-	if input.Type != nil {
-		ch.Type = *input.Type
-	}
-	if input.URL != nil {
-		ch.URL = *input.URL
-	}
-	if input.Headers != nil {
-		if _, err := alert.ParseHeaders(*input.Headers); err != nil {
-			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
-			return
-		}
-		ch.Headers = *input.Headers
-	}
-	// An absent secret keeps the stored one (FR-006); an empty one is refused,
-	// since a channel without its credential can no longer send and would say
-	// nothing about it.
-	if input.Secret != nil {
-		if *input.Secret == "" {
-			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR",
-				"secret cannot be cleared; delete the channel instead")
-			return
-		}
-		ch.Secret = *input.Secret
-	}
-	if input.Config != nil {
-		config := strings.TrimSpace(string(*input.Config))
-		if config == "null" {
-			config = ""
-		}
-		ch.Config = config
-	}
-	if input.Enabled != nil {
-		ch.Enabled = *input.Enabled
+	if err := patch.Apply(ch); err != nil {
+		writeChannelPatchError(w, err)
+		return
 	}
 
-	if v, ok := h.channelValidator(ch.Type); ok && (input.Secret != nil || input.Config != nil) {
+	if v, ok := h.channelValidator(ch.Type); ok && patch.TouchesCredentials() {
 		if err := v.ValidateCredentials(ch.Secret, ch.Config); err != nil {
 			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
 			return
 		}
 	}
 
-	// Re-validate the destination when the URL or type changed, so an update
-	// can't smuggle in a private/internal URL the create path would reject.
-	if input.URL != nil || input.Type != nil {
+	// An update must not slip in a private URL the create path would refuse.
+	if patch.TouchesDestination() {
 		if err := h.validateChannelURL(r.Context(), ch.Type, ch.URL); err != nil {
 			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
 			return
@@ -428,6 +388,19 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 	}
 	h.broker.Broadcast(SSEEvent{Type: event.ChannelUpdated, Data: stored})
 	WriteJSON(w, http.StatusOK, stored)
+}
+
+func writeChannelPatchError(w http.ResponseWriter, err error) {
+	var fe *alert.ChannelFieldError
+	if !errors.As(err, &fe) {
+		WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		return
+	}
+	if fe.Field == "headers" {
+		WriteError(w, http.StatusBadRequest, "INVALID_INPUT", fe.Msg)
+		return
+	}
+	WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", fe.Field+" "+fe.Msg)
 }
 
 // HandleDeleteChannel handles DELETE /api/v1/channels/{id}.
