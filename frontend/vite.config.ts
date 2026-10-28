@@ -45,27 +45,6 @@ export default defineConfig({
         ],
         runtimeCaching: [
           {
-            // Session probe: must always see the live answer, never a cached one.
-            urlPattern: /__probe=1/,
-            handler: 'NetworkOnly',
-          },
-          {
-            urlPattern: /\/api\/v1\/(containers\/[^\/]+\/logs|status\/subscribers|escalation-policies|escalation-runs|alerts\/[^\/]+\/escalation-runs|agents|security|cve)/,
-            handler: 'NetworkOnly',
-          },
-          {
-            urlPattern: /\/api\/v1\/(?!containers\/events|status\/smtp|channels|webhooks)/,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: `api-${buildRevision}`,
-              expiration: { maxEntries: 50, maxAgeSeconds: 300 },
-              networkTimeoutSeconds: 5,
-              // Keeps an auth proxy's login page out of the API cache, which
-              // would otherwise be replayed as a fake expired session.
-              cacheableResponse: { statuses: [200], headers: { 'content-type': 'application/json' } },
-            },
-          },
-          {
             urlPattern: /\.(js|css|woff2?|png|jpg|svg|ico)$/,
             handler: 'CacheFirst',
             options: {
