@@ -92,13 +92,6 @@ func (r *CommandRunner) cancel(requestID string) {
 	}
 }
 
-// inFlight reports how many commands are currently running.
-func (r *CommandRunner) inFlight() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return len(r.running)
-}
-
 // CancelAll aborts every in-flight command, used when the stream goes away.
 func (r *CommandRunner) CancelAll() {
 	r.mu.Lock()

@@ -41,14 +41,6 @@ func TestIsUniqueViolation(t *testing.T) {
 	assert.False(t, IsUniqueViolation(nil))
 }
 
-func TestIsForeignKeyViolation(t *testing.T) {
-	assert.True(t, IsForeignKeyViolation(sqliteErr(sqlite3.ErrConstraint, sqlite3.ErrConstraintForeignKey)))
-	assert.True(t, IsForeignKeyViolation(pgErr("23503")))
-	assert.False(t, IsForeignKeyViolation(sqliteErr(sqlite3.ErrConstraint, sqlite3.ErrConstraintUnique)))
-	assert.False(t, IsForeignKeyViolation(pgErr("23505")))
-	assert.False(t, IsForeignKeyViolation(nil))
-}
-
 func TestIsBusy(t *testing.T) {
 	assert.True(t, IsBusy(sqliteErr(sqlite3.ErrBusy, 0)))
 	assert.True(t, IsBusy(sqliteErr(sqlite3.ErrLocked, 0)))

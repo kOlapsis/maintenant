@@ -135,7 +135,7 @@ func (s *EndpointStore) ListEndpoints(ctx context.Context, opts endpoint.ListEnd
 
 	var endpoints []*endpoint.Endpoint
 	for rows.Next() {
-		e, err := s.scanEndpointRow(rows)
+		e, err := s.scanEndpoint(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -157,7 +157,7 @@ func (s *EndpointStore) ListEndpointsByExternalID(ctx context.Context, agentID, 
 
 	var endpoints []*endpoint.Endpoint
 	for rows.Next() {
-		e, err := s.scanEndpointRow(rows)
+		e, err := s.scanEndpoint(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -227,55 +227,24 @@ func (s *EndpointStore) InsertCheckResult(ctx context.Context, result *endpoint.
 }
 
 func (s *EndpointStore) ListCheckResults(ctx context.Context, endpointID string, opts endpoint.ListChecksOpts) ([]*endpoint.CheckResult, int, error) {
-	countQuery := `SELECT COUNT(*) FROM check_results WHERE endpoint_id=?`
-	countArgs := []interface{}{endpointID}
-
-	query := `SELECT cr.id, cr.endpoint_id, cr.success, cr.response_time_ms, cr.http_status, cr.error_message, cr.timestamp, e.agent_id
+	countSQL := `SELECT COUNT(*) FROM check_results WHERE endpoint_id=?`
+	selectSQL := `SELECT cr.id, cr.endpoint_id, cr.success, cr.response_time_ms, cr.http_status, cr.error_message, cr.timestamp, e.agent_id
 		FROM check_results cr JOIN endpoints e ON e.id = cr.endpoint_id WHERE cr.endpoint_id=?`
-	args := []interface{}{endpointID}
-
+	args := []any{endpointID}
 	if opts.Since != nil {
-		query += ` AND cr.timestamp>=?`
+		countSQL += ` AND timestamp>=?`
+		selectSQL += ` AND cr.timestamp>=?`
 		args = append(args, opts.Since.Unix())
-		countQuery += ` AND timestamp>=?`
-		countArgs = append(countArgs, opts.Since.Unix())
 	}
-
-	var total int
-	if err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count check results: %w", err)
-	}
-
-	query += ` ORDER BY cr.timestamp DESC`
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 500 {
-		limit = 500
-	}
-	query += fmt.Sprintf(` LIMIT %d`, limit)
-	if opts.Offset > 0 {
-		query += fmt.Sprintf(` OFFSET %d`, opts.Offset) // #nosec G202 -- integer formatting of an int option.
-	}
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list check results: %w", err)
-	}
-	defer func(rows *sql.Rows) {
-		_ = rows.Close()
-	}(rows)
-
-	var results []*endpoint.CheckResult
-	for rows.Next() {
-		r, err := scanCheckResultRow(rows)
-		if err != nil {
-			return nil, 0, err
-		}
-		results = append(results, r)
-	}
-	return results, total, rows.Err()
+	return listPage(ctx, s.db, pageQuery{
+		what:         "check results",
+		countSQL:     countSQL,
+		selectSQL:    selectSQL + ` ORDER BY cr.timestamp DESC`,
+		args:         args,
+		limit:        opts.Limit,
+		offset:       opts.Offset,
+		defaultLimit: 50,
+	}, scanCheckResultRow)
 }
 
 func (s *EndpointStore) GetCheckResultsInWindow(ctx context.Context, endpointID string, from, to time.Time) (int, int, error) {
@@ -456,10 +425,6 @@ func (s *EndpointStore) scanEndpoint(row rowScanner) (*endpoint.Endpoint, error)
 	}
 
 	return &e, nil
-}
-
-func (s *EndpointStore) scanEndpointRow(rows *sql.Rows) (*endpoint.Endpoint, error) {
-	return s.scanEndpoint(rows)
 }
 
 func scanCheckResultRow(row rowScanner) (*endpoint.CheckResult, error) {

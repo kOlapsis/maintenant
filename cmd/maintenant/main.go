@@ -46,8 +46,55 @@ func main() {
 		args = args[1:]
 	}
 
-	// --help and --version answer before the logger exists, so slog JSON does
-	// not land in the middle of human-readable output.
+	answerHelpOrVersion(args)
+	cfg, visited := loadConfig(args)
+
+	logOutput := os.Stdout
+	if mcpStdio {
+		logOutput = os.Stderr
+	}
+	logger := slog.New(slog.NewJSONHandler(logOutput, &slog.HandlerOptions{
+		Level: slogLevelFrom(cfg.LogLevel),
+	}))
+	if mcpStdio {
+		runMCPStdio(cfg, logger)
+		return
+	}
+
+	if cfg.MultiHost.InsecureSkipVerify {
+		logger.Warn("insecure TLS verification disabled — do not use in production")
+	}
+	logger.Info("maintenant starting", "version", version, "commit", commit, "build_date", buildDate, "mode", cfg.Mode)
+	if cfg.DemoMode {
+		logger.Info("demo mode enabled: instance is read-only")
+	}
+
+	validateStartup(cfg, logger)
+
+	// --copy-store-to runs the copy and exits: the binary has
+	// no subcommands and this feature does not introduce any.
+	if target := visited["copy-store-to"]; target != "" {
+		if cfg.Mode == "agent" {
+			logger.Error("--copy-store-to is not accepted in agent mode",
+				"fix", "an agent has no server data set to carry")
+			os.Exit(copyExitAgentBad)
+		}
+		os.Exit(runCopy(cfg.DBPath, target, visited["yes"] == "true", os.Stdout, os.Stdin, logger))
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	if cfg.Mode == "agent" {
+		runAgent(ctx, cfg, logger)
+		return
+	}
+	runServer(ctx, cfg, logger)
+}
+
+// answerHelpOrVersion prints --help or --version and exits, before the logger
+// exists, so slog JSON does not land in the middle of human-readable output.
+func answerHelpOrVersion(args []string) {
 	for _, arg := range args {
 		switch arg {
 		case "--help", "-h":
@@ -59,7 +106,10 @@ func main() {
 			os.Exit(0)
 		}
 	}
+}
 
+// loadConfig builds the configuration from the environment then the flags, exiting 2 on an unknown flag or a bad value.
+func loadConfig(args []string) (app.Config, map[string]string) {
 	// One parser for every option: app.Registry holds the flag, its environment
 	// variable and how it lands in Config, so --help cannot advertise a flag the
 	// binary would then refuse. Unknown flag or bad value exits 2.
@@ -80,37 +130,25 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
 	}
+	return cfg, visited
+}
 
-	logOutput := os.Stdout
-	if mcpStdio {
-		logOutput = os.Stderr
+func runMCPStdio(cfg app.Config, logger *slog.Logger) {
+	if cfg.Mode == "agent" {
+		logger.Error("--mcp-stdio is not accepted in agent mode", "fix", "run it against the server")
+		os.Exit(2)
 	}
-	logger := slog.New(slog.NewJSONHandler(logOutput, &slog.HandlerOptions{
-		Level: slogLevelFrom(cfg.LogLevel),
-	}))
-	if mcpStdio {
-		if cfg.Mode == "agent" {
-			logger.Error("--mcp-stdio is not accepted in agent mode", "fix", "run it against the server")
-			os.Exit(2)
-		}
-		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-		err := mcp.Relay(ctx, mcp.SocketPath(cfg.DBPath), os.Stdin, os.Stdout)
-		stop()
-		if err != nil {
-			logger.Error("MCP stdio relay failed", "error", err)
-			os.Exit(1)
-		}
-		return
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	err := mcp.Relay(ctx, mcp.SocketPath(cfg.DBPath), os.Stdin, os.Stdout)
+	stop()
+	if err != nil {
+		logger.Error("MCP stdio relay failed", "error", err)
+		os.Exit(1)
 	}
+}
 
-	if cfg.MultiHost.InsecureSkipVerify {
-		logger.Warn("insecure TLS verification disabled — do not use in production")
-	}
-	logger.Info("maintenant starting", "version", version, "commit", commit, "build_date", buildDate, "mode", cfg.Mode)
-	if cfg.DemoMode {
-		logger.Info("demo mode enabled: instance is read-only")
-	}
-
+// validateStartup loads the extra CA bundle and checks the configuration, exiting 1 on the first failure.
+func validateStartup(cfg app.Config, logger *slog.Logger) {
 	// Loaded before anything can probe: both server and agent modes run from
 	// here, and a bad path must stop the process rather than turn every TLS
 	// check into a misleading "unknown authority".
@@ -161,52 +199,39 @@ func main() {
 		logger.Error("invalid agent spool configuration", "error", err)
 		os.Exit(1)
 	}
+}
 
-	// --copy-store-to runs the copy and exits: the binary has
-	// no subcommands and this feature does not introduce any.
-	if target := visited["copy-store-to"]; target != "" {
-		if cfg.Mode == "agent" {
-			logger.Error("--copy-store-to is not accepted in agent mode",
-				"fix", "an agent has no server data set to carry")
-			os.Exit(copyExitAgentBad)
-		}
-		os.Exit(runCopy(cfg.DBPath, target, visited["yes"] == "true", os.Stdout, os.Stdin, logger))
+func runAgent(ctx context.Context, cfg app.Config, logger *slog.Logger) {
+	dataDir := os.Getenv("MAINTENANT_DATA_DIR")
+	if dataDir == "" {
+		dataDir = defaultAgentDataDir
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	if cfg.Mode == "agent" {
-		dataDir := os.Getenv("MAINTENANT_DATA_DIR")
-		if dataDir == "" {
-			dataDir = defaultAgentDataDir
-		}
-		agentCfg := agent.AgentConfig{
-			DataDir:             dataDir,
-			ServerURL:           cfg.MultiHost.ServerURL,
-			EnrollmentToken:     cfg.MultiHost.EnrollmentToken,
-			RuntimeOverride:     cfg.MultiHost.RuntimeOverride,
-			Label:               cfg.MultiHost.Label,
-			NodeName:            cfg.MultiHost.NodeName,
-			AgentVersion:        version,
-			InsecureSkipVerify:  cfg.MultiHost.InsecureSkipVerify,
-			ServerFingerprint:   cfg.MultiHost.ServerFingerprint,
-			ProxyLabels:         cfg.ProxyLabels,
-			SpoolMaxMemoryBytes: cfg.MultiHost.AgentSpoolMaxMemoryBytes,
-			SpoolMaxDiskBytes:   cfg.MultiHost.AgentSpoolMaxDiskBytes,
-			SpoolMaxAgeSeconds:  cfg.MultiHost.AgentSpoolMaxAgeSeconds,
-		}
-		if window := int64(resource.DefaultSnapshotRetention.Seconds()); agentCfg.SpoolMaxAgeSeconds > window {
-			logger.Warn("agent spool max age is past the server raw-sample window, older events are replayed after their purge",
-				"maxAgeSeconds", agentCfg.SpoolMaxAgeSeconds, "windowSeconds", window)
-		}
-		if err := agent.Run(ctx, agentCfg, logger); err != nil {
-			logger.Error("agent run failed", "error", err)
-			os.Exit(1)
-		}
-		return
+	agentCfg := agent.AgentConfig{
+		DataDir:             dataDir,
+		ServerURL:           cfg.MultiHost.ServerURL,
+		EnrollmentToken:     cfg.MultiHost.EnrollmentToken,
+		RuntimeOverride:     cfg.MultiHost.RuntimeOverride,
+		Label:               cfg.MultiHost.Label,
+		NodeName:            cfg.MultiHost.NodeName,
+		AgentVersion:        version,
+		InsecureSkipVerify:  cfg.MultiHost.InsecureSkipVerify,
+		ServerFingerprint:   cfg.MultiHost.ServerFingerprint,
+		ProxyLabels:         cfg.ProxyLabels,
+		SpoolMaxMemoryBytes: cfg.MultiHost.AgentSpoolMaxMemoryBytes,
+		SpoolMaxDiskBytes:   cfg.MultiHost.AgentSpoolMaxDiskBytes,
+		SpoolMaxAgeSeconds:  cfg.MultiHost.AgentSpoolMaxAgeSeconds,
 	}
+	if window := int64(resource.DefaultSnapshotRetention.Seconds()); agentCfg.SpoolMaxAgeSeconds > window {
+		logger.Warn("agent spool max age is past the server raw-sample window, older events are replayed after their purge",
+			"maxAgeSeconds", agentCfg.SpoolMaxAgeSeconds, "windowSeconds", window)
+	}
+	if err := agent.Run(ctx, agentCfg, logger); err != nil {
+		logger.Error("agent run failed", "error", err)
+		os.Exit(1)
+	}
+}
 
+func runServer(ctx context.Context, cfg app.Config, logger *slog.Logger) {
 	commercial.Register()
 	application, err := app.New(cfg, logger, app.WithExtensions(commercial.Extensions()))
 	if err != nil {

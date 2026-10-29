@@ -149,7 +149,7 @@ func eventMeta(evt *agentpb.AgentEvent, now time.Time) (EventMeta, error) {
 }
 
 // Dispatch routes evt to the handler matching its body type, attributing every
-// event to agentID — the identity proven by the auth handshake, NOT the
+// event to agentID, the identity proven by the auth handshake, NOT the
 // client-controlled agent_id carried on the wire. Returns an error if a handler
 // is wired and returns an error. Silently ignores events whose handler is nil.
 func (d *Dispatcher) Dispatch(ctx context.Context, agentID string, evt *agentpb.AgentEvent) error {
@@ -166,78 +166,132 @@ func (d *Dispatcher) Dispatch(ctx context.Context, agentID string, evt *agentpb.
 		return fmt.Errorf("dispatch: reject event from agent %q: %w", agentID, err)
 	}
 
+	return d.route(ctx, agentID, evt, meta)
+}
+
+func (d *Dispatcher) route(ctx context.Context, agentID string, evt *agentpb.AgentEvent, meta EventMeta) error {
 	switch body := evt.GetBody().(type) {
 	case *agentpb.AgentEvent_Container:
-		if d.deps.Container != nil {
-			if err := d.deps.Container.HandleAgentEvent(ctx, agentID, body.Container, meta); err != nil {
-				return fmt.Errorf("dispatch container event: %w", err)
-			}
-		}
-		if d.deps.LabelSync != nil {
-			labels := body.Container.GetLabels()
-			if body.Container.GetDestroyed() {
-				labels = nil
-			}
-			d.deps.LabelSync(ctx, agentID, body.Container.GetName(), body.Container.GetContainerId(), labels)
-		}
+		return d.dispatchContainer(ctx, agentID, body.Container, meta)
 	case *agentpb.AgentEvent_Inventory:
-		if d.deps.Inventory != nil {
-			if err := d.deps.Inventory.HandleAgentInventory(ctx, agentID, body.Inventory, meta); err != nil {
-				return fmt.Errorf("dispatch container inventory: %w", err)
-			}
-		}
-		if d.deps.LabelSync != nil {
-			for _, c := range body.Inventory.GetContainers() {
-				d.deps.LabelSync(ctx, agentID, c.GetName(), c.GetContainerId(), c.GetLabels())
-			}
-		}
+		return d.dispatchInventory(ctx, agentID, body.Inventory, meta)
 	case *agentpb.AgentEvent_Endpoint:
-		if d.deps.Endpoint != nil {
-			if err := d.deps.Endpoint.HandleAgentEvent(ctx, agentID, body.Endpoint, meta); err != nil {
-				return fmt.Errorf("dispatch endpoint event: %w", err)
-			}
-		}
+		return d.dispatchEndpoint(ctx, agentID, body.Endpoint, meta)
 	case *agentpb.AgentEvent_Heartbeat:
-		if d.deps.Heartbeat != nil {
-			if err := d.deps.Heartbeat.HandleAgentEvent(ctx, agentID, body.Heartbeat); err != nil {
-				return fmt.Errorf("dispatch heartbeat event: %w", err)
-			}
-		}
+		return d.dispatchHeartbeat(ctx, agentID, body.Heartbeat)
 	case *agentpb.AgentEvent_Resource:
-		if d.deps.Resource != nil {
-			if err := d.deps.Resource.HandleAgentEvent(ctx, agentID, body.Resource, meta); err != nil {
-				return fmt.Errorf("dispatch resource event: %w", err)
-			}
-		}
+		return d.dispatchResource(ctx, agentID, body.Resource, meta)
 	case *agentpb.AgentEvent_Certificate:
-		if d.deps.Certificate != nil {
-			if err := d.deps.Certificate.HandleAgentEvent(ctx, agentID, body.Certificate); err != nil {
-				return fmt.Errorf("dispatch certificate event: %w", err)
-			}
-		}
+		return d.dispatchCertificate(ctx, agentID, body.Certificate)
 	case *agentpb.AgentEvent_Swarm:
-		if d.deps.Swarm != nil {
-			if err := d.deps.Swarm.HandleAgentEvent(ctx, agentID, body.Swarm); err != nil {
-				return fmt.Errorf("dispatch swarm topology: %w", err)
-			}
-		}
+		return d.dispatchSwarm(ctx, agentID, body.Swarm)
 	case *agentpb.AgentEvent_Kubernetes:
-		if d.deps.Kubernetes != nil {
-			if err := d.deps.Kubernetes.HandleAgentEvent(ctx, agentID, body.Kubernetes); err != nil {
-				return fmt.Errorf("dispatch kubernetes topology: %w", err)
-			}
-		}
+		return d.dispatchKubernetes(ctx, agentID, body.Kubernetes)
 	case *agentpb.AgentEvent_HostOs:
-		if d.deps.HostOS != nil {
-			if err := d.deps.HostOS.HandleAgentHostOS(ctx, agentID, body.HostOs); err != nil {
-				return fmt.Errorf("dispatch host os identity: %w", err)
-			}
-		}
+		return d.dispatchHostOS(ctx, agentID, body.HostOs)
 	case *agentpb.AgentEvent_Runtime:
-		if d.deps.Runtime != nil {
-			if err := d.deps.Runtime.HandleAgentRuntime(ctx, agentID, body.Runtime); err != nil {
-				return fmt.Errorf("dispatch runtime: %w", err)
-			}
+		return d.dispatchRuntime(ctx, agentID, body.Runtime)
+	}
+	return nil
+}
+
+func (d *Dispatcher) dispatchEndpoint(ctx context.Context, agentID string, ev *agentpb.EndpointEvent, meta EventMeta) error {
+	if d.deps.Endpoint != nil {
+		if err := d.deps.Endpoint.HandleAgentEvent(ctx, agentID, ev, meta); err != nil {
+			return fmt.Errorf("dispatch endpoint event: %w", err)
+		}
+	}
+	return nil
+}
+
+func (d *Dispatcher) dispatchHeartbeat(ctx context.Context, agentID string, ev *agentpb.HeartbeatEvent) error {
+	if d.deps.Heartbeat != nil {
+		if err := d.deps.Heartbeat.HandleAgentEvent(ctx, agentID, ev); err != nil {
+			return fmt.Errorf("dispatch heartbeat event: %w", err)
+		}
+	}
+	return nil
+}
+
+func (d *Dispatcher) dispatchResource(ctx context.Context, agentID string, ev *agentpb.ResourceSample, meta EventMeta) error {
+	if d.deps.Resource != nil {
+		if err := d.deps.Resource.HandleAgentEvent(ctx, agentID, ev, meta); err != nil {
+			return fmt.Errorf("dispatch resource event: %w", err)
+		}
+	}
+	return nil
+}
+
+func (d *Dispatcher) dispatchCertificate(ctx context.Context, agentID string, ev *agentpb.CertificateInfo) error {
+	if d.deps.Certificate != nil {
+		if err := d.deps.Certificate.HandleAgentEvent(ctx, agentID, ev); err != nil {
+			return fmt.Errorf("dispatch certificate event: %w", err)
+		}
+	}
+	return nil
+}
+
+func (d *Dispatcher) dispatchSwarm(ctx context.Context, agentID string, ev *agentpb.SwarmTopology) error {
+	if d.deps.Swarm != nil {
+		if err := d.deps.Swarm.HandleAgentEvent(ctx, agentID, ev); err != nil {
+			return fmt.Errorf("dispatch swarm topology: %w", err)
+		}
+	}
+	return nil
+}
+
+func (d *Dispatcher) dispatchKubernetes(ctx context.Context, agentID string, ev *agentpb.KubernetesTopology) error {
+	if d.deps.Kubernetes != nil {
+		if err := d.deps.Kubernetes.HandleAgentEvent(ctx, agentID, ev); err != nil {
+			return fmt.Errorf("dispatch kubernetes topology: %w", err)
+		}
+	}
+	return nil
+}
+
+func (d *Dispatcher) dispatchHostOS(ctx context.Context, agentID string, ev *agentpb.HostOSMsg) error {
+	if d.deps.HostOS != nil {
+		if err := d.deps.HostOS.HandleAgentHostOS(ctx, agentID, ev); err != nil {
+			return fmt.Errorf("dispatch host os identity: %w", err)
+		}
+	}
+	return nil
+}
+
+func (d *Dispatcher) dispatchRuntime(ctx context.Context, agentID string, ev *agentpb.RuntimeMsg) error {
+	if d.deps.Runtime != nil {
+		if err := d.deps.Runtime.HandleAgentRuntime(ctx, agentID, ev); err != nil {
+			return fmt.Errorf("dispatch runtime: %w", err)
+		}
+	}
+	return nil
+}
+
+func (d *Dispatcher) dispatchContainer(ctx context.Context, agentID string, ev *agentpb.ContainerEvent, meta EventMeta) error {
+	if d.deps.Container != nil {
+		if err := d.deps.Container.HandleAgentEvent(ctx, agentID, ev, meta); err != nil {
+			return fmt.Errorf("dispatch container event: %w", err)
+		}
+	}
+	if d.deps.LabelSync != nil {
+		labels := ev.GetLabels()
+		if ev.GetDestroyed() {
+			labels = nil
+		}
+		d.deps.LabelSync(ctx, agentID, ev.GetName(), ev.GetContainerId(), labels)
+	}
+	return nil
+}
+
+func (d *Dispatcher) dispatchInventory(ctx context.Context, agentID string, ev *agentpb.ContainerInventory, meta EventMeta) error {
+	if d.deps.Inventory != nil {
+		if err := d.deps.Inventory.HandleAgentInventory(ctx, agentID, ev, meta); err != nil {
+			return fmt.Errorf("dispatch container inventory: %w", err)
+		}
+	}
+	if d.deps.LabelSync != nil {
+		for _, c := range ev.GetContainers() {
+			d.deps.LabelSync(ctx, agentID, c.GetName(), c.GetContainerId(), c.GetLabels())
 		}
 	}
 	return nil

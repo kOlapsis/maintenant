@@ -765,11 +765,7 @@ func (s *UpdateStore) CleanupExpired(ctx context.Context, olderThan time.Time) (
 
 // --- Row scanners ---
 
-type updateRowScanner interface {
-	Scan(dest ...interface{}) error
-}
-
-func scanScanRecord(row updateRowScanner) (*update.ScanRecord, error) {
+func scanScanRecord(row rowScanner) (*update.ScanRecord, error) {
 	var r update.ScanRecord
 	var startedAt int64
 	var completedAt sql.NullInt64
@@ -790,7 +786,7 @@ func scanScanRecord(row updateRowScanner) (*update.ScanRecord, error) {
 	return &r, nil
 }
 
-func scanImageUpdate(row updateRowScanner) (*update.ImageUpdate, error) {
+func scanImageUpdate(row rowScanner) (*update.ImageUpdate, error) {
 	var u update.ImageUpdate
 	var publishedAt sql.NullInt64
 	var detectedAt int64
@@ -861,7 +857,7 @@ func collectImageUpdates(rows *sql.Rows) ([]*update.ImageUpdate, error) {
 	return result, rows.Err()
 }
 
-func scanCVECacheEntry(row updateRowScanner) (*update.CVECacheEntry, error) {
+func scanCVECacheEntry(row rowScanner) (*update.CVECacheEntry, error) {
 	var e update.CVECacheEntry
 	var fetchedAt, expiresAt int64
 	var cvssVector, summary, fixedIn, referencesJSON sql.NullString
@@ -899,7 +895,7 @@ func scanCVECacheEntry(row updateRowScanner) (*update.CVECacheEntry, error) {
 	return &e, nil
 }
 
-func scanContainerCVE(row updateRowScanner) (*update.ContainerCVE, error) {
+func scanContainerCVE(row rowScanner) (*update.ContainerCVE, error) {
 	var c update.ContainerCVE
 	var firstDetectedAt int64
 	var resolvedAt sql.NullInt64
@@ -946,7 +942,7 @@ func collectContainerCVEs(rows *sql.Rows) ([]*update.ContainerCVE, error) {
 	return result, rows.Err()
 }
 
-func scanVersionPin(row updateRowScanner) (*update.VersionPin, error) {
+func scanVersionPin(row rowScanner) (*update.VersionPin, error) {
 	var p update.VersionPin
 	var pinnedAt int64
 	var reason sql.NullString

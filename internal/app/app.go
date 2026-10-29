@@ -173,20 +173,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	clientIP := ratelimit.NewClientIPResolver(trustedProxies)
-
-	// --- Rate limiters ---
-	// Public surfaces (/status/, /mcp, /oauth/) take the tight bucket.
-	a.rl = ratelimit.New(10, 20, clientIP)
-	// Pings: unknown tokens per address, known tokens per token whatever the address.
-	a.pingRL = ratelimit.New(10, 20, clientIP)
-	a.pingTokenRL = ratelimit.New(1, 60, nil)
-	// /api/ gets its own, far looser one: a dashboard load fans out dozens of
-	// parallel calls, so the tight bucket would 429 ordinary use. This is a
-	// flood ceiling, not a quota — it must never be reachable by the UI.
-	a.apiRL = ratelimit.New(50, 200, clientIP)
-	// Status-page subscriptions: five per hour and per address.
-	a.subscribeRL = ratelimit.New(5.0/3600.0, 5, clientIP)
+	a.wireRateLimiters(ratelimit.NewClientIPResolver(trustedProxies))
 
 	if cfg.K8sNamespaces != "" {
 		logger.Info("K8s namespace allowlist configured", "namespaces", cfg.K8sNamespaces)
@@ -226,8 +213,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	a.hbStore = hbStore
 	certStore := store.NewCertificateStore(db)
 	a.certStore = certStore
-	resStore := store.NewResourceStore(db)
-	a.resStore = resStore
+	a.resStore = store.NewResourceStore(db)
 	alertStore := store.NewAlertStore(db)
 	a.alertStore = alertStore
 	channelStore := store.NewChannelStore(db)
@@ -242,44 +228,19 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	webhookStore := store.NewWebhookStore(db)
 	updateStore := store.NewUpdateStore(db)
 	a.updateStore = updateStore
-	agentStore := store.NewAgentStore(db)
-	a.agentStore = agentStore
+	a.agentStore = store.NewAgentStore(db)
 
 	// The mode gate lives in Start(), after the license manager has resolved the
 	// edition. Evaluating it here would read the package default and reject every
 	// edition, Pro included.
 
-	// --- License manager ---
-	lm, err := extension.NewEditionSource(extension.SourceConfig{
-		LicenseKey:   cfg.LicenseKey,
-		PublicKeyB64: cfg.PublicKeyB64,
-		DataDir:      filepath.Dir(cfg.DBPath),
-		Version:      cfg.Version,
-		BuildDate:    cfg.BuildDate,
-		Logger:       logger,
-	})
-	if err != nil {
-		logger.Warn("license manager initialization failed, running as Community Edition", "error", err)
-	} else if lm != nil {
-		a.licenseMgr = lm
-		extension.CurrentEdition = lm.Edition
-	}
+	a.wireLicense()
 
-	// --- Runtime detection ---
-	rt, err := runtime.Detect(ctx, logger)
-	if err != nil {
+	if err := a.wireRuntime(ctx); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("detect container runtime: %w", err)
+		return nil, err
 	}
-	a.rt = rt
-	if dr, ok := rt.(*docker.Runtime); ok {
-		dr.SetProxyLabels(cfg.ProxyLabels)
-	}
-
-	if err := rt.TryConnect(ctx); err != nil {
-		logger.Warn("container runtime unavailable, starting in degraded mode", "runtime", rt.Name(), "error", err)
-		rt.SetDisconnected()
-	}
+	rt := a.rt
 
 	// Swarm topology stores + ingest are created unconditionally: a remote agent
 	// may report a swarm even when this server's own runtime is docker or
@@ -296,64 +257,12 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	a.k8sIngest = kubernetes.NewIngestService(a.k8sStore, logger)
 	a.k8sAlerts = kubernetes.NewK8sAlertChecker(logger)
 
-	// --- Swarm detection: armed for any Docker runtime, run now if it answers ---
-	if dr, ok := rt.(*docker.Runtime); ok {
-		a.swarmDetector = swarm.NewDetector(dr.Client(), logger)
-		a.swarmRecheckNow = make(chan struct{}, 1)
-		if rt.IsConnected() {
-			result, err := a.swarmDetector.Detect(ctx)
-			if err != nil {
-				logger.Warn("Swarm detection failed, continuing without Swarm support", "error", err)
-			} else if cluster := result.Cluster(); cluster != nil {
-				a.swarmCluster.Store(cluster)
-				a.swarmMgr.Store(newSwarmManager(dr, a.swarmNodeStore, logger))
-			}
-		}
-	}
+	a.wireSwarmDetection(ctx)
 
-	// --- Services ---
-	var logFetcher container.LogFetcher
-	if lf, ok := rt.(container.LogFetcher); ok {
-		logFetcher = lf
-	}
-	a.containerSvc = container.NewService(container.Deps{
-		Store:          containerStore,
-		Logger:         logger,
-		LogFetcher:     logFetcher,
-		RestartChecker: alert.NewRestartDetector(containerStore, logger),
-		Discoverer:     rt,
-		AgentRuntime:   agentRuntimeResolver{store: agentStore},
-	})
+	a.wireCoreServices()
 	uptimeCalc := container.NewUptimeCalculator(containerStore)
 
-	a.securitySvc = security.NewService(security.Deps{Logger: logger})
-	a.resourceSvc = resource.NewService(resource.Deps{
-		Store:        resStore,
-		Runtime:      rt,
-		ContainerSvc: a.containerSvc,
-		Logger:       logger,
-		RawWindow:    cfg.Retention.Snapshots,
-	})
-	a.certSvc = certificate.NewService(certificate.Deps{
-		Store:  certStore,
-		Logger: logger,
-	})
-
-	// --- Endpoint monitoring ---
-	a.checkEngine = endpoint.NewCheckEngine(func(endpointID string, result endpoint.CheckResult) {
-		a.endpointSvc.ProcessCheckResult(ctx, endpointID, result)
-		if len(result.TLSPeerCertificates) > 0 {
-			ep, err := a.endpointSvc.GetEndpoint(ctx, endpointID)
-			if err == nil && ep != nil && certificate.IsHTTPS(ep.Target) {
-				a.certSvc.ProcessAutoDetectedCerts(ctx, endpointID, ep.Target, result.TLSPeerCertificates, result.TLSOCSPResponse)
-			}
-		}
-	}, logger)
-	a.endpointSvc = endpoint.NewService(endpoint.Deps{
-		Store:  epStore,
-		Engine: a.checkEngine,
-		Logger: logger,
-	})
+	a.wireEndpointMonitoring(ctx)
 	alertDetector := alert.NewEndpointAlertDetector()
 
 	// --- Heartbeat monitoring ---
@@ -378,20 +287,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 
 		AllowPlaintext: cfg.SMTP.AllowPlaintext,
 	}
-	if cfg.SMTP.AllowPlaintext {
-		logger.Warn("SMTP plaintext allowed: a server without STARTTLS receives mail in clear", "variable", "MAINTENANT_SMTP_ALLOW_PLAINTEXT")
-	}
-	a.notifier = alert.NewNotifier(channelStore, logger, cfg.AllowPrivateWebhooks, alert.WithBaseURL(cfg.BaseURL))
-	if a.ext.Channels != nil {
-		channels := a.ext.Channels(extpoint.ChannelDeps{
-			HTTPClient: a.notifier.HTTPClient(),
-			SMTP:       smtpCfg,
-			Logger:     logger,
-		})
-		for chType, sender := range channels {
-			a.notifier.RegisterChannel(chType, sender)
-		}
-	}
+	a.wireNotifier(channelStore, smtpCfg)
 
 	// --- SSE brokers ---
 	a.broker = v1.NewSSEBroker(logger)
@@ -405,51 +301,11 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	a.swarmIngest.SetBroadcaster(topologyBroadcast)
 	a.k8sIngest.SetBroadcaster(topologyBroadcast)
 
-	// --- Host operating system end of support ---
-	var eolFetcher *eol.Fetcher
-	if !cfg.DisableOSEOLRefresh {
-		eolFetcher = &eol.Fetcher{
-			Client:    &http.Client{Timeout: 15 * time.Second, Transport: trust.HTTPTransport()},
-			UserAgent: "maintenant/" + cfg.Version + " (+https://maintenant.dev)",
-		}
-	}
-	a.eolSvc, err = eol.New(eol.Deps{
-		Store:     a.agentStore,
-		Fetcher:   eolFetcher,
-		Emit:      a.emitAlert,
-		OnChanged: a.broadcastAgentUpdated,
-		Logger:    logger.With("component", "os-eol"),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("os end-of-support service: %w", err)
+	if err := a.wireOSEOL(); err != nil {
+		return nil, err
 	}
 
-	// Agent session registry and gRPC server (served at Start time where multi-host is open).
-	if a.ext.MultiHost != nil {
-		mh := a.ext.MultiHost(extpoint.MultiHostDeps{
-			AgentStore:         a.agentStore,
-			Broadcaster:        &sseBroadcaster{broker: a.broker},
-			RateLimitPerSecond: cfg.MultiHost.AgentRateLimitPerSecond,
-			DemoMode:           cfg.DemoMode,
-			Container:          a.containerSvc,
-			Resource:           a.resourceSvc,
-			Endpoint:           a.endpointSvc,
-			Certificate:        a.certSvc,
-			Heartbeat:          a.heartbeatSvc,
-			Swarm:              a.swarmIngest,
-			Kubernetes:         a.k8sIngest,
-			HostOS:             a.eolSvc,
-			// Provision endpoint/cert monitors from a remote container's labels
-			// (the agent probes them itself; the server never dials them).
-			LabelSync: func(ctx context.Context, agentID, containerName, externalID string, labels map[string]string) {
-				a.endpointSvc.SyncAgentEndpoints(ctx, agentID, containerName, externalID, labels)
-				a.certSvc.SyncAgentCerts(ctx, agentID, externalID, labels)
-			},
-			Logger: logger,
-		})
-		a.agentSessions = mh.Sessions
-		a.serveAgents = mh.Serve
-	}
+	a.wireMultiHost()
 
 	a.alertEngine = alert.NewEngine(alert.EngineDeps{
 		AlertStore:   alertStore,
@@ -470,118 +326,17 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 			logger.With("component", "container-down"))
 	}
 
-	// --- Public Status Page ---
-	a.statusSvc = status.NewService(status.Deps{
-		Components:  statusCompStore,
-		Logger:      logger,
-		Incidents:   incidentStore,
-		Maintenance: maintenanceStore,
-		PublicBroadcaster: func(eventType string, data any) {
-			a.statusBroker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
-		},
-		AdminBroadcaster: func(eventType string, data any) {
-			a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
-		},
-	})
-	a.wireStatusProvider()
-	if a.ext.StatusPage != nil {
-		sp := a.ext.StatusPage(extpoint.StatusPageDeps{
-			Service:         a.statusSvc,
-			Components:      statusCompStore,
-			Incidents:       incidentStore,
-			Maintenance:     maintenanceStore,
-			Subscribers:     subscriberStore,
-			Personalization: personalizationStore,
-			SMTP:            smtpCfg,
-			BaseURL:         cfg.BaseURL,
-			Logger:          logger,
-		})
-		a.statusSvc.SetIncidentHandler(sp.Incidents)
-		a.statusSvc.SetSubscriberNotifier(sp.Notifier)
-		a.maintScheduler = sp.Maintenance
-		a.personalizationSvc = sp.Personalization
-		a.statusMailer = sp.Mailer
-	}
-	a.subscriberSvc = status.NewSubscriberService(subscriberStore, a.statusMailer, cfg.BaseURL, logger)
-	a.statusSvc.SetSubscriberService(a.subscriberSvc)
-	personalizationPublicHandler := status.NewPersonalizationPublicHandler(personalizationStore, logger)
-	a.statusHandler = status.NewHandler(a.statusSvc, a.statusBroker, logger, a.subscribeRL, status.PageURL(cfg.StatusURL, cfg.BaseURL))
-	a.statusHandler.SetPersonalizationHandler(personalizationPublicHandler)
+	a.wireStatusPage(incidentStore, maintenanceStore, subscriberStore, personalizationStore, smtpCfg)
 
 	// --- Webhook dispatcher ---
 	a.webhookDispatcher = webhook.NewDispatcher(webhookStore, a.notifier, logger)
 
-	// --- Update intelligence ---
-	registryClient := update.NewRegistryClient()
-	updateScanner := update.NewScanner(registryClient, updateStore, logger)
-	containerAdapter := update.NewContainerServiceAdapter(a.containerSvc, logger)
-	if fetcher := updateDetailsFetcher(a.rt, logger); fetcher != nil {
-		containerAdapter.WithDetailsFetcher(fetcher)
-	}
+	containerAdapter := a.wireUpdates()
 
-	var updateEnricher update.Enricher
-	if a.ext.Enricher != nil {
-		updateEnricher = a.ext.Enricher(extpoint.EnricherDeps{
-			Store:    updateStore,
-			Registry: registryClient,
-			Insights: a.securitySvc,
-			Restarts: containerStore,
-			Logger:   logger,
-		})
-	}
-	a.updateSvc = update.NewService(update.Deps{
-		Store:      updateStore,
-		Scanner:    updateScanner,
-		Containers: containerAdapter,
-		Logger:     logger,
-		Enricher:   updateEnricher,
-	})
-
-	// --- Security posture scoring ---
 	ackStore := store.NewAcknowledgmentStore(db)
-	if a.ext.PostureScorer != nil {
-		a.scorer = a.ext.PostureScorer(extpoint.PostureDeps{
-			Certs:          &CertPostureAdapter{CertSvc: a.certSvc},
-			CVEs:           &CVEPostureAdapter{Store: updateStore},
-			CVEEvaluations: &CVEEvaluationPostureAdapter{Store: updateStore},
-			Updates:        &UpdatePostureAdapter{Store: updateStore},
-			Insights:       a.securitySvc,
-			Acks:           ackStore,
-			Threshold:      cfg.SecurityScoreThreshold,
-		})
-	}
+	a.wirePostureScorer(ackStore)
 
-	if cfg.SecurityScoreThreshold > 0 {
-		logger.Info("security posture threshold configured", "threshold", cfg.SecurityScoreThreshold)
-	}
-
-	// --- Escalation policies ---
-	a.escalationStore = store.NewEscalationStore(db)
-
-	var suppressor alert.MaintenanceSuppressor
-	if a.ext.Suppressor != nil {
-		suppressor = a.ext.Suppressor(extpoint.SuppressorDeps{Windows: maintenanceStore, Logger: logger})
-	}
-	// Must be called before alertEngine.Start (invoked in App.Start).
-	if suppressor != nil {
-		a.alertEngine.SetMaintenanceSuppressor(suppressor)
-	}
-
-	// SetEscalator must run before alertEngine.Start (called later in App.Start).
-	if a.ext.Escalation != nil {
-		esc := a.ext.Escalation(extpoint.EscalationDeps{
-			Store:      a.escalationStore,
-			Alerts:     alertStore,
-			Channels:   channelStore,
-			Notifier:   a.notifier,
-			Suppressor: suppressor,
-			Logger:     logger,
-		})
-		a.escalationSvc = esc.Service
-		if esc.Escalator != nil {
-			a.alertEngine.SetEscalator(esc.Escalator)
-		}
-	}
+	a.wireEscalation(maintenanceStore, channelStore)
 
 	// --- Wire alert callbacks ---
 	a.wireAlertCallbacks(alertDetector)
@@ -744,6 +499,310 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	return a, nil
 }
 
+func (a *App) wireRateLimiters(clientIP *ratelimit.ClientIPResolver) {
+	// Public surfaces (/status/, /mcp, /oauth/) take the tight bucket.
+	a.rl = ratelimit.New(10, 20, clientIP)
+	// Pings: unknown tokens per address, known tokens per token whatever the address.
+	a.pingRL = ratelimit.New(10, 20, clientIP)
+	a.pingTokenRL = ratelimit.New(1, 60, nil)
+	// /api/ gets its own, far looser one: a dashboard load fans out dozens of
+	// parallel calls, so the tight bucket would 429 ordinary use. This is a
+	// flood ceiling, not a quota — it must never be reachable by the UI.
+	a.apiRL = ratelimit.New(50, 200, clientIP)
+	// Status-page subscriptions: five per hour and per address.
+	a.subscribeRL = ratelimit.New(5.0/3600.0, 5, clientIP)
+}
+
+func (a *App) wireLicense() {
+	lm, err := extension.NewEditionSource(extension.SourceConfig{
+		LicenseKey:   a.cfg.LicenseKey,
+		PublicKeyB64: a.cfg.PublicKeyB64,
+		DataDir:      filepath.Dir(a.cfg.DBPath),
+		Version:      a.cfg.Version,
+		BuildDate:    a.cfg.BuildDate,
+		Logger:       a.logger,
+	})
+	if err != nil {
+		a.logger.Warn("license manager initialization failed, running as Community Edition", "error", err)
+	} else if lm != nil {
+		a.licenseMgr = lm
+		extension.CurrentEdition = lm.Edition
+	}
+}
+
+func (a *App) wireRuntime(ctx context.Context) error {
+	rt, err := runtime.Detect(ctx, a.logger)
+	if err != nil {
+		return fmt.Errorf("detect container runtime: %w", err)
+	}
+	a.rt = rt
+	if dr, ok := rt.(*docker.Runtime); ok {
+		dr.SetProxyLabels(a.cfg.ProxyLabels)
+	}
+
+	if err := rt.TryConnect(ctx); err != nil {
+		a.logger.Warn("container runtime unavailable, starting in degraded mode", "runtime", rt.Name(), "error", err)
+		rt.SetDisconnected()
+	}
+	return nil
+}
+
+// wireSwarmDetection arms Swarm detection for any Docker runtime and runs it now if the runtime answers.
+func (a *App) wireSwarmDetection(ctx context.Context) {
+	dr, ok := a.rt.(*docker.Runtime)
+	if !ok {
+		return
+	}
+	a.swarmDetector = swarm.NewDetector(dr.Client(), a.logger)
+	a.swarmRecheckNow = make(chan struct{}, 1)
+	if !a.rt.IsConnected() {
+		return
+	}
+	result, err := a.swarmDetector.Detect(ctx)
+	if err != nil {
+		a.logger.Warn("Swarm detection failed, continuing without Swarm support", "error", err)
+	} else if cluster := result.Cluster(); cluster != nil {
+		a.swarmCluster.Store(cluster)
+		a.swarmMgr.Store(newSwarmManager(dr, a.swarmNodeStore, a.logger))
+	}
+}
+
+func (a *App) wireCoreServices() {
+	var logFetcher container.LogFetcher
+	if lf, ok := a.rt.(container.LogFetcher); ok {
+		logFetcher = lf
+	}
+	a.containerSvc = container.NewService(container.Deps{
+		Store:          a.containerStore,
+		Logger:         a.logger,
+		LogFetcher:     logFetcher,
+		RestartChecker: alert.NewRestartDetector(a.containerStore, a.logger),
+		Discoverer:     a.rt,
+		AgentRuntime:   agentRuntimeResolver{store: a.agentStore},
+	})
+
+	a.securitySvc = security.NewService(security.Deps{Logger: a.logger})
+	a.resourceSvc = resource.NewService(resource.Deps{
+		Store:        a.resStore,
+		Runtime:      a.rt,
+		ContainerSvc: a.containerSvc,
+		Logger:       a.logger,
+		RawWindow:    a.cfg.Retention.Snapshots,
+	})
+	a.certSvc = certificate.NewService(certificate.Deps{
+		Store:  a.certStore,
+		Logger: a.logger,
+	})
+}
+
+func (a *App) wireEndpointMonitoring(ctx context.Context) {
+	a.checkEngine = endpoint.NewCheckEngine(func(endpointID string, result endpoint.CheckResult) {
+		a.endpointSvc.ProcessCheckResult(ctx, endpointID, result)
+		if len(result.TLSPeerCertificates) > 0 {
+			ep, err := a.endpointSvc.GetEndpoint(ctx, endpointID)
+			if err == nil && ep != nil && certificate.IsHTTPS(ep.Target) {
+				a.certSvc.ProcessAutoDetectedCerts(ctx, endpointID, ep.Target, result.TLSPeerCertificates, result.TLSOCSPResponse)
+			}
+		}
+	}, a.logger)
+	a.endpointSvc = endpoint.NewService(endpoint.Deps{
+		Store:  a.epStore,
+		Engine: a.checkEngine,
+		Logger: a.logger,
+	})
+}
+
+func (a *App) wireNotifier(channelStore *store.ChannelStoreImpl, smtpCfg extpoint.SMTPConfig) {
+	if a.cfg.SMTP.AllowPlaintext {
+		a.logger.Warn("SMTP plaintext allowed: a server without STARTTLS receives mail in clear", "variable", "MAINTENANT_SMTP_ALLOW_PLAINTEXT")
+	}
+	a.notifier = alert.NewNotifier(channelStore, a.logger, a.cfg.AllowPrivateWebhooks, alert.WithBaseURL(a.cfg.BaseURL))
+	if a.ext.Channels != nil {
+		channels := a.ext.Channels(extpoint.ChannelDeps{
+			HTTPClient: a.notifier.HTTPClient(),
+			SMTP:       smtpCfg,
+			Logger:     a.logger,
+		})
+		for chType, sender := range channels {
+			a.notifier.RegisterChannel(chType, sender)
+		}
+	}
+}
+
+// wireOSEOL builds the host operating system end-of-support service.
+func (a *App) wireOSEOL() error {
+	var eolFetcher *eol.Fetcher
+	if !a.cfg.DisableOSEOLRefresh {
+		eolFetcher = &eol.Fetcher{
+			Client:    &http.Client{Timeout: 15 * time.Second, Transport: trust.HTTPTransport()},
+			UserAgent: "maintenant/" + a.cfg.Version + " (+https://maintenant.dev)",
+		}
+	}
+	var err error
+	a.eolSvc, err = eol.New(eol.Deps{
+		Store:     a.agentStore,
+		Fetcher:   eolFetcher,
+		Emit:      a.emitAlert,
+		OnChanged: a.broadcastAgentUpdated,
+		Logger:    a.logger.With("component", "os-eol"),
+	})
+	if err != nil {
+		return fmt.Errorf("os end-of-support service: %w", err)
+	}
+	return nil
+}
+
+// wireMultiHost builds the agent session registry and gRPC server, served at Start time where multi-host is open.
+func (a *App) wireMultiHost() {
+	if a.ext.MultiHost == nil {
+		return
+	}
+	mh := a.ext.MultiHost(extpoint.MultiHostDeps{
+		AgentStore:         a.agentStore,
+		Broadcaster:        &sseBroadcaster{broker: a.broker},
+		RateLimitPerSecond: a.cfg.MultiHost.AgentRateLimitPerSecond,
+		DemoMode:           a.cfg.DemoMode,
+		Container:          a.containerSvc,
+		Resource:           a.resourceSvc,
+		Endpoint:           a.endpointSvc,
+		Certificate:        a.certSvc,
+		Heartbeat:          a.heartbeatSvc,
+		Swarm:              a.swarmIngest,
+		Kubernetes:         a.k8sIngest,
+		HostOS:             a.eolSvc,
+		// Provision endpoint/cert monitors from a remote container's labels
+		// (the agent probes them itself; the server never dials them).
+		LabelSync: func(ctx context.Context, agentID, containerName, externalID string, labels map[string]string) {
+			a.endpointSvc.SyncAgentEndpoints(ctx, agentID, containerName, externalID, labels)
+			a.certSvc.SyncAgentCerts(ctx, agentID, externalID, labels)
+		},
+		Logger: a.logger,
+	})
+	a.agentSessions = mh.Sessions
+	a.serveAgents = mh.Serve
+}
+
+func (a *App) wireStatusPage(
+	incidentStore *store.IncidentStoreImpl,
+	maintenanceStore *store.MaintenanceStoreImpl,
+	subscriberStore *store.SubscriberStoreImpl,
+	personalizationStore *store.PersonalizationStoreImpl,
+	smtpCfg extpoint.SMTPConfig,
+) {
+	a.statusSvc = status.NewService(status.Deps{
+		Components:  a.statusCompStore,
+		Logger:      a.logger,
+		Incidents:   incidentStore,
+		Maintenance: maintenanceStore,
+		PublicBroadcaster: func(eventType string, data any) {
+			a.statusBroker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
+		},
+		AdminBroadcaster: func(eventType string, data any) {
+			a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
+		},
+	})
+	a.wireStatusProvider()
+	if a.ext.StatusPage != nil {
+		sp := a.ext.StatusPage(extpoint.StatusPageDeps{
+			Service:         a.statusSvc,
+			Components:      a.statusCompStore,
+			Incidents:       incidentStore,
+			Maintenance:     maintenanceStore,
+			Subscribers:     subscriberStore,
+			Personalization: personalizationStore,
+			SMTP:            smtpCfg,
+			BaseURL:         a.cfg.BaseURL,
+			Logger:          a.logger,
+		})
+		a.statusSvc.SetIncidentHandler(sp.Incidents)
+		a.statusSvc.SetSubscriberNotifier(sp.Notifier)
+		a.maintScheduler = sp.Maintenance
+		a.personalizationSvc = sp.Personalization
+		a.statusMailer = sp.Mailer
+	}
+	a.subscriberSvc = status.NewSubscriberService(subscriberStore, a.statusMailer, a.cfg.BaseURL, a.logger)
+	a.statusSvc.SetSubscriberService(a.subscriberSvc)
+	personalizationPublicHandler := status.NewPersonalizationPublicHandler(personalizationStore, a.logger)
+	a.statusHandler = status.NewHandler(a.statusSvc, a.statusBroker, a.logger, a.subscribeRL, status.PageURL(a.cfg.StatusURL, a.cfg.BaseURL))
+	a.statusHandler.SetPersonalizationHandler(personalizationPublicHandler)
+}
+
+// wireUpdates builds the update intelligence service and returns the container adapter the router also serves.
+func (a *App) wireUpdates() *update.ContainerServiceAdapter {
+	registryClient := update.NewRegistryClient()
+	updateScanner := update.NewScanner(registryClient, a.updateStore, a.logger)
+	containerAdapter := update.NewContainerServiceAdapter(a.containerSvc, a.logger)
+	if fetcher := updateDetailsFetcher(a.rt, a.logger); fetcher != nil {
+		containerAdapter.WithDetailsFetcher(fetcher)
+	}
+
+	var updateEnricher update.Enricher
+	if a.ext.Enricher != nil {
+		updateEnricher = a.ext.Enricher(extpoint.EnricherDeps{
+			Store:    a.updateStore,
+			Registry: registryClient,
+			Insights: a.securitySvc,
+			Restarts: a.containerStore,
+			Logger:   a.logger,
+		})
+	}
+	a.updateSvc = update.NewService(update.Deps{
+		Store:      a.updateStore,
+		Scanner:    updateScanner,
+		Containers: containerAdapter,
+		Logger:     a.logger,
+		Enricher:   updateEnricher,
+	})
+	return containerAdapter
+}
+
+func (a *App) wirePostureScorer(ackStore *store.AcknowledgmentStoreImpl) {
+	if a.ext.PostureScorer != nil {
+		a.scorer = a.ext.PostureScorer(extpoint.PostureDeps{
+			Certs:          &CertPostureAdapter{CertSvc: a.certSvc},
+			CVEs:           &CVEPostureAdapter{Store: a.updateStore},
+			CVEEvaluations: &CVEEvaluationPostureAdapter{Store: a.updateStore},
+			Updates:        &UpdatePostureAdapter{Store: a.updateStore},
+			Insights:       a.securitySvc,
+			Acks:           ackStore,
+			Threshold:      a.cfg.SecurityScoreThreshold,
+		})
+	}
+
+	if a.cfg.SecurityScoreThreshold > 0 {
+		a.logger.Info("security posture threshold configured", "threshold", a.cfg.SecurityScoreThreshold)
+	}
+}
+
+func (a *App) wireEscalation(maintenanceStore *store.MaintenanceStoreImpl, channelStore *store.ChannelStoreImpl) {
+	a.escalationStore = store.NewEscalationStore(a.db)
+
+	var suppressor alert.MaintenanceSuppressor
+	if a.ext.Suppressor != nil {
+		suppressor = a.ext.Suppressor(extpoint.SuppressorDeps{Windows: maintenanceStore, Logger: a.logger})
+	}
+	// Must be called before alertEngine.Start (invoked in App.Start).
+	if suppressor != nil {
+		a.alertEngine.SetMaintenanceSuppressor(suppressor)
+	}
+
+	// SetEscalator must run before alertEngine.Start (called later in App.Start).
+	if a.ext.Escalation != nil {
+		esc := a.ext.Escalation(extpoint.EscalationDeps{
+			Store:      a.escalationStore,
+			Alerts:     a.alertStore,
+			Channels:   channelStore,
+			Notifier:   a.notifier,
+			Suppressor: suppressor,
+			Logger:     a.logger,
+		})
+		a.escalationSvc = esc.Service
+		if esc.Escalator != nil {
+			a.alertEngine.SetEscalator(esc.Escalator)
+		}
+	}
+}
+
 // multihostPlanAllowed reports whether the multi-host plan may run.
 //
 // It is not the same question as extension.Allows(CapMultihost). A Personal
@@ -835,16 +894,8 @@ func (a *App) Start(ctx context.Context) error {
 		a.licenseMgr.Start(ctx)
 	}
 
-	// Mode gate: server mode needs multi-host. Checked here because
-	// licenseMgr.Start runs the initial verification synchronously, so the
-	// edition is settled — NewManager has already loaded the disk cache and Start
-	// has refreshed it. Checking it in New() read the package default and
-	// rejected every edition, Pro included.
-	if a.cfg.Mode != "" && a.cfg.Mode != "embedded" {
-		if !a.multihostPlanAllowed() {
-			return fmt.Errorf("%s mode requires the %s edition (current edition: %s)",
-				a.cfg.Mode, extension.MinEdition(extension.CapMultihost), extension.CurrentEdition())
-		}
+	if err := a.enforceModeGate(); err != nil {
+		return err
 	}
 
 	a.alertEngine.Start(ctx)
@@ -862,63 +913,10 @@ func (a *App) Start(ctx context.Context) error {
 	// contained inside the package (FR-009/FR-011/FR-012).
 	a.telemetrySvc.Start(ctx)
 
-	// Webhook observer
-	webhookObserverCh := make(chan v1.SSEEvent, 64)
-	a.broker.AddObserver(webhookObserverCh)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case evt, ok := <-webhookObserverCh:
-				if !ok {
-					return
-				}
-				a.webhookDispatcher.HandleEvent(ctx, evt.Type, evt.Data)
-			}
-		}
-	}()
-
-	// Background services (always run, regardless of runtime availability)
-	go a.rl.Start(ctx)
-	go a.apiRL.Start(ctx)
-	go a.subscribeRL.Start(ctx)
-	go a.pingRL.Start(ctx)
-	go a.pingTokenRL.Start(ctx)
-	go a.resourceSvc.Start(ctx)
-	go a.certSvc.Start(ctx)
-	if a.maintScheduler != nil {
-		go a.maintScheduler.Start(ctx)
-	}
-	go a.subscriberSvc.Start(ctx)
-	go a.updateSvc.Start(ctx)
-
-	// Agent session ring-buffer tick + stale watcher.
-	if a.agentSessions != nil {
-		threshold := time.Duration(a.cfg.MultiHost.AgentStaleThresholdSeconds) * time.Second
-		if threshold == 0 {
-			threshold = 60 * time.Second
-		}
-		a.agentSessions.StartWatchers(ctx, threshold, a.agentStore.StaleAgents)
-	}
-
-	// Enrollment token GC: purge unconsumed tokens older than 7 days, every hour.
-	if a.agentStore != nil {
-		go func() {
-			ticker := time.NewTicker(time.Hour)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					if err := a.agentStore.GcExpiredTokens(ctx); err != nil {
-						a.logger.Error("enrollment token GC failed", "err", err)
-					}
-				}
-			}
-		}()
-	}
+	a.startWebhookObserver(ctx)
+	a.startBackgroundServices(ctx)
+	a.startAgentWatchers(ctx)
+	a.startEnrollmentTokenGC(ctx)
 
 	// Swarm manager loops; the Kubernetes reconcile is wired with each runtime
 	// connection cycle.
@@ -953,6 +951,104 @@ func (a *App) Start(ctx context.Context) error {
 	// and manages reconnection in background when degraded (Phase 5).
 	a.startRuntimeSupervisor(ctx)
 
+	if err := a.startAgentServer(ctx); err != nil {
+		return err
+	}
+
+	a.startMCPSocket(ctx)
+	a.startHTTPServer(httpLn)
+
+	// Wait for shutdown
+	<-ctx.Done()
+	return a.Shutdown()
+}
+
+// enforceModeGate refuses any mode other than embedded when the multi-host plan may not run.
+func (a *App) enforceModeGate() error {
+	// Mode gate: server mode needs multi-host. Checked here because
+	// licenseMgr.Start runs the initial verification synchronously, so the
+	// edition is settled — NewManager has already loaded the disk cache and Start
+	// has refreshed it. Checking it in New() read the package default and
+	// rejected every edition, Pro included.
+	if a.cfg.Mode != "" && a.cfg.Mode != "embedded" {
+		if !a.multihostPlanAllowed() {
+			return fmt.Errorf("%s mode requires the %s edition (current edition: %s)",
+				a.cfg.Mode, extension.MinEdition(extension.CapMultihost), extension.CurrentEdition())
+		}
+	}
+	return nil
+}
+
+// startWebhookObserver forwards every SSE event to the webhook dispatcher.
+func (a *App) startWebhookObserver(ctx context.Context) {
+	webhookObserverCh := make(chan v1.SSEEvent, 64)
+	a.broker.AddObserver(webhookObserverCh)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case evt, ok := <-webhookObserverCh:
+				if !ok {
+					return
+				}
+				a.webhookDispatcher.HandleEvent(ctx, evt.Type, evt.Data)
+			}
+		}
+	}()
+}
+
+// startBackgroundServices starts the loops that always run, regardless of runtime availability.
+func (a *App) startBackgroundServices(ctx context.Context) {
+	go a.rl.Start(ctx)
+	go a.apiRL.Start(ctx)
+	go a.subscribeRL.Start(ctx)
+	go a.pingRL.Start(ctx)
+	go a.pingTokenRL.Start(ctx)
+	go a.resourceSvc.Start(ctx)
+	go a.certSvc.Start(ctx)
+	if a.maintScheduler != nil {
+		go a.maintScheduler.Start(ctx)
+	}
+	go a.subscriberSvc.Start(ctx)
+	go a.updateSvc.Start(ctx)
+}
+
+// startAgentWatchers starts the agent session ring-buffer tick and stale watcher.
+func (a *App) startAgentWatchers(ctx context.Context) {
+	if a.agentSessions == nil {
+		return
+	}
+	threshold := time.Duration(a.cfg.MultiHost.AgentStaleThresholdSeconds) * time.Second
+	if threshold == 0 {
+		threshold = 60 * time.Second
+	}
+	a.agentSessions.StartWatchers(ctx, threshold, a.agentStore.StaleAgents)
+}
+
+// startEnrollmentTokenGC purges unconsumed enrollment tokens older than 7 days, every hour.
+func (a *App) startEnrollmentTokenGC(ctx context.Context) {
+	if a.agentStore == nil {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := a.agentStore.GcExpiredTokens(ctx); err != nil {
+					a.logger.Error("enrollment token GC failed", "err", err)
+				}
+			}
+		}
+	}()
+}
+
+// startAgentServer serves the agent gRPC server where multi-host is open, then schedules the embedded agent.
+func (a *App) startAgentServer(ctx context.Context) error {
 	// Agent gRPC server — server/embedded modes only, where multi-host is open.
 	if a.serveAgents != nil && a.cfg.Mode != "agent" {
 		if a.multihostPlanAllowed() {
@@ -978,7 +1074,10 @@ func (a *App) Start(ctx context.Context) error {
 	if a.serveAgents != nil && a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && a.multihostPlanAllowed() && !a.cfg.DemoMode {
 		a.startEmbeddedAgent(ctx)
 	}
+	return nil
+}
 
+func (a *App) startMCPSocket(ctx context.Context) {
 	if a.cfg.Mode != "agent" && (a.cfg.MCP.Enabled || a.cfg.MCP.Socket) {
 		if err := mcp.ServeSocket(ctx, a.mcpServer, mcp.SocketPath(a.cfg.DBPath), a.logger); err != nil {
 			a.logger.Warn("local MCP socket unavailable, --mcp-stdio cannot reach this instance", "error", err)
@@ -986,7 +1085,9 @@ func (a *App) Start(ctx context.Context) error {
 	} else if a.cfg.Mode != "agent" {
 		a.logger.Info("local MCP socket not served", "enable", "MAINTENANT_MCP=true or MAINTENANT_MCP_SOCKET=true")
 	}
+}
 
+func (a *App) startHTTPServer(httpLn net.Listener) {
 	// HTTP server — never in agent mode: an agent only streams to the server and
 	// must not expose the UI/API. (main.go already exits before app.Start in agent
 	// mode; this is a defensive invariant.)
@@ -1000,10 +1101,6 @@ func (a *App) Start(ctx context.Context) error {
 			}
 		}()
 	}
-
-	// Wait for shutdown
-	<-ctx.Done()
-	return a.Shutdown()
 }
 
 // Shutdown performs a graceful shutdown of all services.

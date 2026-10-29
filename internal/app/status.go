@@ -68,14 +68,6 @@ func CertificateStatus(cert *certificate.CertMonitor) string {
 	}
 }
 
-// WorstStatus returns the most severe status between two values.
-func WorstStatus(a, b string) string {
-	if status.Severity(a) >= status.Severity(b) {
-		return a
-	}
-	return b
-}
-
 // wireStatusProvider sets up the monitor status provider for the status page.
 func (a *App) wireStatusProvider() {
 	a.statusSvc.SetMonitorStatusProvider(func(ctx context.Context, monitorType string, monitorID string) string {

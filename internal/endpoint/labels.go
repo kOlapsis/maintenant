@@ -47,10 +47,6 @@ type LabelParseError struct {
 	Message  string
 }
 
-func (e *LabelParseError) Error() string {
-	return fmt.Sprintf("label %s=%s: %s", e.LabelKey, e.Value, e.Message)
-}
-
 // ParseEndpointLabels extracts endpoint definitions from a Docker container's labels.
 // Returns parsed endpoints and any configuration errors encountered; an ignored
 // container declares none.

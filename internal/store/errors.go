@@ -46,17 +46,6 @@ func IsUniqueViolation(err error) bool {
 	return errors.As(err, &pe) && pe.Code == "23505"
 }
 
-// IsForeignKeyViolation reports whether err is a foreign-key constraint
-// violation, on either engine.
-func IsForeignKeyViolation(err error) bool {
-	var se sqlite3.Error
-	if errors.As(err, &se) {
-		return se.ExtendedCode == sqlite3.ErrConstraintForeignKey
-	}
-	var pe *pgconn.PgError
-	return errors.As(err, &pe) && pe.Code == "23503"
-}
-
 // IsBusy reports whether err is a transient contention failure worth retrying:
 // SQLITE_BUSY/SQLITE_LOCKED, a PostgreSQL lock timeout (55P03) or a
 // serialization failure (40001).

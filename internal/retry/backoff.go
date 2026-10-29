@@ -7,7 +7,6 @@
 package retry
 
 import (
-	"context"
 	"math/rand"
 	"time"
 )
@@ -63,15 +62,4 @@ func (b *Backoff) Next() time.Duration {
 	}
 	factor := 1 - b.Jitter + rand.Float64()*(2*b.Jitter) // #nosec G404 -- non-crypto jitter for backoff timing
 	return time.Duration(float64(raw) * factor)
-}
-
-// Sleep waits for the next backoff delay or until ctx is cancelled.
-// Returns ctx.Err() on cancellation, nil if the delay elapsed normally.
-func (b *Backoff) Sleep(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(b.Next()):
-		return nil
-	}
 }

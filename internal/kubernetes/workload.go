@@ -116,93 +116,85 @@ func (r *Runtime) ListWorkloads(ctx context.Context, namespaces []string) ([]K8s
 	}
 	targetNS := r.resolveNamespaces(namespaces)
 
-	// Collect per-namespace workloads.
 	byNS := make(map[string][]K8sWorkload)
 	for _, ns := range targetNS {
 		byNS[ns] = nil
 	}
 
-	// Deployments.
-	depList, err := cs.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+	err = collectWorkloads(r, "deployments", targetNS, byNS, func() ([]appsv1.Deployment, error) {
+		l, err := cs.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		return l.Items, nil
+	}, mapDeploymentWorkload)
 	if err != nil {
-		if !k8serrors.IsForbidden(err) {
-			return nil, fmt.Errorf("list deployments: %w", err)
-		}
-		r.logger.Warn("RBAC: forbidden to list deployments", "error", err)
-	} else {
-		for i := range depList.Items {
-			dep := &depList.Items[i]
-			if !r.nsFilter.IsAllowed(dep.Namespace) {
-				continue
-			}
-			if len(targetNS) > 0 && !containsString(targetNS, dep.Namespace) {
-				continue
-			}
-			byNS[dep.Namespace] = append(byNS[dep.Namespace], mapDeploymentWorkload(dep))
-		}
+		return nil, err
 	}
 
-	// StatefulSets.
-	ssList, err := cs.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
+	err = collectWorkloads(r, "statefulsets", targetNS, byNS, func() ([]appsv1.StatefulSet, error) {
+		l, err := cs.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		return l.Items, nil
+	}, mapStatefulSetWorkload)
 	if err != nil {
-		if !k8serrors.IsForbidden(err) {
-			return nil, fmt.Errorf("list statefulsets: %w", err)
-		}
-		r.logger.Warn("RBAC: forbidden to list statefulsets", "error", err)
-	} else {
-		for i := range ssList.Items {
-			ss := &ssList.Items[i]
-			if !r.nsFilter.IsAllowed(ss.Namespace) {
-				continue
-			}
-			if len(targetNS) > 0 && !containsString(targetNS, ss.Namespace) {
-				continue
-			}
-			byNS[ss.Namespace] = append(byNS[ss.Namespace], mapStatefulSetWorkload(ss))
-		}
+		return nil, err
 	}
 
-	// DaemonSets.
-	dsList, err := cs.AppsV1().DaemonSets("").List(ctx, metav1.ListOptions{})
+	err = collectWorkloads(r, "daemonsets", targetNS, byNS, func() ([]appsv1.DaemonSet, error) {
+		l, err := cs.AppsV1().DaemonSets("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		return l.Items, nil
+	}, mapDaemonSetWorkload)
 	if err != nil {
-		if !k8serrors.IsForbidden(err) {
-			return nil, fmt.Errorf("list daemonsets: %w", err)
-		}
-		r.logger.Warn("RBAC: forbidden to list daemonsets", "error", err)
-	} else {
-		for i := range dsList.Items {
-			ds := &dsList.Items[i]
-			if !r.nsFilter.IsAllowed(ds.Namespace) {
-				continue
-			}
-			if len(targetNS) > 0 && !containsString(targetNS, ds.Namespace) {
-				continue
-			}
-			byNS[ds.Namespace] = append(byNS[ds.Namespace], mapDaemonSetWorkload(ds))
-		}
+		return nil, err
 	}
 
-	// Jobs.
-	jobList, err := cs.BatchV1().Jobs("").List(ctx, metav1.ListOptions{})
+	err = collectWorkloads(r, "jobs", targetNS, byNS, func() ([]batchv1.Job, error) {
+		l, err := cs.BatchV1().Jobs("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		return l.Items, nil
+	}, mapJobWorkload)
 	if err != nil {
-		if !k8serrors.IsForbidden(err) {
-			return nil, fmt.Errorf("list jobs: %w", err)
-		}
-		r.logger.Warn("RBAC: forbidden to list jobs", "error", err)
-	} else {
-		for i := range jobList.Items {
-			job := &jobList.Items[i]
-			if !r.nsFilter.IsAllowed(job.Namespace) {
-				continue
-			}
-			if len(targetNS) > 0 && !containsString(targetNS, job.Namespace) {
-				continue
-			}
-			byNS[job.Namespace] = append(byNS[job.Namespace], mapJobWorkload(job))
-		}
+		return nil, err
 	}
 
-	// Build sorted groups, skipping empty namespaces.
+	return groupWorkloads(byNS), nil
+}
+
+func collectWorkloads[T any, PT interface {
+	*T
+	metav1.Object
+}](r *Runtime, kind string, targetNS []string, byNS map[string][]K8sWorkload, list func() ([]T, error), mapFn func(PT) K8sWorkload) error {
+	items, err := list()
+	if err != nil {
+		if !k8serrors.IsForbidden(err) {
+			return fmt.Errorf("list %s: %w", kind, err)
+		}
+		r.logger.Warn("RBAC: forbidden to list "+kind, "error", err)
+		return nil
+	}
+	for i := range items {
+		item := PT(&items[i])
+		ns := item.GetNamespace()
+		if !r.nsFilter.IsAllowed(ns) {
+			continue
+		}
+		if len(targetNS) > 0 && !containsString(targetNS, ns) {
+			continue
+		}
+		byNS[ns] = append(byNS[ns], mapFn(item))
+	}
+	return nil
+}
+
+func groupWorkloads(byNS map[string][]K8sWorkload) []K8sWorkloadGroup {
 	var groups []K8sWorkloadGroup
 	var nsKeys []string
 	for ns := range byNS {
@@ -226,8 +218,7 @@ func (r *Runtime) ListWorkloads(ctx context.Context, namespaces []string) ([]K8s
 			Workloads: wls,
 		})
 	}
-
-	return groups, nil
+	return groups
 }
 
 // GetWorkload returns the detail for a single workload, its pods, and recent events.
@@ -500,152 +491,84 @@ func (r *Runtime) resolveNamespaces(namespaces []string) []string {
 // --- mapping functions ---
 
 func mapDeploymentWorkload(dep *appsv1.Deployment) K8sWorkload {
-	desired := int32(1)
-	if dep.Spec.Replicas != nil {
-		desired = *dep.Spec.Replicas
-	}
-	conditions := make([]K8sCondition, 0, len(dep.Status.Conditions))
-	var lastTransition time.Time
-	for _, c := range dep.Status.Conditions {
-		conditions = append(conditions, K8sCondition{
-			Type:           string(c.Type),
-			Status:         string(c.Status),
-			Reason:         c.Reason,
-			Message:        c.Message,
-			LastTransition: c.LastTransitionTime.Time,
-		})
-		if c.LastTransitionTime.After(lastTransition) {
-			lastTransition = c.LastTransitionTime.Time
-		}
-	}
-	return K8sWorkload{
-		ID:              fmt.Sprintf("%s/Deployment/%s", dep.Namespace, dep.Name),
-		Name:            dep.Name,
-		Namespace:       dep.Namespace,
-		Kind:            "Deployment",
-		Images:          containerImages(dep.Spec.Template.Spec.Containers),
-		ReadyReplicas:   dep.Status.ReadyReplicas,
-		DesiredReplicas: desired,
-		Status:          workloadStatus(dep.Status.ReadyReplicas, desired, conditions, "Progressing"),
-		Conditions:      conditions,
-		Labels:          dep.Labels,
-		Ignored:         cmodel.IgnoredByLabels(dep.Annotations),
-		CreatedAt:       dep.CreationTimestamp.Time,
-		LastTransition:  lastTransition,
-	}
+	wl := baseWorkload("Deployment", dep.ObjectMeta, dep.Spec.Template.Spec.Containers)
+	wl.ReadyReplicas = dep.Status.ReadyReplicas
+	wl.DesiredReplicas = desiredReplicas(dep.Spec.Replicas)
+	wl.Conditions, wl.LastTransition = collectConditions(dep.Status.Conditions, func(c appsv1.DeploymentCondition) K8sCondition {
+		return newCondition(string(c.Type), c.Status, c.Reason, c.Message, c.LastTransitionTime)
+	})
+	wl.Status = workloadStatus(wl.ReadyReplicas, wl.DesiredReplicas, wl.Conditions, "Progressing")
+	return wl
 }
 
 func mapStatefulSetWorkload(ss *appsv1.StatefulSet) K8sWorkload {
-	desired := int32(1)
-	if ss.Spec.Replicas != nil {
-		desired = *ss.Spec.Replicas
-	}
-	conditions := make([]K8sCondition, 0, len(ss.Status.Conditions))
-	var lastTransition time.Time
-	for _, c := range ss.Status.Conditions {
-		conditions = append(conditions, K8sCondition{
-			Type:           string(c.Type),
-			Status:         string(c.Status),
-			Reason:         c.Reason,
-			Message:        c.Message,
-			LastTransition: c.LastTransitionTime.Time,
-		})
-		if c.LastTransitionTime.After(lastTransition) {
-			lastTransition = c.LastTransitionTime.Time
-		}
-	}
-	return K8sWorkload{
-		ID:              fmt.Sprintf("%s/StatefulSet/%s", ss.Namespace, ss.Name),
-		Name:            ss.Name,
-		Namespace:       ss.Namespace,
-		Kind:            "StatefulSet",
-		Images:          containerImages(ss.Spec.Template.Spec.Containers),
-		ReadyReplicas:   ss.Status.ReadyReplicas,
-		DesiredReplicas: desired,
-		Status:          workloadStatus(ss.Status.ReadyReplicas, desired, conditions, ""),
-		Conditions:      conditions,
-		Labels:          ss.Labels,
-		Ignored:         cmodel.IgnoredByLabels(ss.Annotations),
-		CreatedAt:       ss.CreationTimestamp.Time,
-		LastTransition:  lastTransition,
-	}
+	wl := baseWorkload("StatefulSet", ss.ObjectMeta, ss.Spec.Template.Spec.Containers)
+	wl.ReadyReplicas = ss.Status.ReadyReplicas
+	wl.DesiredReplicas = desiredReplicas(ss.Spec.Replicas)
+	wl.Conditions, wl.LastTransition = collectConditions(ss.Status.Conditions, func(c appsv1.StatefulSetCondition) K8sCondition {
+		return newCondition(string(c.Type), c.Status, c.Reason, c.Message, c.LastTransitionTime)
+	})
+	wl.Status = workloadStatus(wl.ReadyReplicas, wl.DesiredReplicas, wl.Conditions, "")
+	return wl
 }
 
 func mapDaemonSetWorkload(ds *appsv1.DaemonSet) K8sWorkload {
-	desired := ds.Status.DesiredNumberScheduled
-	conditions := make([]K8sCondition, 0, len(ds.Status.Conditions))
-	var lastTransition time.Time
-	for _, c := range ds.Status.Conditions {
-		conditions = append(conditions, K8sCondition{
-			Type:           string(c.Type),
-			Status:         string(c.Status),
-			Reason:         c.Reason,
-			Message:        c.Message,
-			LastTransition: c.LastTransitionTime.Time,
-		})
-		if c.LastTransitionTime.After(lastTransition) {
-			lastTransition = c.LastTransitionTime.Time
-		}
-	}
-	return K8sWorkload{
-		ID:              fmt.Sprintf("%s/DaemonSet/%s", ds.Namespace, ds.Name),
-		Name:            ds.Name,
-		Namespace:       ds.Namespace,
-		Kind:            "DaemonSet",
-		Images:          containerImages(ds.Spec.Template.Spec.Containers),
-		ReadyReplicas:   ds.Status.NumberReady,
-		DesiredReplicas: desired,
-		Status:          workloadStatus(ds.Status.NumberReady, desired, conditions, ""),
-		Conditions:      conditions,
-		Labels:          ds.Labels,
-		Ignored:         cmodel.IgnoredByLabels(ds.Annotations),
-		CreatedAt:       ds.CreationTimestamp.Time,
-		LastTransition:  lastTransition,
-	}
+	wl := baseWorkload("DaemonSet", ds.ObjectMeta, ds.Spec.Template.Spec.Containers)
+	wl.ReadyReplicas = ds.Status.NumberReady
+	wl.DesiredReplicas = ds.Status.DesiredNumberScheduled
+	wl.Conditions, wl.LastTransition = collectConditions(ds.Status.Conditions, func(c appsv1.DaemonSetCondition) K8sCondition {
+		return newCondition(string(c.Type), c.Status, c.Reason, c.Message, c.LastTransitionTime)
+	})
+	wl.Status = workloadStatus(wl.ReadyReplicas, wl.DesiredReplicas, wl.Conditions, "")
+	return wl
 }
 
 func mapJobWorkload(job *batchv1.Job) K8sWorkload {
-	desired := int32(1)
-	if job.Spec.Completions != nil {
-		desired = *job.Spec.Completions
+	wl := baseWorkload("Job", job.ObjectMeta, job.Spec.Template.Spec.Containers)
+	wl.ReadyReplicas = job.Status.Active
+	wl.DesiredReplicas = desiredReplicas(job.Spec.Completions)
+	wl.Conditions, wl.LastTransition = collectConditions(job.Status.Conditions, func(c batchv1.JobCondition) K8sCondition {
+		return newCondition(string(c.Type), c.Status, c.Reason, c.Message, c.LastTransitionTime)
+	})
+	wl.Status = "progressing"
+	if job.Status.Succeeded >= wl.DesiredReplicas {
+		wl.Status = "healthy"
+	} else if job.Status.Failed > 0 && job.Status.Active == 0 {
+		wl.Status = "failed"
 	}
-	conditions := make([]K8sCondition, 0, len(job.Status.Conditions))
-	var lastTransition time.Time
-	for _, c := range job.Status.Conditions {
-		conditions = append(conditions, K8sCondition{
-			Type:           string(c.Type),
-			Status:         string(c.Status),
-			Reason:         c.Reason,
-			Message:        c.Message,
-			LastTransition: c.LastTransitionTime.Time,
-		})
-		if c.LastTransitionTime.After(lastTransition) {
-			lastTransition = c.LastTransitionTime.Time
+	return wl
+}
+
+// baseWorkload fills the fields every controller kind shares.
+func baseWorkload(kind string, meta metav1.ObjectMeta, containers []corev1.Container) K8sWorkload {
+	return K8sWorkload{
+		ID:        workloadID(meta.Namespace, kind, meta.Name),
+		Name:      meta.Name,
+		Namespace: meta.Namespace,
+		Kind:      kind,
+		Images:    containerImages(containers),
+		Labels:    meta.Labels,
+		Ignored:   cmodel.IgnoredByLabels(meta.Annotations),
+		CreatedAt: meta.CreationTimestamp.Time,
+	}
+}
+
+func newCondition(typ string, status corev1.ConditionStatus, reason, message string, at metav1.Time) K8sCondition {
+	return K8sCondition{Type: typ, Status: string(status), Reason: reason, Message: message, LastTransition: at.Time}
+}
+
+// collectConditions converts controller conditions and returns them with the latest transition time.
+func collectConditions[C any](conds []C, convert func(C) K8sCondition) ([]K8sCondition, time.Time) {
+	out := make([]K8sCondition, 0, len(conds))
+	var last time.Time
+	for _, c := range conds {
+		k := convert(c)
+		out = append(out, k)
+		if k.LastTransition.After(last) {
+			last = k.LastTransition
 		}
 	}
-
-	status := "progressing"
-	if job.Status.Succeeded >= desired {
-		status = "healthy"
-	} else if job.Status.Failed > 0 && job.Status.Active == 0 {
-		status = "failed"
-	}
-
-	return K8sWorkload{
-		ID:              fmt.Sprintf("%s/Job/%s", job.Namespace, job.Name),
-		Name:            job.Name,
-		Namespace:       job.Namespace,
-		Kind:            "Job",
-		Images:          containerImages(job.Spec.Template.Spec.Containers),
-		ReadyReplicas:   job.Status.Active,
-		DesiredReplicas: desired,
-		Status:          status,
-		Conditions:      conditions,
-		Labels:          job.Labels,
-		Ignored:         cmodel.IgnoredByLabels(job.Annotations),
-		CreatedAt:       job.CreationTimestamp.Time,
-		LastTransition:  lastTransition,
-	}
+	return out, last
 }
 
 func mapPod(pod *corev1.Pod) K8sPod {
@@ -726,11 +649,11 @@ func podWorkloadRef(pod *corev1.Pod) string {
 		switch ref.Kind {
 		case "ReplicaSet":
 			if hash := pod.Labels[appsv1.DefaultDeploymentUniqueLabelKey]; hash != "" && strings.HasSuffix(ref.Name, "-"+hash) {
-				return fmt.Sprintf("%s/Deployment/%s", pod.Namespace, strings.TrimSuffix(ref.Name, "-"+hash))
+				return workloadID(pod.Namespace, "Deployment", strings.TrimSuffix(ref.Name, "-"+hash))
 			}
-			return fmt.Sprintf("%s/ReplicaSet/%s", pod.Namespace, ref.Name)
+			return workloadID(pod.Namespace, "ReplicaSet", ref.Name)
 		case "StatefulSet", "DaemonSet", "Job":
-			return fmt.Sprintf("%s/%s/%s", pod.Namespace, ref.Kind, ref.Name)
+			return workloadID(pod.Namespace, ref.Kind, ref.Name)
 		}
 	}
 	return ""
@@ -757,6 +680,19 @@ func workloadStatus(ready, desired int32, conditions []K8sCondition, progressing
 		return "failed"
 	}
 	return "degraded"
+}
+
+// workloadID identifies a controller as namespace/Kind/name.
+func workloadID(namespace, kind, name string) string {
+	return namespace + "/" + kind + "/" + name
+}
+
+// desiredReplicas reads an optional replica count, which Kubernetes defaults to 1.
+func desiredReplicas(n *int32) int32 {
+	if n == nil {
+		return 1
+	}
+	return *n
 }
 
 func containerImages(containers []corev1.Container) []string {

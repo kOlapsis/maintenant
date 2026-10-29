@@ -127,13 +127,6 @@ func (s *Server) Start(ctx context.Context, listen string, tlsCfg *tls.Config) e
 	return nil
 }
 
-// Stop performs a graceful shutdown of the gRPC server.
-func (s *Server) Stop() {
-	if s.grpc != nil {
-		s.grpc.GracefulStop()
-	}
-}
-
 var errDemoMode = grpcstatus.Error(codes.PermissionDenied, "demo mode: this server does not accept agents")
 
 func demoModeUnaryInterceptor(context.Context, any, *grpc.UnaryServerInfo, grpc.UnaryHandler) (any, error) {

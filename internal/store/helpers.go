@@ -11,3 +11,8 @@ func NullableString(s string) interface{} {
 	}
 	return s
 }
+
+// rowScanner is satisfied by both *sql.Row and *sql.Rows.
+type rowScanner interface {
+	Scan(dest ...any) error
+}

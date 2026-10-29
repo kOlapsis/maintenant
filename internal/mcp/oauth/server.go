@@ -72,12 +72,6 @@ func NewOAuthServer(cfg Config, store MCPOAuthStore, logger *slog.Logger) *OAuth
 	}
 }
 
-// isRedirectURIAllowed returns true when uri is a loopback address or matches
-// an allowed redirect URI exactly (simple string comparison, RFC 6749 §3.1.2.3).
-func (s *OAuthServer) isRedirectURIAllowed(rawURI string) bool {
-	return s.redirectTarget(rawURI) != nil
-}
-
 var loopbackHosts = map[string]string{"localhost": "localhost", "127.0.0.1": "127.0.0.1", "::1": "[::1]"}
 
 var redirectSchemes = map[string]string{"http": "http", "https": "https"}

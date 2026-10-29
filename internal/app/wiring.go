@@ -90,19 +90,19 @@ func certificateRecoveryEvent(m map[string]any) alert.Event {
 // wireAlertCallbacks wires all service event callbacks for SSE broadcasting,
 // alert event forwarding, and status page integration.
 func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
-	ctx := context.Background()
-	alertCh := a.alertEngine.EventChannel()
-
-	sendAlert := func(evt alert.Event) {
-		alertCh <- evt
-		a.statusSvc.HandleAlertEvent(ctx, evt)
-	}
-
 	if a.downDetector != nil {
-		a.downDetector.SetEmitter(sendAlert)
+		a.downDetector.SetEmitter(a.emitAlert)
 	}
+	a.wireContainerEvents()
+	a.wireEndpointEvents(alertDetector)
+	a.wireHeartbeatEvents()
+	a.wireCertificateEvents()
+	a.wireResourceEvents()
+	a.wireSecurityEvents()
+}
 
-	// Container events
+func (a *App) wireContainerEvents() {
+	ctx := context.Background()
 	a.containerSvc.SetEventCallback(func(eventType string, data any) {
 		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 
@@ -115,40 +115,13 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 		switch eventType {
 		case "container.restart_alert":
 			if ra, ok := data.(*alert.RestartAlert); ok && ra != nil {
-				severity := alert.SeverityWarning
-				if ra.RestartCount >= ra.Threshold*alert.CriticalRestartMultiplier {
-					severity = alert.SeverityCritical
-				}
-				sendAlert(alert.Event{
-					Source:     alert.SourceContainer,
-					AlertType:  restartLoopAlertType,
-					Severity:   severity,
-					Message:    fmt.Sprintf("Container %s exceeded restart threshold (%d/%d)", ra.ContainerName, ra.RestartCount, ra.Threshold),
-					EntityType: "container",
-					EntityID:   ra.ContainerID,
-					EntityName: ra.ContainerName,
-					AgentID:    ra.AgentID,
-					Details: map[string]any{
-						"restart_count": ra.RestartCount,
-						"threshold":     ra.Threshold,
-					},
-					Timestamp: ra.Timestamp,
-				})
+				a.emitAlert(restartAlertEvent(ra))
 			}
 		case "container.restart_recovery":
 			if m, ok := data.(map[string]any); ok {
-				sendAlert(alert.Event{
-					Source:     alert.SourceContainer,
-					AlertType:  restartLoopAlertType,
-					Severity:   alert.SeverityInfo,
-					IsRecover:  true,
-					Message:    fmt.Sprintf("Container %s restart rate returned to normal", toString(m["container_name"])),
-					EntityType: "container",
-					EntityID:   toString(m["container_id"]),
-					EntityName: toString(m["container_name"]),
-					AgentID:    agentIDOf(m),
-					Timestamp:  time.Now(),
-				})
+				evt := restartRecoveryEvent(m)
+				evt.Timestamp = time.Now()
+				a.emitAlert(evt)
 			}
 		case "container.archived":
 			if m, ok := data.(map[string]any); ok {
@@ -159,42 +132,82 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				}
 			}
 		case "container.health_changed":
-			m, ok := data.(map[string]any)
-			if !ok {
-				return
-			}
-			prev, _ := m["previous_health"].(*container.HealthStatus)
-			newH, _ := m["health_status"].(container.HealthStatus)
-			if prev != nil && *prev == container.HealthHealthy && newH == container.HealthUnhealthy {
-				sendAlert(alert.Event{
-					Source:     alert.SourceContainer,
-					AlertType:  "health_unhealthy",
-					Severity:   alert.SeverityWarning,
-					Message:    "Container became unhealthy",
-					EntityType: "container",
-					EntityID:   toString(m["id"]),
-					EntityName: toString(m["container_name"]),
-					AgentID:    agentIDOf(m),
-					Details:    m,
-					Timestamp:  time.Now(),
-				})
-			} else if prev != nil && *prev == container.HealthUnhealthy && newH == container.HealthHealthy {
-				sendAlert(alert.Event{
-					Source:     alert.SourceContainer,
-					AlertType:  "health_unhealthy",
-					Severity:   alert.SeverityInfo,
-					IsRecover:  true,
-					Message:    "Container recovered to healthy",
-					EntityType: "container",
-					EntityID:   toString(m["id"]),
-					EntityName: toString(m["container_name"]),
-					AgentID:    agentIDOf(m),
-					Details:    m,
-					Timestamp:  time.Now(),
-				})
+			if m, ok := data.(map[string]any); ok {
+				if evt, raised := containerHealthEvent(m); raised {
+					evt.Timestamp = time.Now()
+					a.emitAlert(evt)
+				}
 			}
 		}
 	})
+}
+
+func restartAlertEvent(ra *alert.RestartAlert) alert.Event {
+	severity := alert.SeverityWarning
+	if ra.RestartCount >= ra.Threshold*alert.CriticalRestartMultiplier {
+		severity = alert.SeverityCritical
+	}
+	return alert.Event{
+		Source:     alert.SourceContainer,
+		AlertType:  restartLoopAlertType,
+		Severity:   severity,
+		Message:    fmt.Sprintf("Container %s exceeded restart threshold (%d/%d)", ra.ContainerName, ra.RestartCount, ra.Threshold),
+		EntityType: "container",
+		EntityID:   ra.ContainerID,
+		EntityName: ra.ContainerName,
+		AgentID:    ra.AgentID,
+		Details: map[string]any{
+			"restart_count": ra.RestartCount,
+			"threshold":     ra.Threshold,
+		},
+		Timestamp: ra.Timestamp,
+	}
+}
+
+// restartRecoveryEvent resolves a container's restart_loop alert. Caller sets Timestamp.
+func restartRecoveryEvent(m map[string]any) alert.Event {
+	return alert.Event{
+		Source:     alert.SourceContainer,
+		AlertType:  restartLoopAlertType,
+		Severity:   alert.SeverityInfo,
+		IsRecover:  true,
+		Message:    fmt.Sprintf("Container %s restart rate returned to normal", toString(m["container_name"])),
+		EntityType: "container",
+		EntityID:   toString(m["container_id"]),
+		EntityName: toString(m["container_name"]),
+		AgentID:    agentIDOf(m),
+	}
+}
+
+// containerHealthEvent builds the alert of a healthy/unhealthy transition, false for any other change. Caller sets Timestamp.
+func containerHealthEvent(m map[string]any) (alert.Event, bool) {
+	prev, _ := m["previous_health"].(*container.HealthStatus)
+	newH, _ := m["health_status"].(container.HealthStatus)
+	evt := alert.Event{
+		Source:     alert.SourceContainer,
+		AlertType:  "health_unhealthy",
+		EntityType: "container",
+		EntityID:   toString(m["id"]),
+		EntityName: toString(m["container_name"]),
+		AgentID:    agentIDOf(m),
+		Details:    m,
+	}
+	switch {
+	case prev != nil && *prev == container.HealthHealthy && newH == container.HealthUnhealthy:
+		evt.Severity = alert.SeverityWarning
+		evt.Message = "Container became unhealthy"
+	case prev != nil && *prev == container.HealthUnhealthy && newH == container.HealthHealthy:
+		evt.Severity = alert.SeverityInfo
+		evt.IsRecover = true
+		evt.Message = "Container recovered to healthy"
+	default:
+		return evt, false
+	}
+	return evt, true
+}
+
+func (a *App) wireEndpointEvents(alertDetector *alert.EndpointAlertDetector) {
+	ctx := context.Background()
 
 	// Endpoint events: the alerts they announce are raised by the alert callback below.
 	a.endpointSvc.SetEventCallback(func(eventType string, data any) {
@@ -204,110 +217,18 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 		}
 	})
 
-	// Endpoint alerts
 	a.endpointSvc.SetAlertCallback(func(ep *endpoint.Endpoint, result endpoint.CheckResult) (string, any) {
-		epName := ep.ContainerName
-		if epName == "" {
-			epName = ep.Name
-		}
-
-		// Certificate trust is independent of the failure thresholds: a degraded
-		// host is answering, so it never trips them. Raise it as its own warning
-		// and clear it once the chain verifies. Both directions are idempotent —
-		// the engine dedups the alert and ignores a recovery with nothing active.
-		switch {
-		case result.Degraded:
-			sendAlert(alert.Event{
-				Source:     alert.SourceEndpoint,
-				AlertType:  "certificate_untrusted",
-				Severity:   alert.SeverityWarning,
-				Message:    fmt.Sprintf("Endpoint %s is reachable but its certificate is not trusted: %s", ep.Target, result.DegradedReason),
-				EntityType: "endpoint",
-				EntityID:   ep.ID,
-				EntityName: epName,
-				AgentID:    ep.AgentID,
-				Details: map[string]any{
-					"target": ep.Target,
-					"reason": result.DegradedReason,
-				},
-				Timestamp: result.Timestamp,
-			})
-		case result.Success:
-			sendAlert(alert.Event{
-				Source:     alert.SourceEndpoint,
-				AlertType:  "certificate_untrusted",
-				Severity:   alert.SeverityInfo,
-				IsRecover:  true,
-				Message:    fmt.Sprintf("Endpoint %s now presents a trusted certificate", ep.Target),
-				EntityType: "endpoint",
-				EntityID:   ep.ID,
-				EntityName: epName,
-				AgentID:    ep.AgentID,
-				Timestamp:  result.Timestamp,
-			})
+		if evt, raised := endpointTrustEvent(ep, result); raised {
+			a.emitAlert(evt)
 		}
 
 		al := alertDetector.EvaluateCheckResult(ep, result)
 		if al == nil {
 			return "", nil
 		}
-		entityName := al.ContainerName
-		if entityName == "" {
-			entityName = ep.Name
-		}
-		if al.Type == "alert" {
-			sendAlert(alert.Event{
-				Source:     alert.SourceEndpoint,
-				AlertType:  "consecutive_failure",
-				Severity:   alert.SeverityCritical,
-				Message:    fmt.Sprintf("Endpoint %s failed %d consecutive checks", al.Target, al.Failures),
-				EntityType: "endpoint",
-				EntityID:   al.EndpointID,
-				EntityName: entityName,
-				AgentID:    ep.AgentID,
-				Details: map[string]any{
-					"target":     al.Target,
-					"failures":   al.Failures,
-					"threshold":  al.Threshold,
-					"last_error": al.LastError,
-				},
-				Timestamp: al.Timestamp,
-			})
-			return "endpoint.alert", map[string]any{
-				"endpoint_id":          al.EndpointID,
-				"container_name":       al.ContainerName,
-				"target":               al.Target,
-				"consecutive_failures": al.Failures,
-				"threshold":            al.Threshold,
-				"last_error":           al.LastError,
-				"timestamp":            al.Timestamp,
-			}
-		}
-		sendAlert(alert.Event{
-			Source:     alert.SourceEndpoint,
-			AlertType:  "consecutive_failure",
-			Severity:   alert.SeverityInfo,
-			IsRecover:  true,
-			Message:    fmt.Sprintf("Endpoint %s recovered after %d consecutive successes", al.Target, al.Successes),
-			EntityType: "endpoint",
-			EntityID:   al.EndpointID,
-			EntityName: entityName,
-			AgentID:    ep.AgentID,
-			Details: map[string]any{
-				"target":    al.Target,
-				"successes": al.Successes,
-				"threshold": al.Threshold,
-			},
-			Timestamp: al.Timestamp,
-		})
-		return "endpoint.recovery", map[string]any{
-			"endpoint_id":           al.EndpointID,
-			"container_name":        al.ContainerName,
-			"target":                al.Target,
-			"consecutive_successes": al.Successes,
-			"threshold":             al.Threshold,
-			"timestamp":             al.Timestamp,
-		}
+		evt, sseType, sseData := endpointThresholdAlert(ep, al)
+		a.emitAlert(evt)
+		return sseType, sseData
 	})
 
 	// Endpoint removal → alert, certificate monitor and status component cleanup.
@@ -318,17 +239,118 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 			a.logger.Error("failed to remove dangling endpoint refs from status components", "endpoint_id", endpointID, "error", err)
 		}
 	})
+}
 
-	// Heartbeat alerts
+// endpointTrustEvent raises or clears the certificate_untrusted alert of a check, false when the check does neither.
+func endpointTrustEvent(ep *endpoint.Endpoint, result endpoint.CheckResult) (alert.Event, bool) {
+	epName := ep.ContainerName
+	if epName == "" {
+		epName = ep.Name
+	}
+
+	// Certificate trust is independent of the failure thresholds: a degraded
+	// host is answering, so it never trips them. Raise it as its own warning
+	// and clear it once the chain verifies. Both directions are idempotent —
+	// the engine dedups the alert and ignores a recovery with nothing active.
+	evt := alert.Event{
+		Source:     alert.SourceEndpoint,
+		AlertType:  "certificate_untrusted",
+		EntityType: "endpoint",
+		EntityID:   ep.ID,
+		EntityName: epName,
+		AgentID:    ep.AgentID,
+		Timestamp:  result.Timestamp,
+	}
+	switch {
+	case result.Degraded:
+		evt.Severity = alert.SeverityWarning
+		evt.Message = fmt.Sprintf("Endpoint %s is reachable but its certificate is not trusted: %s", ep.Target, result.DegradedReason)
+		evt.Details = map[string]any{
+			"target": ep.Target,
+			"reason": result.DegradedReason,
+		}
+	case result.Success:
+		evt.Severity = alert.SeverityInfo
+		evt.IsRecover = true
+		evt.Message = fmt.Sprintf("Endpoint %s now presents a trusted certificate", ep.Target)
+	default:
+		return evt, false
+	}
+	return evt, true
+}
+
+// endpointThresholdAlert builds the consecutive_failure alert of a crossed threshold and the SSE event announcing it.
+func endpointThresholdAlert(ep *endpoint.Endpoint, al *alert.EndpointAlert) (alert.Event, string, map[string]any) {
+	entityName := al.ContainerName
+	if entityName == "" {
+		entityName = ep.Name
+	}
+	if al.Type == "alert" {
+		evt := alert.Event{
+			Source:     alert.SourceEndpoint,
+			AlertType:  "consecutive_failure",
+			Severity:   alert.SeverityCritical,
+			Message:    fmt.Sprintf("Endpoint %s failed %d consecutive checks", al.Target, al.Failures),
+			EntityType: "endpoint",
+			EntityID:   al.EndpointID,
+			EntityName: entityName,
+			AgentID:    ep.AgentID,
+			Details: map[string]any{
+				"target":     al.Target,
+				"failures":   al.Failures,
+				"threshold":  al.Threshold,
+				"last_error": al.LastError,
+			},
+			Timestamp: al.Timestamp,
+		}
+		return evt, "endpoint.alert", map[string]any{
+			"endpoint_id":          al.EndpointID,
+			"container_name":       al.ContainerName,
+			"target":               al.Target,
+			"consecutive_failures": al.Failures,
+			"threshold":            al.Threshold,
+			"last_error":           al.LastError,
+			"timestamp":            al.Timestamp,
+		}
+	}
+	evt := alert.Event{
+		Source:     alert.SourceEndpoint,
+		AlertType:  "consecutive_failure",
+		Severity:   alert.SeverityInfo,
+		IsRecover:  true,
+		Message:    fmt.Sprintf("Endpoint %s recovered after %d consecutive successes", al.Target, al.Successes),
+		EntityType: "endpoint",
+		EntityID:   al.EndpointID,
+		EntityName: entityName,
+		AgentID:    ep.AgentID,
+		Details: map[string]any{
+			"target":    al.Target,
+			"successes": al.Successes,
+			"threshold": al.Threshold,
+		},
+		Timestamp: al.Timestamp,
+	}
+	return evt, "endpoint.recovery", map[string]any{
+		"endpoint_id":           al.EndpointID,
+		"container_name":        al.ContainerName,
+		"target":                al.Target,
+		"consecutive_successes": al.Successes,
+		"threshold":             al.Threshold,
+		"timestamp":             al.Timestamp,
+	}
+}
+
+func (a *App) wireHeartbeatEvents() {
+	ctx := context.Background()
+
 	a.heartbeatSvc.SetAlertCallback(func(h *heartbeat.Heartbeat, alertType string, details map[string]any) {
 		a.statusSvc.NotifyMonitorChanged(ctx, "heartbeat", h.ID)
 		for _, evt := range heartbeatAlertEvents(h, alertType, details) {
 			evt.Timestamp = time.Now()
-			sendAlert(evt)
+			a.emitAlert(evt)
 		}
 	})
 
-	// Heartbeat events
 	a.heartbeatSvc.SetEventCallback(func(eventType string, data any) {
 		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 		m, ok := data.(map[string]any)
@@ -349,8 +371,10 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 			}
 		}
 	})
+}
 
-	// Certificate alerts
+func (a *App) wireCertificateEvents() {
+	ctx := context.Background()
 	a.certSvc.SetEventCallback(func(eventType string, data any) {
 		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 		m, ok := data.(map[string]any)
@@ -370,33 +394,41 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 			}
 		}
 
+		var evt alert.Event
 		switch eventType {
 		case "certificate.alert":
-			certAlertType, _ := m["alert_type"].(string)
-			severity := alert.SeverityCritical
-			if s, ok := m["severity"].(string); ok && s != "" {
-				severity = s
-			}
-			sendAlert(alert.Event{
-				Source:     alert.SourceCertificate,
-				AlertType:  certAlertType,
-				Severity:   severity,
-				Message:    fmt.Sprintf("Certificate alert (%s) for %v:%v", certAlertType, m["hostname"], m["port"]),
-				EntityType: "certificate",
-				EntityID:   toString(m["monitor_id"]),
-				EntityName: toString(m["hostname"]),
-				AgentID:    agentIDOf(m),
-				Details:    m,
-				Timestamp:  time.Now(),
-			})
+			evt = certificateAlertEvent(m)
 		case "certificate.recovery":
-			evt := certificateRecoveryEvent(m)
-			evt.Timestamp = time.Now()
-			sendAlert(evt)
+			evt = certificateRecoveryEvent(m)
+		default:
+			return
 		}
+		evt.Timestamp = time.Now()
+		a.emitAlert(evt)
 	})
+}
 
-	// Resource alerts
+// certificateAlertEvent raises the certificate alert the event names, critical unless it carries a severity. Caller sets Timestamp.
+func certificateAlertEvent(m map[string]any) alert.Event {
+	certAlertType, _ := m["alert_type"].(string)
+	severity := alert.SeverityCritical
+	if s, ok := m["severity"].(string); ok && s != "" {
+		severity = s
+	}
+	return alert.Event{
+		Source:     alert.SourceCertificate,
+		AlertType:  certAlertType,
+		Severity:   severity,
+		Message:    fmt.Sprintf("Certificate alert (%s) for %v:%v", certAlertType, m["hostname"], m["port"]),
+		EntityType: "certificate",
+		EntityID:   toString(m["monitor_id"]),
+		EntityName: toString(m["hostname"]),
+		AgentID:    agentIDOf(m),
+		Details:    m,
+	}
+}
+
+func (a *App) wireResourceEvents() {
 	a.resourceSvc.SetEventCallback(func(eventType string, data any) {
 		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 		m, ok := data.(map[string]any)
@@ -406,7 +438,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 		switch eventType {
 		case "resource.alert":
 			resAlertType, _ := m["alert_type"].(string)
-			sendAlert(alert.Event{
+			a.emitAlert(alert.Event{
 				Source:     alert.SourceResource,
 				AlertType:  resAlertType + "_threshold",
 				Severity:   alert.SeverityWarning,
@@ -420,7 +452,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 			})
 		case "resource.recovery":
 			recoveredType, _ := m["recovered_type"].(string)
-			sendAlert(alert.Event{
+			a.emitAlert(alert.Event{
 				Source:     alert.SourceResource,
 				AlertType:  recoveredType + "_threshold",
 				Severity:   alert.SeverityInfo,
@@ -435,12 +467,14 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 			})
 		}
 	})
+}
 
-	// Security insight alerts
+func (a *App) wireSecurityEvents() {
+	ctx := context.Background()
 	a.securitySvc.SetAlertCallback(func(containerID string, containerName string, insights []security.Insight, isRecover bool) {
 		agentID := a.containerAgentID(ctx, containerID)
 		if isRecover {
-			sendAlert(alert.Event{
+			a.emitAlert(alert.Event{
 				Source:     alert.SourceSecurity,
 				AlertType:  alert.AlertTypeDangerousConfig,
 				Severity:   alert.SeverityInfo,
@@ -456,7 +490,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 			return
 		}
 		hs := security.HighestSeverity(insights)
-		sendAlert(alert.Event{
+		a.emitAlert(alert.Event{
 			Source:     alert.SourceSecurity,
 			AlertType:  alert.AlertTypeDangerousConfig,
 			Severity:   MapSecuritySeverity(hs),

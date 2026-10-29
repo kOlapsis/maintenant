@@ -267,3 +267,9 @@ func TestClampLogLines(t *testing.T) {
 func TestCapabilities_AdvertisesLogs(t *testing.T) {
 	require.Contains(t, Capabilities(), CapabilityLogs)
 }
+
+func (r *CommandRunner) inFlight() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.running)
+}

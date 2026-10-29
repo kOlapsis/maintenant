@@ -250,18 +250,6 @@ func (s *spoolStore) Depth() (int64, error) {
 	return n, nil
 }
 
-// MinSeq returns the lowest queued sequence, or 0 when the spool is empty.
-func (s *spoolStore) MinSeq() (int64, error) {
-	var seq sql.NullInt64
-	if err := s.db.QueryRow(`SELECT MIN(seq) FROM spool_events`).Scan(&seq); err != nil {
-		return 0, fmt.Errorf("read lowest spool sequence: %w", err)
-	}
-	if !seq.Valid {
-		return 0, nil
-	}
-	return seq.Int64, nil
-}
-
 func (s *spoolStore) meta(key string) (int64, error) {
 	var v int64
 	if err := s.db.QueryRow(`SELECT value FROM spool_meta WHERE key = ?`, key).Scan(&v); err != nil {

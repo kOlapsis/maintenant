@@ -27,7 +27,7 @@ func TestBuildInstallTemplates_ReturnsFourModes(t *testing.T) {
 		token     = "mnt_enr_testtokenabc123"
 	)
 
-	tpl := buildInstallTemplates(serverURL, token)
+	tpl := buildInstallTemplatesFor(serverURL, token, "", false)
 
 	wantKeys := []string{"standalone", "docker_run", "docker_compose", "kubernetes"}
 	for _, k := range wantKeys {
