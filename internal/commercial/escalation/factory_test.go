@@ -23,31 +23,17 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestNewEscalation_EscalatorOnlyInPro(t *testing.T) {
+func TestNewEscalation_WiresRunnerInEveryEdition(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	for edition, wired := range map[extension.Edition]bool{
-		extension.Community: false,
-		extension.Personal:  false,
-		extension.Pro:       true,
-	} {
-		t.Run(string(edition), func(t *testing.T) {
-			prev := extension.CurrentEdition
-			extension.CurrentEdition = func() extension.Edition { return edition }
-			t.Cleanup(func() { extension.CurrentEdition = prev })
+	setEdition(t, extension.Community)
 
-			got := NewEscalation(extpoint.EscalationDeps{
-				Store:    newMockStore(),
-				Alerts:   newAlertStoreMock(),
-				Channels: &mockChannelStore{},
-				Notifier: alert.NewNotifier(nil, logger, true),
-				Logger:   logger,
-			})
-			assert.NotNil(t, got.Service, "the service is built in every edition")
-			if wired {
-				assert.IsType(t, &Runner{}, got.Escalator)
-			} else {
-				assert.Nil(t, got.Escalator)
-			}
-		})
-	}
+	got := NewEscalation(extpoint.EscalationDeps{
+		Store:    newMockStore(),
+		Alerts:   newAlertStoreMock(),
+		Channels: &mockChannelStore{},
+		Notifier: alert.NewNotifier(nil, logger, true),
+		Logger:   logger,
+	})
+	assert.NotNil(t, got.Service)
+	assert.IsType(t, &Runner{}, got.Escalator, "the edition is checked per call, once the licence is known")
 }

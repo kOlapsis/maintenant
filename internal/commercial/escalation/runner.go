@@ -17,6 +17,7 @@ import (
 	esc "github.com/kolapsis/maintenant/internal/alert/escalation"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/extension"
 )
 
 // Reserved level indices for non-step deliveries (negative values are intentional —
@@ -118,7 +119,8 @@ func (noopRunnerSuppressor) IsSuppressed(_ context.Context, _, _, _ string) (boo
 // per (alertID, policyID) tuple — safe to call multiple times (e.g. on severity
 // escalation, when new policies become applicable).
 func (r *Runner) OnAlertCreated(ctx context.Context, a *alert.Alert) error {
-	if a == nil || a.ID == "" {
+	// Checked per call: the licence is only validated after the runner is built.
+	if a == nil || a.ID == "" || !extension.Allows(extension.CapAlertEscalation) {
 		return nil
 	}
 
@@ -269,6 +271,9 @@ func (r *Runner) OnEditionDowngraded(ctx context.Context) error {
 // EvaluateCycle is invoked periodically by the alert engine (default 60s). It
 // recovers stuck deliveries, then steps every due run forward.
 func (r *Runner) EvaluateCycle(ctx context.Context) error {
+	if !extension.Allows(extension.CapAlertEscalation) {
+		return nil
+	}
 	now := r.clock()
 
 	if err := r.recoverOrphans(ctx, now); err != nil {

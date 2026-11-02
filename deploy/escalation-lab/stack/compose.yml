@@ -1,0 +1,62 @@
+services:
+  maintenant:
+    image: ${LAB_IMAGE}
+    container_name: maintenant
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - /etc/os-release:/host/etc/os-release:ro
+      - maintenant-data:/data
+    environment:
+      MAINTENANT_ADDR: "0.0.0.0:8080"
+      MAINTENANT_DB: "/data/maintenant.db"
+      MAINTENANT_LICENSE_KEY: ${MAINTENANT_LICENSE_KEY}
+      MAINTENANT_CONTAINER_DOWN_AFTER: "30s"
+      MAINTENANT_SMTP_HOST: mailpit
+      MAINTENANT_SMTP_PORT: "1025"
+      MAINTENANT_SMTP_FROM: alerts@lab.test
+      MAINTENANT_SMTP_ALLOW_PLAINTEXT: "true"
+      MAINTENANT_ALLOW_PRIVATE_WEBHOOKS: "true"
+      MAINTENANT_DISABLE_TELEMETRY: "true"
+      MAINTENANT_ORGANISATION_NAME: "Escalation lab"
+    depends_on:
+      - mailpit
+      - webhook-tester
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: mailpit
+    ports:
+      - "8025:8025"
+
+  webhook-tester:
+    image: tarampampam/webhook-tester:2
+    container_name: webhook-tester
+    command: start --port 8080 --public-url-root http://webhook-tester:8080 --auto-create-sessions
+    ports:
+      - "8081:8080"
+
+  shop-web:
+    image: nginx:alpine
+    container_name: shop-web
+
+  shop-api:
+    image: traefik/whoami
+    container_name: shop-api
+    restart: "no"
+    labels:
+      maintenant.alert.severity: critical
+
+  shop-cache:
+    image: redis:alpine
+    container_name: shop-cache
+
+volumes:
+  maintenant-data:

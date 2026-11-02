@@ -461,7 +461,7 @@ func actionToContainerState(action string) (agentpb.ContainerState, bool) {
 	switch action {
 	case "start", "unpause":
 		return agentpb.ContainerState_CONTAINER_STATE_RUNNING, true
-	case "stop", "die", "kill":
+	case "stop", "die":
 		return agentpb.ContainerState_CONTAINER_STATE_EXITED, true
 	case "pause":
 		return agentpb.ContainerState_CONTAINER_STATE_PAUSED, true

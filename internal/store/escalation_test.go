@@ -413,3 +413,35 @@ func TestEscalationStore_SelectPolicies_ActiveOnly(t *testing.T) {
 	assert.Len(t, active, 1)
 	assert.Equal(t, "active", active[0].Name)
 }
+
+func TestEscalationStore_SelectRunDeliveries_ChannelName(t *testing.T) {
+	store, rawDB := setupEscalationTestDB(t)
+	ctx := context.Background()
+
+	channelID := uid.New()
+	_, err := rawDB.ExecContext(ctx,
+		`INSERT INTO notification_channels (id, name, type, url, enabled) VALUES (?, 'pager', 'webhook', 'http://test', 1)`,
+		channelID)
+	require.NoError(t, err)
+
+	runID := uid.New()
+	_, err = rawDB.ExecContext(ctx,
+		`INSERT INTO escalation_runs (id, policy_snapshot_json, alert_id, status, started_at)
+		VALUES (?, '{}', ?, 'active', ?)`,
+		runID, insertTestAlert(t, rawDB), time.Now().Unix())
+	require.NoError(t, err)
+
+	_, err = rawDB.ExecContext(ctx,
+		`INSERT INTO escalation_deliveries (id, run_id, level_index, channel_id, status, attempt_started_at)
+		VALUES (?, ?, 0, ?, 'sent', ?), (?, ?, 1, NULL, 'sent', ?)`,
+		uid.New(), runID, channelID, time.Now().Unix(), uid.New(), runID, time.Now().Unix())
+	require.NoError(t, err)
+
+	deliveries, err := store.SelectRunDeliveries(ctx, runID)
+	require.NoError(t, err)
+	names := map[int]string{}
+	for _, d := range deliveries {
+		names[d.LevelIndex] = d.ChannelName
+	}
+	assert.Equal(t, map[int]string{0: "pager", 1: ""}, names, "a deleted channel leaves no name")
+}

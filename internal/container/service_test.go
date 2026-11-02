@@ -1012,22 +1012,6 @@ func TestService_ProcessEvent_DieWithOOMKill137SetsExitedAndCountsRestart(t *tes
 }
 
 // ---------------------------------------------------------------------------
-// Kill action maps to Exited
-// ---------------------------------------------------------------------------
-
-func TestService_ProcessEvent_KillSetsExited(t *testing.T) {
-	store := newSvcStore()
-	c := makeTestContainer(extID("kk"), StateRunning)
-	c.ID = "110"
-	store.seed(c)
-
-	svc := newTestService(store)
-	svc.ProcessEvent(context.Background(), makeTestEvent("kill", c.ExternalID))
-
-	assert.Equal(t, StateExited, store.storedState(c.ExternalID))
-}
-
-// ---------------------------------------------------------------------------
 // Pause / Unpause
 // ---------------------------------------------------------------------------
 

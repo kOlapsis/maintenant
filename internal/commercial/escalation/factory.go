@@ -9,12 +9,12 @@ import (
 	"github.com/kolapsis/maintenant/internal/extpoint"
 )
 
-// NewEscalation builds the escalation service in every edition, and its escalator only when the running edition opens escalation.
+// NewEscalation builds the escalation service and its escalator in every edition.
 func NewEscalation(d extpoint.EscalationDeps) extpoint.Escalation {
 	svc := NewService(d.Store, d.Channels, extension.CurrentEdition, d.Suppressor, d.Logger.With("component", "escalation"))
-	out := extpoint.Escalation{Service: svc}
-	if extension.Allows(extension.CapAlertEscalation) {
-		out.Escalator = NewRunner(RunnerDeps{
+	return extpoint.Escalation{
+		Service: svc,
+		Escalator: NewRunner(RunnerDeps{
 			Store:        d.Store,
 			AlertStore:   d.Alerts,
 			ChannelStore: d.Channels,
@@ -22,8 +22,6 @@ func NewEscalation(d extpoint.EscalationDeps) extpoint.Escalation {
 			Suppressor:   d.Suppressor,
 			Service:      svc,
 			Logger:       d.Logger.With("component", "escalation-runner"),
-		})
-		d.Logger.Info("escalation runner enabled (Pro)")
+		}),
 	}
-	return out
 }
