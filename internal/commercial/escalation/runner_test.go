@@ -72,7 +72,8 @@ func (s *runStore) listDeliveries() []*esc.Delivery {
 	defer s.mu.Unlock()
 	out := make([]*esc.Delivery, 0, len(s.deliveries))
 	for _, d := range s.deliveries {
-		out = append(out, d)
+		cp := *d
+		out = append(out, &cp)
 	}
 	return out
 }
