@@ -173,8 +173,6 @@ func (s *Service) ProcessEvent(ctx context.Context, evt ContainerEvent) {
 		} else {
 			s.handleStateChange(ctx, evt, StateExited)
 		}
-	case "kill":
-		s.handleStateChange(ctx, evt, StateExited)
 	case "pause":
 		s.handleStateChange(ctx, evt, StatePaused)
 	case "unpause":

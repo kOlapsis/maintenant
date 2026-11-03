@@ -216,7 +216,7 @@ func (a *App) dispatchRuntimeEvent(ctx context.Context, evt runtime.RuntimeEvent
 		if dr, ok := a.rt.(*docker.Runtime); ok {
 			go ScanContainerSecurity(ctx, dr, a.containerSvc, a.securitySvc, evt.ExternalID, a.logger)
 		}
-	case "stop", "die", "kill":
+	case "stop", "die":
 		a.endpointSvc.HandleContainerStop(ctx, evt.ExternalID)
 	case "destroy":
 		a.endpointSvc.HandleContainerDestroy(ctx, evt.ExternalID)

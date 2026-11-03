@@ -1,0 +1,399 @@
+#!/bin/sh
+# The escalation bench, driven by one command.
+#
+#   lab up            build the VM, deploy the stack and check it is green
+#   lab down          destroy the VM, keeping only the run reports
+#   lab status        VM, product edition, the three apps, active alerts
+#   lab run           crash shop-api and follow the three-level escalation
+#   lab ssh [cmd...]  a shell, or one command, in the VM
+#
+# One QEMU machine (KVM, user-mode network) runs maintenant, a mail catcher,
+# a webhook catcher and three apps. Nothing here needs root or libvirt.
+#
+# POSIX sh. Needs qemu-system-x86_64, qemu-img, xorriso, ssh, scp, curl, jq;
+# docker only to ship an image that exists on the host.
+#
+# Exit codes: 0 success, 1 the bench is not green or the verdict failed,
+# 2 usage, 4 missing prerequisite.
+
+set -eu
+
+LAB_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
+STATE_DIR="$LAB_DIR/.state"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/maintenant-escalation-lab"
+
+IMAGE_URL="https://cloud.debian.org/images/cloud/trixie/latest"
+IMAGE_FILE="debian-13-genericcloud-amd64.qcow2"
+BASE_IMAGE="$CACHE_DIR/$IMAGE_FILE"
+
+LAB_IMAGE="${LAB_IMAGE:-ghcr.io/kolapsis/maintenant:latest}"
+LAB_SSH_PORT="${LAB_SSH_PORT:-2222}"
+LAB_UI_PORT="${LAB_UI_PORT:-18080}"
+LAB_MAIL_PORT="${LAB_MAIL_PORT:-18025}"
+LAB_HOOK_PORT="${LAB_HOOK_PORT:-18081}"
+
+UI="http://127.0.0.1:$LAB_UI_PORT"
+MAIL="http://127.0.0.1:$LAB_MAIL_PORT"
+HOOK="http://127.0.0.1:$LAB_HOOK_PORT"
+
+SSH_KEY="$STATE_DIR/id_ed25519"
+PID_FILE="$STATE_DIR/qemu.pid"
+SSH_OPTS="-i $SSH_KEY -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+VM="debian@127.0.0.1"
+
+POLICY_NAME="lab: 3-level chain"
+
+die() {
+	printf 'lab: %s\n' "$1" >&2
+	exit "${2:-1}"
+}
+
+info() {
+	printf '%s ==> %s\n' "$(date -u +%H:%M:%S)" "$1"
+}
+
+need() {
+	command -v "$1" >/dev/null 2>&1 || die "$1 is required but not installed" 4
+}
+
+now() {
+	date -u +%Y-%m-%dT%H:%M:%SZ
+}
+
+usage() {
+	cat <<'USAGE'
+usage: lab <command> [options]
+
+  up              build the VM, deploy the stack and check it is green
+  down            destroy the VM, keeping only the run reports
+  status [--json] VM, product edition, the three apps, active alerts
+  run             crash shop-api and follow the three-level escalation
+  ssh [cmd...]    a shell, or one command, in the VM
+
+environment:
+  MAINTENANT_LICENSE_KEY  Pro licence key; read from ../../compose.local.yml when unset
+  LAB_IMAGE               maintenant image (default: ghcr.io/kolapsis/maintenant:latest);
+                          shipped from the host when it exists there, pulled otherwise
+  LAB_SSH_PORT, LAB_UI_PORT, LAB_MAIL_PORT, LAB_HOOK_PORT
+                          host ports on 127.0.0.1 (default: 2222, 18080, 18025, 18081)
+USAGE
+}
+
+vm_alive() {
+	[ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null
+}
+
+vm_ssh() {
+	# shellcheck disable=SC2086 # option list
+	ssh $SSH_OPTS -p "$LAB_SSH_PORT" "$VM" "$@"
+}
+
+api() {
+	if [ $# -ge 3 ]; then
+		curl -fsS -m 10 -X "$1" -H 'Content-Type: application/json' -d "$3" "$UI$2"
+	else
+		curl -fsS -m 10 -X "$1" "$UI$2"
+	fi
+}
+
+# await <seconds> <label> <cmd...>: prints the output of cmd once it succeeds, fails after the deadline.
+await() {
+	deadline=$(($(date +%s) + $1))
+	label=$2
+	shift 2
+	until out=$("$@" 2>/dev/null); do
+		if [ "$(date +%s)" -ge "$deadline" ]; then
+			printf 'lab: %s did not happen in time\n' "$label" >&2
+			return 1
+		fi
+		sleep 5
+	done
+	printf '%s\n' "$out"
+}
+
+license_key() {
+	if [ -n "${MAINTENANT_LICENSE_KEY:-}" ]; then
+		printf '%s\n' "$MAINTENANT_LICENSE_KEY"
+		return
+	fi
+	f="$LAB_DIR/../../compose.local.yml"
+	[ -f "$f" ] || die "MAINTENANT_LICENSE_KEY is not set and $f does not exist: export a Pro licence key" 4
+	key=$(sed -n 's/^[[:space:]]*MAINTENANT_LICENSE_KEY:[[:space:]]*"\{0,1\}\([^"[:space:]]*\).*/\1/p' "$f" | head -n 1)
+	[ -n "$key" ] || die "no MAINTENANT_LICENSE_KEY in $f: export a Pro licence key" 4
+	printf '%s\n' "$key"
+}
+
+image_verified() {
+	(cd "$CACHE_DIR" && grep " $IMAGE_FILE\$" SHA512SUMS | sha512sum -c --quiet >/dev/null 2>&1)
+}
+
+fetch_base_image() {
+	mkdir -p "$CACHE_DIR"
+	curl -fsSL -o "$CACHE_DIR/SHA512SUMS" "$IMAGE_URL/SHA512SUMS" || [ -f "$CACHE_DIR/SHA512SUMS" ] || die "cannot fetch $IMAGE_URL/SHA512SUMS" 4
+	if [ -f "$BASE_IMAGE" ] && image_verified; then
+		return
+	fi
+	info "downloading $IMAGE_FILE (about 340 MB) into $CACHE_DIR"
+	curl -fL --progress-bar -o "$BASE_IMAGE" "$IMAGE_URL/$IMAGE_FILE"
+	image_verified || die "checksum mismatch on $BASE_IMAGE"
+}
+
+compose() {
+	vm_ssh "cd stack && docker compose $*"
+}
+
+health_ok() {
+	curl -fsS -m 5 -o /dev/null "$UI/api/v1/health"
+}
+
+cmd_up() {
+	for t in qemu-system-x86_64 qemu-img xorriso ssh-keygen ssh scp curl jq sha512sum; do
+		need "$t"
+	done
+	[ -w /dev/kvm ] || die "/dev/kvm is not writable: the bench needs KVM" 4
+	vm_alive && die "the VM is already running: run 'lab down' first"
+	key=$(license_key)
+	fetch_base_image
+
+	mkdir -p "$STATE_DIR/seed" "$STATE_DIR/runs"
+	rm -f "$SSH_KEY" "$SSH_KEY.pub" "$STATE_DIR/disk.qcow2" "$STATE_DIR/seed.iso"
+	ssh-keygen -q -t ed25519 -N '' -f "$SSH_KEY"
+	pub=$(sed 's/[&|]/\\&/g' "$SSH_KEY.pub")
+	sed "s|@SSH_PUBLIC_KEY@|$pub|" "$LAB_DIR/cloud-init/user-data" >"$STATE_DIR/seed/user-data"
+	cp "$LAB_DIR/cloud-init/meta-data" "$STATE_DIR/seed/meta-data"
+	xorriso -as mkisofs -quiet -V cidata -J -r -o "$STATE_DIR/seed.iso" "$STATE_DIR/seed"
+	qemu-img create -q -f qcow2 -F qcow2 -b "$BASE_IMAGE" "$STATE_DIR/disk.qcow2" 20G
+
+	info "starting the VM (ssh 127.0.0.1:$LAB_SSH_PORT, ui $UI, mail $MAIL, webhooks $HOOK)"
+	# The seed is a virtio disk: the Debian cloud kernel has no AHCI driver, a SATA cdrom is never seen.
+	qemu-system-x86_64 -enable-kvm -cpu host -m 3072 -smp 2 \
+		-drive "file=$STATE_DIR/disk.qcow2,if=virtio,format=qcow2" \
+		-drive "file=$STATE_DIR/seed.iso,if=virtio,format=raw,readonly=on" \
+		-netdev "user,id=n0,hostfwd=tcp:127.0.0.1:$LAB_SSH_PORT-:22,hostfwd=tcp:127.0.0.1:$LAB_UI_PORT-:8080,hostfwd=tcp:127.0.0.1:$LAB_MAIL_PORT-:8025,hostfwd=tcp:127.0.0.1:$LAB_HOOK_PORT-:8081" \
+		-device virtio-net-pci,netdev=n0 -display none -serial "file:$STATE_DIR/console.log" \
+		-daemonize -pidfile "$PID_FILE"
+
+	info "waiting for ssh"
+	await 300 "ssh" vm_ssh true >/dev/null || die "the VM did not accept ssh: see $STATE_DIR/console.log"
+	info "waiting for cloud-init (Docker install)"
+	vm_ssh sudo cloud-init status --wait >/dev/null || die "cloud-init failed: lab ssh sudo cloud-init status --long"
+
+	info "deploying the stack"
+	vm_ssh rm -rf stack
+	# shellcheck disable=SC2086 # option list
+	scp $SSH_OPTS -P "$LAB_SSH_PORT" -q -r "$LAB_DIR/stack" "$VM:stack"
+	printf 'LAB_IMAGE=%s\nMAINTENANT_LICENSE_KEY=%s\n' "$LAB_IMAGE" "$key" | vm_ssh 'umask 077 && cat >stack/.env'
+	if docker image inspect "$LAB_IMAGE" >/dev/null 2>&1; then
+		info "shipping $LAB_IMAGE from the host"
+		docker save "$LAB_IMAGE" | gzip | vm_ssh 'gunzip | docker load' >/dev/null
+	else
+		info "pulling $LAB_IMAGE in the VM"
+		vm_ssh "docker pull -q '$LAB_IMAGE'" >/dev/null
+	fi
+	compose up -d --quiet-pull >/dev/null
+	info "waiting for maintenant"
+	await 180 "the product" health_ok >/dev/null || die "maintenant is not healthy: lab ssh 'cd stack && docker compose logs maintenant'"
+
+	edition=$(api GET /api/v1/edition | jq -r .edition)
+	[ "$edition" = pro ] || die "the licence gives the $edition edition: escalation needs Pro"
+	await 90 "a green bench" status_green >/dev/null || true
+	cmd_status
+}
+
+status_json() {
+	vm=false
+	vm_alive && vm=true
+	health=$(curl -fsS -m 5 "$UI/api/v1/health" 2>/dev/null | jq -c .) || health=null
+	edition=$(curl -fsS -m 5 "$UI/api/v1/edition" 2>/dev/null | jq -r '.edition // "unknown"') || edition=unreachable
+	apps=$(curl -fsS -m 5 "$UI/api/v1/containers" 2>/dev/null | jq -c '[.groups[].containers[] | select((.name | ltrimstr("/")) | IN("shop-web", "shop-api", "shop-cache")) | {key: (.name | ltrimstr("/")), value: .state}] | from_entries') || apps='{}'
+	alerts=$(curl -fsS -m 5 "$UI/api/v1/alerts/active" 2>/dev/null | jq -c '[.[][] | {id, severity, alert_type, entity_name, message}]') || alerts='[]'
+	jq -n --argjson vm "$vm" --argjson health "$health" --arg edition "$edition" --argjson apps "$apps" --argjson alerts "$alerts" '{
+		vm: $vm, health: $health, edition: $edition, apps: $apps, active_alerts: $alerts,
+		verdict: (if $vm and $health != null and $edition == "pro" and ($apps | length == 3 and all(.[]; . == "running")) then "green" else "red" end)
+	}'
+}
+
+status_green() {
+	[ "$(status_json | jq -r .verdict)" = green ]
+}
+
+cmd_status() {
+	s=$(status_json)
+	if [ "${1:-}" = --json ]; then
+		printf '%s\n' "$s"
+	else
+		printf '%s\n' "$s" | jq -r '
+			"vm:            \(if .vm then "running" else "down" end)",
+			"product:       \(if .health then "healthy" else "unreachable" end), edition \(.edition)",
+			"apps:          \(.apps | to_entries | map("\(.key)=\(.value)") | join("  "))",
+			"active alerts: \(.active_alerts | length)",
+			"verdict:       \(.verdict)"'
+	fi
+	[ "$(printf '%s\n' "$s" | jq -r .verdict)" = green ]
+}
+
+channel() {
+	api POST /api/v1/channels "$(jq -n --arg n "$1" --arg t "$2" --arg u "$3" '{name: $n, type: $t, url: $u}')" | jq -r .id
+}
+
+shop_api_alert() {
+	api GET /api/v1/alerts/active | jq -e '.[][] | select(.alert_type == "container_down" and .entity_name == "shop-api")'
+}
+
+shop_api_quiet() {
+	! shop_api_alert >/dev/null
+}
+
+run_for() {
+	api GET "/api/v1/alerts/$1/escalation-runs" | jq -re --arg p "$2" '.runs[] | select(.policy_id == $p) | .id'
+}
+
+alert_resolved() {
+	api GET "/api/v1/alerts/$1" | jq -e '.status == "resolved"' >/dev/null
+}
+
+webhook_requests() {
+	{ curl -fsS -m 10 "$HOOK/api/session/$1/requests" || echo '[]'; } |
+		jq -c '[.[] | (.request_payload_base64 | @base64d | fromjson) as $p | {captured_at: (.captured_at_unix_milli / 1000 | todate), event: $p.event, message: $p.alert.message}]'
+}
+
+cmd_run() {
+	for t in curl jq ssh; do
+		need "$t"
+	done
+	cmd_status >/dev/null || die "the bench is not green: see 'lab status'"
+	started_at=$(now)
+
+	info "reset: previous lab policy, lab channels, mails"
+	api GET /api/v1/escalation-policies | jq -r --arg n "$POLICY_NAME" '.policies[] | select(.name == $n) | .id' |
+		while read -r id; do api DELETE "/api/v1/escalation-policies/$id"; done
+	api GET /api/v1/channels | jq -r '.channels[] | select(.name | startswith("lab-")) | .id' |
+		while read -r id; do api DELETE "/api/v1/channels/$id"; done
+	curl -fsS -m 10 -X DELETE "$MAIL/api/v1/messages" >/dev/null
+	vm_ssh docker start shop-api >/dev/null
+	await 120 "the previous container_down alert to resolve" shop_api_quiet >/dev/null || die "shop-api still has an active container_down alert"
+	uuid1=$(cat /proc/sys/kernel/random/uuid)
+	uuid3=$(cat /proc/sys/kernel/random/uuid)
+
+	l1=$(channel lab-l1-webhook webhook "http://webhook-tester:8080/$uuid1")
+	l2=$(channel lab-l2-email email oncall@lab.test)
+	l3e=$(channel lab-l3-email email cto@lab.test)
+	l3w=$(channel lab-l3-webhook webhook "http://webhook-tester:8080/$uuid3")
+	policy=$(api POST /api/v1/escalation-policies "$(jq -n --arg n "$POLICY_NAME" --arg l1 "$l1" --arg l2 "$l2" --arg l3e "$l3e" --arg l3w "$l3w" '{
+		name: $n, active: true, filters: {severities: ["critical"], scopes: []},
+		levels: [{delay_seconds: 60, channel_ids: [$l1]}, {delay_seconds: 120, channel_ids: [$l2]}, {delay_seconds: 180, channel_ids: [$l3e, $l3w]}]
+	}')" | jq -r .id)
+	info "policy $policy: 60 s webhook, 120 s on-call email, 180 s CTO email + pager webhook"
+
+	t_crash=$(date +%s)
+	vm_ssh docker kill --signal=SIGSEGV shop-api >/dev/null
+	vm_ssh docker kill --signal=HUP shop-web >/dev/null
+	info "shop-api killed with SIGSEGV, shop-web reloaded with SIGHUP, waiting for the container_down alert"
+	alert=$(await 180 "the container_down alert" shop_api_alert) || die "no container_down alert for shop-api"
+	alert_id=$(printf '%s' "$alert" | jq -r .id)
+	detection_s=$(($(date +%s) - t_crash))
+	info "alert $alert_id fired ($detection_s s after the crash)"
+
+	run_id=$(await 120 "the escalation run" run_for "$alert_id" "$policy") || die "no run started for the alert"
+	info "run $run_id started"
+	last=-1
+	level1_s=null
+	level2_s=null
+	level3_s=null
+	deadline=$(($(date +%s) + 600))
+	while :; do
+		run=$(api GET "/api/v1/escalation-runs/$run_id")
+		level=$(printf '%s' "$run" | jq -r .last_executed_level_index)
+		status=$(printf '%s' "$run" | jq -r .status)
+		if [ "$level" != "$last" ]; then
+			elapsed=$(($(date +%s) - t_crash))
+			info "level $((level + 1)) sent ($elapsed s after the crash)"
+			case $level in
+			0) level1_s=$elapsed ;;
+			1) level2_s=$elapsed ;;
+			2) level3_s=$elapsed ;;
+			esac
+			last=$level
+		fi
+		[ "$status" = active ] || break
+		[ "$(date +%s)" -lt "$deadline" ] || die "the run is still active after 600 s"
+		sleep 5
+	done
+	ended_s=$(($(date +%s) - t_crash))
+	info "run ended: $status ($ended_s s after the crash)"
+	shop_web_state=$(api GET /api/v1/containers | jq '[.groups[].containers[] | select((.name | ltrimstr("/")) == "shop-web") | .state][0]')
+
+	webhooks=$(jq -n --argjson a "$(webhook_requests "$uuid1")" --argjson b "$(webhook_requests "$uuid3")" '{l1: $a, l3: $b}')
+	messages=$(curl -fsS -m 10 "$MAIL/api/v1/messages?limit=200")
+	mails=$(printf '%s' "$messages" | jq -c '[.messages[] | .To[].Address] | group_by(.) | map({key: .[0], value: length}) | from_entries')
+
+	info "healing: docker start shop-api"
+	vm_ssh docker start shop-api >/dev/null
+	healed=false
+	healed_s=null
+	if await 120 "the alert resolution" alert_resolved "$alert_id" >/dev/null; then
+		healed=true
+		healed_s=$(($(date +%s) - t_crash))
+	fi
+
+	mkdir -p "$STATE_DIR/runs"
+	report="$STATE_DIR/runs/$(date -u +%Y%m%dT%H%M%SZ).json"
+	jq -n --arg started "$started_at" --arg ended "$(now)" --arg policy "$policy" \
+		--argjson channels "$(jq -n --arg a "$l1" --arg b "$l2" --arg c "$l3e" --arg d "$l3w" '{l1_webhook: $a, l2_email: $b, l3_email: $c, l3_webhook: $d}')" \
+		--argjson alert "$alert" --argjson run "$(printf '%s' "$run" | jq 'del(.deliveries)')" \
+		--argjson deliveries "$(printf '%s' "$run" | jq '.deliveries // []')" \
+		--argjson webhooks "$webhooks" --argjson mails "$mails" \
+		--argjson subjects "$(printf '%s' "$messages" | jq '[.messages[] | {to: [.To[].Address], subject: .Subject}]')" \
+		--argjson healed "$healed" --argjson shop_web_state "$shop_web_state" \
+		--argjson timings "{\"detection_s\": $detection_s, \"level1_s\": $level1_s, \"level2_s\": $level2_s, \"level3_s\": $level3_s, \"ended_s\": $ended_s, \"healed_s\": $healed_s}" \
+		'{started_at: $started, ended_at: $ended, policy: $policy, channels: $channels, alert: $alert, run: $run,
+		  deliveries: $deliveries, webhooks: $webhooks, mails: $mails, mail_subjects: $subjects, healed: $healed, shop_web_state: $shop_web_state, timings: $timings}' >"$report"
+
+	verdict=$(jq -f "$LAB_DIR/verdict.jq" "$report")
+	printf '\n'
+	jq -r '.timings | to_entries[] | "  \(.key | ltrimstr("_s")): \(.value // "-") s"' "$report"
+	printf '%s\n' "$verdict" | jq -r 'if .pass then "\nverdict: PASS" else "\nverdict: FAIL\n" + (.failures | map("  - " + .) | join("\n")) end'
+	info "report: $report"
+	[ "$(printf '%s' "$verdict" | jq -r .pass)" = true ]
+}
+
+cmd_down() {
+	if [ -f "$PID_FILE" ]; then
+		pid=$(cat "$PID_FILE")
+		if kill -0 "$pid" 2>/dev/null; then
+			kill "$pid" 2>/dev/null || true
+			i=0
+			while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 10 ]; do
+				sleep 1
+				i=$((i + 1))
+			done
+			kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
+		fi
+	fi
+	rm -rf "$STATE_DIR/disk.qcow2" "$STATE_DIR/seed.iso" "$STATE_DIR/seed" "$SSH_KEY" "$SSH_KEY.pub" "$PID_FILE" "$STATE_DIR/console.log"
+	info "VM destroyed, reports kept in $STATE_DIR/runs"
+}
+
+cmd_ssh() {
+	vm_alive || die "the VM is not running"
+	vm_ssh "$@"
+}
+
+[ $# -ge 1 ] || {
+	usage >&2
+	exit 2
+}
+cmd=$1
+shift
+case $cmd in
+up) cmd_up ;;
+down) cmd_down ;;
+status) cmd_status "$@" ;;
+run) cmd_run ;;
+ssh) cmd_ssh "$@" ;;
+help | -h | --help) usage ;;
+*)
+	usage >&2
+	exit 2
+	;;
+esac

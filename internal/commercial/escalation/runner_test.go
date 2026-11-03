@@ -19,6 +19,7 @@ import (
 	esc "github.com/kolapsis/maintenant/internal/alert/escalation"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -484,8 +485,15 @@ type harness struct {
 	clockMu  sync.Mutex
 }
 
+func setEdition(t *testing.T, e extension.Edition) {
+	prev := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return e }
+	t.Cleanup(func() { extension.CurrentEdition = prev })
+}
+
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	setEdition(t, extension.Pro)
 	store := newRunStore()
 	alerts := newAlertStoreMock()
 	channels := newChannelStoreMock()
@@ -604,6 +612,21 @@ func TestRunner_OnAlertCreated_StartsRun(t *testing.T) {
 	assert.Equal(t, p.ID, *r.PolicyID)
 	require.NotNil(t, r.NextActionAt)
 	assert.Equal(t, h.now.Add(60*time.Second), *r.NextActionAt)
+}
+
+func TestRunner_FollowsTheEditionPerCall(t *testing.T) {
+	h := newHarness(t)
+	a := criticalAlert("1")
+	h.alerts.put(a)
+	h.store.addPolicy(policyTwoLevels())
+
+	setEdition(t, extension.Community)
+	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
+	assert.Empty(t, h.store.listRuns(), "no run below Pro")
+
+	setEdition(t, extension.Pro)
+	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
+	assert.Len(t, h.store.listRuns(), 1, "a licence validated after start enables the runner")
 }
 
 func TestRunner_OnAlertCreated_Idempotent(t *testing.T) {

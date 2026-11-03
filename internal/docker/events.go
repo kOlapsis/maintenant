@@ -137,9 +137,9 @@ func processEvent(msg events.Message) *ContainerEvent {
 
 	// Container events.
 	switch {
+	// "kill" only reports a signal sent; the process may survive it, and "die" reports the actual exit.
 	case action == "start", action == "stop", action == "die",
-		action == "kill", action == "pause", action == "unpause",
-		action == "destroy":
+		action == "pause", action == "unpause", action == "destroy":
 		// Standard container lifecycle events
 	case strings.HasPrefix(action, "health_status"):
 		// Health check events: "health_status: healthy", "health_status: unhealthy"
