@@ -503,3 +503,18 @@ func (s *EndpointStore) CountConfigured(ctx context.Context) (int, error) {
 	}
 	return count, nil
 }
+
+// SetEndpointLimited marks an endpoint as monitored or left out by the edition cap.
+func (s *EndpointStore) SetEndpointLimited(ctx context.Context, id string, limited bool) error {
+	panic("not implemented")
+}
+
+// CountActiveEndpoints counts active endpoints of source, every source when empty.
+func (s *EndpointStore) CountActiveEndpoints(ctx context.Context, source string) (int, error) {
+	panic("not implemented")
+}
+
+// CountLimitedEndpoints counts active endpoints left out by the edition cap.
+func (s *EndpointStore) CountLimitedEndpoints(ctx context.Context) (int, error) {
+	panic("not implemented")
+}

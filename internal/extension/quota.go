@@ -3,6 +3,8 @@
 
 package extension
 
+import "time"
+
 // Resource names a capped resource type.
 type Resource string
 
@@ -58,4 +60,20 @@ func LiftingEdition(r Resource) Edition {
 		}
 	}
 	return Pro
+}
+
+// LimitGrace is how long a vanished element keeps its slot while others wait for one.
+const LimitGrace = 10 * time.Minute
+
+// LimitCandidate is one element competing for a slot under a cap.
+type LimitCandidate struct {
+	ID            string
+	Grandfathered bool
+	Since         time.Time
+	Key           string
+}
+
+// Allocate returns the IDs of the candidates left without a slot under limit.
+func Allocate(cands []LimitCandidate, limit int) map[string]bool {
+	panic("not implemented")
 }

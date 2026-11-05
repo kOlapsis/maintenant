@@ -24,6 +24,7 @@ export interface CertMonitor {
   created_at: string
   latest_check?: CertCheckResult
   agent_id?: string | null
+  limited: boolean
 }
 
 export type OCSPStatus = 'good' | 'revoked' | 'unknown' | 'error'

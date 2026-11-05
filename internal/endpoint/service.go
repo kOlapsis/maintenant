@@ -21,6 +21,7 @@ var (
 	ErrEndpointLive     = errors.New("endpoint is still discovered from container labels")
 	ErrEndpointNotFound = errors.New("endpoint not found")
 	ErrLimitReached     = errors.New("endpoint limit reached")
+	ErrLimited          = errors.New("endpoint is not monitored: Community limit")
 	// ErrAgentProbed rejects an on-demand check for an endpoint the server never
 	// dials itself: it lives on an agent's network, and that agent probes it.
 	ErrAgentProbed = errors.New("endpoint is probed by a remote agent")
@@ -710,4 +711,9 @@ func (s *Service) emitEvent(eventType string, data interface{}) {
 	if s.onEvent != nil {
 		s.onEvent(eventType, data)
 	}
+}
+
+// ApplyLimit gives monitoring slots to endpoints under the running edition's cap.
+func (s *Service) ApplyLimit(ctx context.Context) error {
+	panic("not implemented")
 }

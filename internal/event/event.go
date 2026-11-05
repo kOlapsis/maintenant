@@ -7,6 +7,7 @@ package event
 // Endpoint monitoring events.
 const (
 	EndpointDiscovered    = "endpoint.discovered"
+	EndpointLimitChanged  = "endpoint.limit_changed"
 	EndpointStatusChanged = "endpoint.status_changed"
 	EndpointRemoved       = "endpoint.removed"
 	EndpointAlert         = "endpoint.alert"
@@ -33,6 +34,7 @@ const (
 	CertificateAlert          = "certificate.alert"
 	CertificateRecovery       = "certificate.recovery"
 	CertificateDeleted        = "certificate.deleted"
+	CertificateLimitChanged   = "certificate.limit_changed"
 )
 
 // Container monitoring events.

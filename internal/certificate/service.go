@@ -29,6 +29,7 @@ var (
 	ErrInvalidInput        = errors.New("invalid input")
 	ErrCannotDeleteAuto    = errors.New("cannot delete auto-detected certificate monitors")
 	ErrLimitReached        = errors.New("certificate monitor limit reached")
+	ErrLimited             = errors.New("certificate monitor is not monitored: Community limit")
 	// ErrAgentScanned rejects an on-demand check for a monitor the server never
 	// dials itself: it lives on an agent's network, and that agent scans it.
 	ErrAgentScanned = errors.New("certificate is scanned by a remote agent")
@@ -1023,4 +1024,9 @@ func extractHostPort(targetURL string) (string, int, error) {
 // IsHTTPS isHTTPS checks if a target URL uses the HTTPS scheme.
 func IsHTTPS(target string) bool {
 	return strings.HasPrefix(target, "https://")
+}
+
+// ApplyLimit gives monitoring slots to certificate monitors under the running edition's cap.
+func (s *Service) ApplyLimit(ctx context.Context) error {
+	panic("not implemented")
 }

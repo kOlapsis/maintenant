@@ -559,3 +559,28 @@ func (s *CertificateStore) CountConfigured(ctx context.Context) (int, error) {
 	}
 	return count, nil
 }
+
+// DeactivateMonitor marks a certificate monitor inactive.
+func (s *CertificateStore) DeactivateMonitor(ctx context.Context, id string) error {
+	panic("not implemented")
+}
+
+// SetMonitorLimited marks a certificate monitor as monitored or left out by the edition cap.
+func (s *CertificateStore) SetMonitorLimited(ctx context.Context, id string, limited bool) error {
+	panic("not implemented")
+}
+
+// CountActiveMonitors counts active certificate monitors of the given sources, every source when none.
+func (s *CertificateStore) CountActiveMonitors(ctx context.Context, sources ...certificate.CertSource) (int, error) {
+	panic("not implemented")
+}
+
+// CountLimitedMonitors counts active certificate monitors left out by the edition cap.
+func (s *CertificateStore) CountLimitedMonitors(ctx context.Context) (int, error) {
+	panic("not implemented")
+}
+
+// DeleteInactiveMonitorsBefore deletes certificate monitors inactive since before.
+func (s *CertificateStore) DeleteInactiveMonitorsBefore(ctx context.Context, before time.Time) (int64, error) {
+	panic("not implemented")
+}
