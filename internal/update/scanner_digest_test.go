@@ -41,6 +41,26 @@ func TestScanner_DigestUpdateLastsUntilTheContainerRunsTheNewDigest(t *testing.T
 	assert.Empty(t, results)
 }
 
+// An image pulled twice keeps both repo digests of the tag, and the one the tag points at now is enough.
+func TestScanner_DigestUpdateIgnoresStaleRepoDigestWhenAnotherMatchesTheTag(t *testing.T) {
+	reg := &stubRegistry{tags: floatingTags, digest: "sha256:new"}
+	sc := newTestScanner(reg, &stubStore{})
+	running := ContainerInfo{
+		ExternalID: "ctr1", Name: "web", Image: "nginx:latest",
+		RepoDigests: []string{"nginx@sha256:old", "nginx@sha256:new"},
+	}
+
+	results, errs := sc.Scan(context.Background(), []ContainerInfo{running})
+	require.Empty(t, errs)
+	assert.Empty(t, results)
+
+	running.RepoDigests = []string{"nginx@sha256:old", "nginx@sha256:older"}
+	results, errs = sc.Scan(context.Background(), []ContainerInfo{running})
+	require.Empty(t, errs)
+	require.Len(t, results, 1)
+	assert.Equal(t, "sha256:old", results[0].CurrentDigest)
+}
+
 // A Kubernetes workload keeps its id across a rollout, so the reference is the digest its pods run.
 func TestScanner_WorkloadWithUnchangedIDResolvesOnceItRunsTheNewDigest(t *testing.T) {
 	reg := &stubRegistry{tags: floatingTags, digest: "sha256:new"}
