@@ -92,13 +92,13 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 const tierOne = (hosts: number) =>
-  `Personal lifts every Community limit and monitors up to ${hosts} machines, for €149 once, for life.`
+  `Pro adds team alerting at €29/mo. Personal monitors ${hosts} machines for €149 once, for life.`
 const tierTwo = (n: number, hosts = 20) =>
-  `You're monitoring ${n} containers. Personal monitors up to ${hosts} machines and adds email and Telegram alerts, for €149 once. Pro adds the team layer (Slack, escalation, subscribers) at €29/mo.`
+  `You're monitoring ${n} containers. Pro adds team alerting at €29/mo, Personal ${hosts} machines for €149 once.`
 const TIER_THREE =
-  'Running 50+ containers in production. Pro adds incident management, alert escalation and Slack routing. Want to discuss your setup with the founder?'
+  '50+ containers in production? Pro adds escalation, incidents and Slack routing. Talk to the founder?'
 const CONTAINER_MESSAGE =
-  /Personal lifts every Community limit|Hitting the Community limits|You're monitoring \d+ containers|containers in production/
+  /Pro adds team alerting|Personal lifts every Community limit|Hitting the Community limits|You're monitoring \d+ containers|containers in production/
 
 type Layout = VueWrapper<ComponentPublicInstance>
 type Left = { endpoints?: number; certificates?: number }
