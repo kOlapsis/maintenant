@@ -93,8 +93,8 @@ const DAY = 24 * HOUR
 
 const tierOne = (hosts: number) =>
   `Personal lifts every Community limit and monitors up to ${hosts} machines, for €149 once, for life.`
-const tierTwo = (n: number) =>
-  `You're monitoring ${n} containers. Personal removes every limit for €149 once. Pro adds the team layer (Slack, escalation, subscribers) at €29/mo.`
+const tierTwo = (n: number, hosts = 20) =>
+  `You're monitoring ${n} containers. Personal monitors up to ${hosts} machines and adds email and Telegram alerts, for €149 once. Pro adds the team layer (Slack, escalation, subscribers) at €29/mo.`
 const TIER_THREE =
   'Running 50+ containers in production. Pro adds incident management, alert escalation and Slack routing. Want to discuss your setup with the founder?'
 const CONTAINER_MESSAGE =
@@ -210,13 +210,17 @@ describe('DefaultLayout on Community, banner by containers', () => {
   }
 
   // FR-016: the other tiers keep their current texts.
-  for (const count of [25, 30, 49]) {
-    it(`keeps the second tier text at ${count} containers`, async () => {
+  for (const [count, hosts] of [
+    [25, 20],
+    [30, 20],
+    [49, 50],
+  ] as const) {
+    it(`keeps the second tier text at ${count} containers (${hosts} machines)`, async () => {
       fleet.count = count
-      useEdition().edition.value = community()
+      useEdition().edition.value = community({}, hosts)
       const wrapper = await mountLayout()
 
-      expect(flat(wrapper.text())).toContain(tierTwo(count))
+      expect(flat(wrapper.text())).toContain(tierTwo(count, hosts))
       expect(editionsLinks(containerBanner(wrapper)!)).toBeGreaterThan(0)
     })
   }
