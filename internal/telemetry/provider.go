@@ -19,14 +19,6 @@ type counter interface {
 	CountConfigured(ctx context.Context) (int, error)
 }
 
-// CountFunc adapts a plain count function to a telemetry counter.
-type CountFunc func(ctx context.Context) (int, error)
-
-// CountConfigured implements counter.
-func (f CountFunc) CountConfigured(ctx context.Context) (int, error) {
-	panic("not implemented")
-}
-
 // editionSource exposes the in-process edition flag. Implementations may
 // simply close over `extension.CurrentEdition` — the indirection lets
 // tests inject deterministic values.

@@ -38,17 +38,13 @@ type Config struct {
 // Deps groups the count sources and edition source needed by the metrics
 // provider. Each store satisfies the `counter` interface structurally.
 type Deps struct {
-	Containers          counter
-	Endpoints           counter
-	Heartbeats          counter
-	Certificates        counter
-	Webhooks            counter
-	StatusComponents    counter
-	EndpointsStandalone counter
-	EndpointsLabel      counter
-	EndpointsLimited    counter
-	CertificatesLimited counter
-	Edition             editionSource
+	Containers       counter
+	Endpoints        counter
+	Heartbeats       counter
+	Certificates     counter
+	Webhooks         counter
+	StatusComponents counter
+	Edition          editionSource
 	// StorageEngine reports the engine backing this instance, "sqlite" or
 	// "postgres". Nothing else about the database is collected: no host, no
 	// version, no size.
