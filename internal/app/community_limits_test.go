@@ -1339,24 +1339,38 @@ func TestCommunityLimit_MCPReportsTheState(t *testing.T) {
 	}
 }
 
-// FR-018, US5 scenario 1: the counts the telemetry reads follow the real state.
-func TestCommunityLimit_TelemetryCountsFollowTheRealState(t *testing.T) {
-	clPinEdition(t, extension.Community)
-	e := clOpen(t, "", nil)
-	for i := range 2 {
-		require.Equal(t, http.StatusCreated, e.createEndpoint(fmt.Sprintf("manual-%d", i)).Code)
-	}
-	e.declareAll(clNames("svc", 1, 12)...)
-	e.a.certSvc.SyncFromLabels(e.ctx, "ext-certs", clCertLabels(clCertHosts(1, 7)...))
+// Contract "Télémétrie": endpoints_total and certificates_total keep counting every
+// active element, limited ones included, and never an inactive certificate monitor.
+func TestCommunityLimit_TelemetryCountsKeepTheirMeaning(t *testing.T) {
+	for name, c := range map[string]struct{ manual, labels, certsA, certsB int }{
+		"manual and label endpoints": {2, 12, 4, 3},
+		"label endpoints only":       {0, 15, 6, 3},
+	} {
+		t.Run(name, func(t *testing.T) {
+			clPinEdition(t, extension.Community)
+			e := clOpen(t, "", nil)
+			for i := range c.manual {
+				require.Equal(t, http.StatusCreated, e.createEndpoint(fmt.Sprintf("manual-%d", i)).Code)
+			}
+			e.declareAll(clNames("svc", 1, c.labels)...)
+			e.a.certSvc.SyncFromLabels(e.ctx, "ext-certs-a", clCertLabels(clCertHosts(1, c.certsA)...))
+			e.a.certSvc.SyncFromLabels(e.ctx, "ext-certs-b", clCertLabels(clCertHosts(c.certsA+1, c.certsA+c.certsB)...))
 
-	count := func(f func(context.Context) (int, error)) int {
-		t.Helper()
-		n, err := f(e.ctx)
-		require.NoError(t, err)
-		return n
+			require.Len(t, e.limited(), c.manual+c.labels-10, "the endpoints past the cap are left out")
+			_, limitedCerts := e.certSplit()
+			require.Len(t, limitedCerts, c.certsA+c.certsB-5, "the certificates past the cap are left out")
+
+			count := func(f func(context.Context) (int, error)) int {
+				t.Helper()
+				n, err := f(e.ctx)
+				require.NoError(t, err)
+				return n
+			}
+			assert.Equal(t, c.manual+c.labels, count(e.a.epStore.CountConfigured), "endpoints_total counts the limited endpoints too")
+			assert.Equal(t, c.certsA+c.certsB, count(e.a.certStore.CountConfigured), "certificates_total counts the limited monitors too")
+
+			e.a.certSvc.HandleContainerDestroy(e.ctx, "ext-certs-a")
+			assert.Equal(t, c.certsB, count(e.a.certStore.CountConfigured), "certificates_total leaves out the inactive monitors")
+		})
 	}
-	assert.Equal(t, 2, count(func(ctx context.Context) (int, error) { return e.a.epStore.CountActiveEndpoints(ctx, "standalone") }))
-	assert.Equal(t, 12, count(func(ctx context.Context) (int, error) { return e.a.epStore.CountActiveEndpoints(ctx, "label") }))
-	assert.Equal(t, 4, count(e.a.epStore.CountLimitedEndpoints))
-	assert.Equal(t, 2, count(e.a.certStore.CountLimitedMonitors))
 }

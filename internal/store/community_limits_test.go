@@ -27,7 +27,7 @@ import (
 
 // Acceptance tests of 051-community-label-limits at the storage boundary:
 // the rights fixed at the first start (FR-003), the limited state and the
-// counts that feed the edition report and the telemetry (FR-017, FR-018), the
+// counts that feed the edition report (FR-017) and the unchanged telemetry, the
 // inactive certificate monitors, and the copy to PostgreSQL (FR-019).
 
 func applyMigration44(t *testing.T, db *DB, direction string) {
@@ -192,9 +192,9 @@ func TestMigration44_LegacyDatabaseKeepsItsRightsThroughTheConversion(t *testing
 	assert.True(t, m.Grandfathered, "legacy standalone certificate keeps its right through the conversion")
 }
 
-// FR-006, FR-017, FR-018: the limited state is stored per endpoint, and the counts
-// read it by origin, active rows only.
-func TestEndpointStore_LimitedStateAndCountsByOrigin(t *testing.T) {
+// FR-006, FR-017: the limited state is stored per endpoint, and the counts read
+// active rows only; endpoints_total (CountConfigured) still counts the limited ones.
+func TestEndpointStore_LimitedStateAndCounts(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
 	eps := NewEndpointStore(db)
@@ -233,9 +233,8 @@ func TestEndpointStore_LimitedStateAndCountsByOrigin(t *testing.T) {
 		require.NoError(t, err)
 		return n
 	}
-	assert.Equal(t, 2, count(func(ctx context.Context) (int, error) { return eps.CountActiveEndpoints(ctx, "standalone") }))
-	assert.Equal(t, 5, count(func(ctx context.Context) (int, error) { return eps.CountActiveEndpoints(ctx, "label") }))
 	assert.Equal(t, 7, count(func(ctx context.Context) (int, error) { return eps.CountActiveEndpoints(ctx, "") }))
+	assert.Equal(t, 7, count(eps.CountConfigured), "endpoints_total does not change")
 	assert.Equal(t, 4, count(eps.CountLimitedEndpoints), "an inactive limited endpoint is not counted")
 
 	require.NoError(t, eps.SetEndpointLimited(ctx, labels[3], false))
@@ -246,7 +245,8 @@ func TestEndpointStore_LimitedStateAndCountsByOrigin(t *testing.T) {
 }
 
 // Contract "Les certificats inactifs n'apparaissent pas", FR-006 (a limited monitor
-// is never scanned), FR-010 (an inactive monitor is purged after 30 days), FR-018.
+// is never scanned), FR-010 (an inactive monitor is purged after 30 days), contract
+// "Télémétrie" (certificates_total leaves out the inactive monitors).
 func TestCertificateStore_InactiveAndLimitedMonitors(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
