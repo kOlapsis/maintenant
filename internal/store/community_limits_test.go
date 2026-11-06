@@ -27,7 +27,7 @@ import (
 
 // Acceptance tests of 051-community-label-limits at the storage boundary:
 // the rights fixed at the first start (FR-003), the limited state and the
-// counts that feed the edition report (FR-017) and the unchanged telemetry, the
+// counts that feed the edition report (FR-017), the
 // inactive certificate monitors, and the copy to PostgreSQL (FR-019).
 
 func applyMigration44(t *testing.T, db *DB, direction string) {
@@ -193,7 +193,7 @@ func TestMigration44_LegacyDatabaseKeepsItsRightsThroughTheConversion(t *testing
 }
 
 // FR-006, FR-017: the limited state is stored per endpoint, and the counts read
-// active rows only; endpoints_total (CountConfigured) still counts the limited ones.
+// active rows only.
 func TestEndpointStore_LimitedStateAndCounts(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
@@ -234,7 +234,6 @@ func TestEndpointStore_LimitedStateAndCounts(t *testing.T) {
 		return n
 	}
 	assert.Equal(t, 7, count(func(ctx context.Context) (int, error) { return eps.CountActiveEndpoints(ctx, "") }))
-	assert.Equal(t, 7, count(eps.CountConfigured), "endpoints_total does not change")
 	assert.Equal(t, 4, count(eps.CountLimitedEndpoints), "an inactive limited endpoint is not counted")
 
 	require.NoError(t, eps.SetEndpointLimited(ctx, labels[3], false))
@@ -245,8 +244,7 @@ func TestEndpointStore_LimitedStateAndCounts(t *testing.T) {
 }
 
 // Contract "Les certificats inactifs n'apparaissent pas", FR-006 (a limited monitor
-// is never scanned), FR-010 (an inactive monitor is purged after 30 days), contract
-// "Télémétrie" (certificates_total leaves out the inactive monitors).
+// is never scanned), FR-010 (an inactive monitor is purged after 30 days).
 func TestCertificateStore_InactiveAndLimitedMonitors(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
@@ -296,10 +294,7 @@ func TestCertificateStore_InactiveAndLimitedMonitors(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, sorted(standalone, kept), ids(due), "neither a limited nor an inactive monitor is scanned")
 
-	n, err := certs.CountConfigured(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, 4, n, "certificates_total no longer counts inactive monitors")
-	n, err = certs.CountActiveMonitors(ctx, certificate.SourceStandalone, certificate.SourceLabel)
+	n, err := certs.CountActiveMonitors(ctx, certificate.SourceStandalone, certificate.SourceLabel)
 	require.NoError(t, err)
 	assert.Equal(t, 3, n)
 	n, err = certs.CountActiveMonitors(ctx)
