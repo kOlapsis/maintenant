@@ -692,6 +692,7 @@ func TestCommunityLimit_UpgradeKeepsWhatWasMonitored(t *testing.T) {
 // rest monitored, and nothing new gets in while the total stays at 10 or more.
 func TestCommunityLimit_RemovingGrandfatheredLabelsKeepsTheRest(t *testing.T) {
 	e := clUpgraded(t, 14, 0)
+	e.declareAll(clNames("svc", 1, 14)...)
 	require.Empty(t, e.limited())
 
 	var removed []string
