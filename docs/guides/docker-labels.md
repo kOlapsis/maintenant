@@ -158,7 +158,7 @@ labels:
     An HTTPS endpoint that the server probes itself, meaning one declared on a container of the server's own Docker runtime, automatically gets certificate monitoring. Use `maintenant.tls.certificates` for additional
     domains not covered by endpoint checks, and for the containers of an agent: an agent probes its endpoints from its own host and does not report their certificates, but it does scan the hosts listed in this label.
 
-Certificates declared by this label count towards the Community cap of 5 certificate monitors. Certificates that are detected automatically do not count. As for endpoints, the certificates that already exist at upgrade stay monitored, and one beyond the cap is listed as "Not monitored: Community limit" and is never scanned.
+Certificates declared by this label count towards the Community cap of 5 certificate monitors. Certificates that are detected automatically do not count, and neither does a declared certificate on the same host and port as a monitored HTTPS endpoint. As for endpoints, the certificates that already exist at upgrade stay monitored, and one beyond the cap is listed as "Not monitored: Community limit" and is never scanned.
 
 ---
 

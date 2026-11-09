@@ -215,6 +215,9 @@ func (a *App) wireEndpointEvents(alertDetector *alert.EndpointAlertDetector) {
 		if m, ok := data.(map[string]any); ok && eventType == event.EndpointStatusChanged {
 			a.statusSvc.NotifyMonitorChanged(ctx, "endpoint", toString(m["endpoint_id"]))
 		}
+		if eventType == event.EndpointDiscovered || eventType == event.EndpointLimitChanged {
+			a.applyCertLimit(ctx)
+		}
 	})
 
 	a.endpointSvc.SetAlertCallback(func(ep *endpoint.Endpoint, result endpoint.CheckResult) (string, any) {
@@ -238,7 +241,29 @@ func (a *App) wireEndpointEvents(alertDetector *alert.EndpointAlertDetector) {
 		if err := a.statusCompStore.RemoveDanglingMonitorRefs(callCtx, "endpoint", endpointID); err != nil {
 			a.logger.Error("failed to remove dangling endpoint refs from status components", "endpoint_id", endpointID, "error", err)
 		}
+		a.applyCertLimit(callCtx)
 	})
+}
+
+// monitoredHTTPSTargets lists the targets of the monitored HTTPS endpoints, whose certificates the cap does not count.
+func (a *App) monitoredHTTPSTargets(ctx context.Context) ([]string, error) {
+	eps, err := a.endpointSvc.ListEndpoints(ctx, endpoint.ListEndpointsOpts{EndpointType: string(endpoint.TypeHTTP)})
+	if err != nil {
+		return nil, err
+	}
+	var targets []string
+	for _, ep := range eps {
+		if !ep.Limited && certificate.IsHTTPS(ep.Target) {
+			targets = append(targets, ep.Target)
+		}
+	}
+	return targets, nil
+}
+
+func (a *App) applyCertLimit(ctx context.Context) {
+	if err := a.certSvc.ApplyLimit(ctx); err != nil {
+		a.logger.Error("certificate: apply limit after an endpoint change", "error", err)
+	}
 }
 
 // endpointTrustEvent raises or clears the certificate_untrusted alert of a check, false when the check does neither.

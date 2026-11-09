@@ -44,6 +44,7 @@ type limitBench struct {
 	mu      sync.Mutex
 	changed map[string]bool
 	created map[string]bool
+	targets []string
 }
 
 func pinEdition(t *testing.T, e extension.Edition) {
@@ -66,6 +67,9 @@ func (b *limitBench) restart() {
 	b.svc = certificate.NewService(certificate.Deps{
 		Store:  b.st,
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		HTTPSTargets: func(context.Context) ([]string, error) {
+			return b.targets, nil
+		},
 		EventCallback: func(eventType string, data interface{}) {
 			m, _ := data.(map[string]interface{})
 			id, _ := m["monitor_id"].(string)
@@ -398,4 +402,35 @@ func TestHandleAgentEvent_IgnoresResultsOfALimitedMonitor(t *testing.T) {
 	require.NoError(t, err)
 	assert.Zero(t, total, "a result pushed for a limited monitor is ignored")
 	assert.Equal(t, certificate.StatusUnknown, b.monitor("nas.example.com").Status)
+}
+
+func TestApplyLimit_CertificateOfAMonitoredHTTPSEndpointIsNotCounted(t *testing.T) {
+	pinEdition(t, extension.Community)
+	b := newLimitBench(t)
+	b.declare("ext-a", hosts("a", 1, 5)...)
+	b.declare("ext-b", "b-01.example.com")
+	_, limited := b.split()
+	require.Equal(t, []string{"b-01.example.com"}, limited)
+	b.events()
+
+	b.targets = []string{"https://b-01.example.com/health"}
+	require.NoError(t, b.svc.ApplyLimit(b.ctx))
+	_, limited = b.split()
+	assert.Empty(t, limited)
+	changed, _ := b.events()
+	assert.Equal(t, map[string]bool{b.monitor("b-01.example.com").ID: false}, changed)
+	used, unmonitored, err := b.svc.LimitUsage(b.ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 5, used)
+	assert.Zero(t, unmonitored)
+
+	b.targets = []string{"https://b-01.example.com:8443"}
+	require.NoError(t, b.svc.ApplyLimit(b.ctx))
+	_, limited = b.split()
+	assert.Equal(t, []string{"b-01.example.com"}, limited, "another port is another certificate")
+
+	b.targets = nil
+	require.NoError(t, b.svc.ApplyLimit(b.ctx))
+	_, limited = b.split()
+	assert.Equal(t, []string{"b-01.example.com"}, limited)
 }

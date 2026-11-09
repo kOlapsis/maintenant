@@ -49,13 +49,18 @@ type Deps struct {
 	Store         CertificateStore // required
 	Logger        *slog.Logger     // required
 	EventCallback EventCallback    // optional — nil-safe
+	HTTPSTargets  HTTPSTargets     // optional — nil means no certificate is covered by an endpoint
 }
+
+// HTTPSTargets returns the target URLs of the HTTPS endpoints currently monitored.
+type HTTPSTargets func(ctx context.Context) ([]string, error)
 
 // Service orchestrates certificate monitoring.
 type Service struct {
 	store   CertificateStore
 	logger  *slog.Logger
 	onEvent EventCallback
+	targets HTTPSTargets
 	mu      sync.Mutex
 	limitMu sync.Mutex
 
@@ -75,6 +80,7 @@ func NewService(d Deps) *Service {
 		store:   d.Store,
 		logger:  d.Logger,
 		onEvent: d.EventCallback,
+		targets: d.HTTPSTargets,
 	}
 }
 
@@ -530,15 +536,16 @@ func (s *Service) ListMonitors(ctx context.Context, opts ListCertificatesOpts) (
 
 // LimitUsage returns how many active capped monitors are monitored and how many the edition cap leaves out.
 func (s *Service) LimitUsage(ctx context.Context) (monitored, limited int, err error) {
-	active, err := s.store.CountActiveMonitors(ctx, SourceStandalone, SourceLabel)
+	cands, capped, err := s.limitCandidates(ctx)
 	if err != nil {
 		return 0, 0, err
 	}
-	limited, err = s.store.CountLimitedMonitors(ctx)
-	if err != nil {
-		return 0, 0, err
+	for _, m := range capped {
+		if m.Limited {
+			limited++
+		}
 	}
-	return active - limited, limited, nil
+	return len(cands) - limited, limited, nil
 }
 
 // GetMonitor returns a certificate monitor by ID.
@@ -1060,13 +1067,12 @@ func (s *Service) ApplyLimit(ctx context.Context) error {
 	s.limitMu.Lock()
 	defer s.limitMu.Unlock()
 
-	monitors, err := s.store.ListMonitors(ctx, ListCertificatesOpts{IncludeInactive: true})
+	cands, capped, err := s.limitCandidates(ctx)
 	if err != nil {
-		return fmt.Errorf("list cert monitors: %w", err)
+		return err
 	}
-	cands, active := limitCandidates(monitors)
 	limited := extension.Allocate(cands, extension.Limit(extension.ResourceCertificates))
-	for _, m := range active {
+	for _, m := range capped {
 		want := limited[m.ID]
 		if m.Limited == want {
 			continue
@@ -1094,23 +1100,33 @@ func (s *Service) newMonitorFits(ctx context.Context) (bool, error) {
 	if limit == extension.Unlimited {
 		return true, nil
 	}
-	monitors, err := s.store.ListMonitors(ctx, ListCertificatesOpts{IncludeInactive: true})
+	cands, _, err := s.limitCandidates(ctx)
 	if err != nil {
-		return false, fmt.Errorf("list cert monitors: %w", err)
+		return false, err
 	}
-	cands, _ := limitCandidates(monitors)
 	return len(cands) < limit, nil
 }
 
-func limitCandidates(monitors []*CertMonitor) ([]extension.LimitCandidate, []*CertMonitor) {
-	var active []*CertMonitor
-	for _, m := range monitors {
-		if m.Source != SourceAuto && m.InactiveSince == nil {
-			active = append(active, m)
-		}
+// limitCandidates returns the monitors that count against the cap, and every active manual or label monitor.
+func (s *Service) limitCandidates(ctx context.Context) ([]extension.LimitCandidate, []*CertMonitor, error) {
+	monitors, err := s.store.ListMonitors(ctx, ListCertificatesOpts{IncludeInactive: true})
+	if err != nil {
+		return nil, nil, fmt.Errorf("list cert monitors: %w", err)
 	}
-	cands := make([]extension.LimitCandidate, 0, len(active))
-	for _, m := range active {
+	covered, err := s.coveredHostPorts(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	var capped []*CertMonitor
+	cands := make([]extension.LimitCandidate, 0, len(monitors))
+	for _, m := range monitors {
+		if m.Source == SourceAuto || m.InactiveSince != nil {
+			continue
+		}
+		capped = append(capped, m)
+		if m.ServerName == "" && covered[hostPortKey(m.Hostname, m.Port)] {
+			continue
+		}
 		cands = append(cands, extension.LimitCandidate{
 			ID:            m.ID,
 			Grandfathered: m.Grandfathered,
@@ -1118,7 +1134,29 @@ func limitCandidates(monitors []*CertMonitor) ([]extension.LimitCandidate, []*Ce
 			Key:           m.Hostname + "\x00" + strconv.Itoa(m.Port) + "\x00" + m.ServerName,
 		})
 	}
-	return cands, active
+	return cands, capped, nil
+}
+
+// coveredHostPorts returns the host:port pairs of the monitored HTTPS endpoints, whose certificate is free like an auto-detected one.
+func (s *Service) coveredHostPorts(ctx context.Context) (map[string]bool, error) {
+	if s.targets == nil {
+		return nil, nil
+	}
+	targets, err := s.targets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list monitored https endpoints: %w", err)
+	}
+	covered := make(map[string]bool, len(targets))
+	for _, t := range targets {
+		if host, port, err := extractHostPort(t); err == nil {
+			covered[hostPortKey(host, port)] = true
+		}
+	}
+	return covered, nil
+}
+
+func hostPortKey(host string, port int) string {
+	return host + "\x00" + strconv.Itoa(port)
 }
 
 func (s *Service) emitCreated(ctx context.Context, m *CertMonitor, data map[string]interface{}) {

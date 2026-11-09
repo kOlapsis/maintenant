@@ -197,7 +197,7 @@ POST /api/v1/certificates
 
 Several monitors can target the same `hostname:port` with different `server_name` values, one per virtual host you want covered. `server_name` is fixed at creation time; delete and recreate the monitor to change it. When it is empty, the certificate is validated against `hostname` as before.
 
-Community is limited to **5 certificate monitors**, standalone and label monitors included. Automatic monitors do not count. Personal and Pro have no cap. Above the cap, creation answers `403 QUOTA_EXCEEDED`.
+Community is limited to **5 certificate monitors**, standalone and label monitors included. Automatic monitors do not count, and neither does a standalone or label monitor on the same host and port as a monitored HTTPS endpoint. Personal and Pro have no cap. Above the cap, creation answers `403 QUOTA_EXCEEDED`.
 
 Monitors that exist when you upgrade stay monitored, even beyond 5. A label monitor beyond the cap appears as **Not monitored: Community limit**: it carries `limited: true` and is never scanned, and `POST /api/v1/certificates/{id}/check` on it answers `403 QUOTA_EXCEEDED`. It starts being scanned when a slot frees up. When a container is destroyed, its label monitors are deactivated and free their slot at once.
 
