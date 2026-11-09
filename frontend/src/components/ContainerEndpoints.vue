@@ -7,6 +7,7 @@
 import { ref, onMounted } from 'vue'
 import { listEndpoints, type Endpoint } from '@/services/endpointApi'
 import EndpointStatusBadge from './EndpointStatusBadge.vue'
+import LimitChip from './ui/LimitChip.vue'
 
 const props = defineProps<{
   containerName: string
@@ -60,7 +61,8 @@ function formatResponseTime(ms: number | undefined): string {
         <span class="text-mnt-muted">
           {{ formatResponseTime(ep.last_response_time_ms) }}
         </span>
-        <EndpointStatusBadge :status="ep.status" />
+        <LimitChip v-if="ep.limited" />
+        <EndpointStatusBadge v-else :status="ep.status" />
       </div>
     </div>
   </div>

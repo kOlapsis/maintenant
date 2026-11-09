@@ -88,8 +88,12 @@ func TestRebuildCertMonitorsForSNI(t *testing.T) {
 		    UNIQUE(agent_id, hostname, port)
 		);
 		ALTER TABLE cert_monitors ADD COLUMN server_name TEXT NOT NULL DEFAULT '';
+		ALTER TABLE cert_monitors ADD COLUMN grandfathered INTEGER NOT NULL DEFAULT 0;
+		ALTER TABLE cert_monitors ADD COLUMN limited INTEGER NOT NULL DEFAULT 0;
+		ALTER TABLE cert_monitors ADD COLUMN inactive_since BIGINT;
 		INSERT INTO cert_monitors (id, hostname, port, source, created_at)
 		VALUES ('legacy-id', 'legacy.example.com', 443, 'standalone', 1700000000);
+		UPDATE cert_monitors SET grandfathered = 1, inactive_since = 1700000100;
 	`)
 	require.NoError(t, err)
 
@@ -100,6 +104,7 @@ func TestRebuildCertMonitorsForSNI(t *testing.T) {
 
 	// Row and indexes survived the rebuild.
 	require.Equal(t, "legacy-id", scanString(t, rw, `SELECT id FROM cert_monitors`))
+	require.Equal(t, "1|1700000100", scanString(t, rw, `SELECT grandfathered || '|' || inactive_since FROM cert_monitors`))
 	var indexes int
 	require.NoError(t, rw.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND tbl_name='cert_monitors' AND name LIKE 'idx_%'`).Scan(&indexes))

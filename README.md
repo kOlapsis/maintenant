@@ -433,6 +433,8 @@ Community is free forever and runs production infrastructure every day: it is th
 | Status page               | 3 components             | unlimited, incident timelines      | + subscriber notifications, branding |
 | Use                       | anything                 | your own infrastructure            | + running it for others, email support |
 
+The Community caps on endpoints and certificates count every one of them, whether it was added by hand or declared by container labels. Those that exist when you upgrade keep running, and any beyond a cap show as "Not monitored: Community limit".
+
 Personal covers one person on infrastructure they own or run for themselves, freelancers included, and ships with one year of updates (then €59 per extra year; every version released inside a paid year stays licensed for life). Pro adds the right to monitor other people's infrastructure. Volume pricing and custom agreements: [license@maintenant.dev](mailto:license@maintenant.dev).
 
 Paid editions are the same binary, self-hosted the same way. The key is verified against the license server and the signed answer is cached: the instance falls back to Community only after 60 days without reaching the server, so a few weeks offline change nothing. **Your monitoring data never leaves your infrastructure.**

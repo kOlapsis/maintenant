@@ -12,6 +12,7 @@ import { endpointStaleBadge, endpointTone } from '@/utils/endpointTone'
 import ListRow from '@/components/ui/ListRow.vue'
 import UptimeBar90 from '@/components/ui/UptimeBar90.vue'
 import EndpointStatusBadge from '@/components/EndpointStatusBadge.vue'
+import LimitChip from '@/components/ui/LimitChip.vue'
 
 const props = defineProps<{ endpoint: Endpoint }>()
 
@@ -65,8 +66,9 @@ function formatResponseTime(ms: number | undefined): string {
           class="rounded-full px-2 py-0.5 text-[11px] font-medium"
           :style="{ backgroundColor: 'var(--mnt-status-down-bg)', color: 'var(--mnt-status-down-text)' }"
         >alerting</span>
+        <LimitChip v-if="endpoint.limited" />
         <span
-          v-if="endpoint.stale"
+          v-else-if="endpoint.stale"
           class="rounded-full bg-mnt-sev-unknown px-2 py-0.5 text-[11px] font-medium text-mnt-sev-unknown"
           :title="endpointStaleBadge(endpoint).title"
         >{{ endpointStaleBadge(endpoint).text }}</span>

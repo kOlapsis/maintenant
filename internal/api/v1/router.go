@@ -907,16 +907,15 @@ func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps) map[string]in
 		}
 	}
 
-	// Endpoints: standalone only, like certificates.
 	if d.Endpoints != nil {
-		used, err := d.Endpoints.CountStandaloneEndpoints(ctx)
+		used, unmonitored, err := d.Endpoints.LimitUsage(ctx)
 		if err != nil {
 			r.logger.Error("failed to count endpoints for quota", "error", err)
-			used = 0
 		}
 		quotas["endpoints"] = map[string]interface{}{
-			"used":  used,
-			"limit": extension.Limit(extension.ResourceEndpoints),
+			"used":        used,
+			"limit":       extension.Limit(extension.ResourceEndpoints),
+			"unmonitored": unmonitored,
 		}
 	}
 
@@ -932,16 +931,15 @@ func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps) map[string]in
 		}
 	}
 
-	// Certificates: standalone monitors only.
 	if d.Certificates != nil {
-		used, err := d.Certificates.CountStandaloneMonitors(ctx)
+		used, unmonitored, err := d.Certificates.LimitUsage(ctx)
 		if err != nil {
-			r.logger.Error("failed to count standalone certificates for quota", "error", err)
-			used = 0
+			r.logger.Error("failed to count certificates for quota", "error", err)
 		}
 		quotas["certificates"] = map[string]interface{}{
-			"used":  used,
-			"limit": extension.Limit(extension.ResourceCertificates),
+			"used":        used,
+			"limit":       extension.Limit(extension.ResourceCertificates),
+			"unmonitored": unmonitored,
 		}
 	}
 

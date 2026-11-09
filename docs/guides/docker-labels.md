@@ -134,7 +134,7 @@ labels:
 
 Global config labels (without an index) apply as defaults to all indexed endpoints. Indexed config overrides global config.
 
-The number of endpoints declared by labels is not capped in any edition: the Community cap of 10 endpoints only counts the ones you add by hand from the interface.
+Endpoints declared by labels count towards the Community cap of 10 endpoints, like the ones you add by hand. Personal and Pro have no cap. After an upgrade to this version, the endpoints that already exist stay monitored (grandfathered), even beyond 10. An endpoint beyond the cap is listed as "Not monitored: Community limit" and is never checked, and it starts being checked as soon as a slot frees up. When a container is destroyed, its endpoint frees its slot at once.
 
 An agent applies `interval` and `timeout` to each endpoint it probes.
 
@@ -157,6 +157,8 @@ labels:
 !!! info "Automatic detection"
     An HTTPS endpoint that the server probes itself, meaning one declared on a container of the server's own Docker runtime, automatically gets certificate monitoring. Use `maintenant.tls.certificates` for additional
     domains not covered by endpoint checks, and for the containers of an agent: an agent probes its endpoints from its own host and does not report their certificates, but it does scan the hosts listed in this label.
+
+Certificates declared by this label count towards the Community cap of 5 certificate monitors. Certificates that are detected automatically do not count. As for endpoints, the certificates that already exist at upgrade stay monitored, and one beyond the cap is listed as "Not monitored: Community limit" and is never scanned.
 
 ---
 

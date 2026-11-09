@@ -50,10 +50,12 @@ async function loadLicenseStatus() {
 const QUOTA_EVENTS = [
   'endpoint.discovered',
   'endpoint.removed',
+  'endpoint.limit_changed',
   'heartbeat.created',
   'heartbeat.deleted',
   'certificate.created',
   'certificate.deleted',
+  'certificate.limit_changed',
   'status.component_created',
   'status.component_deleted',
   'agent.created',
@@ -221,6 +223,7 @@ export function useEdition() {
       const remaining = isUnlimited ? Infinity : Math.max(0, limit - used)
       const isAtLimit = !isUnlimited && used >= limit
       const nearLimit = !isUnlimited && limit > 0 && used / limit >= 0.8
+      const unmonitored = quota?.unmonitored ?? 0
 
       return {
         used,
@@ -229,6 +232,7 @@ export function useEdition() {
         isUnlimited,
         isAtLimit,
         nearLimit,
+        unmonitored,
       }
     })
   }

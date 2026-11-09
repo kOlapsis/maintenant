@@ -143,6 +143,11 @@ function quotaLabel(resource: QuotaResource, value: number | undefined): string 
 
 const isActive = (tier: Tier) => editionName.value === tier
 
+function usageOf(resource: QuotaResource) {
+  const quota = edition.value?.quotas?.[resource]
+  return quota && quota.limit > 0 ? quota : null
+}
+
 function tierLabel(tier: Tier): string {
   return tier.charAt(0).toUpperCase() + tier.slice(1)
 }
@@ -254,7 +259,13 @@ function isUpgrade(tier: Tier): boolean {
               class="px-4 py-2.5 text-center"
               :class="isActive(tier) ? 'text-mnt-primary font-medium' : 'text-mnt-muted'"
             >
-              {{ quotaLabel(row.resource, row.limits[i]) }}
+              <template v-if="isActive(tier) && usageOf(row.resource)">
+                <span class="sr-only">In use: </span>{{ usageOf(row.resource)!.used }}/{{ usageOf(row.resource)!.limit }}
+                <span v-if="usageOf(row.resource)!.unmonitored" class="block text-xs font-normal text-mnt-muted">
+                  {{ usageOf(row.resource)!.unmonitored }} not monitored
+                </span>
+              </template>
+              <template v-else>{{ quotaLabel(row.resource, row.limits[i]) }}</template>
             </td>
           </tr>
 

@@ -104,7 +104,7 @@ func TestRunCollector_KubernetesEmitsTopologyAndHostSamples(t *testing.T) {
 		return sawTopology && sawHostSample
 	}, 3*time.Second, 5*time.Millisecond, "kubernetes agent must push both a topology event and a host-level resource sample")
 	cancel()
-	<-done
+	require.NoError(t, <-done)
 
 	require.True(t, sawTopology, "kubernetes agent must push a topology event")
 	require.True(t, sawHostSample, "kubernetes agent must push a host-level resource sample (empty container_id)")

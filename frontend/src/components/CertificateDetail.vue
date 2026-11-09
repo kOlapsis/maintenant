@@ -13,6 +13,7 @@ import OCSPStatusBadge from './OCSPStatusBadge.vue'
 import CertificateChecksHistory from './CertificateChecksHistory.vue'
 import FeatureGate from './FeatureGate.vue'
 import UiButton from './ui/UiButton.vue'
+import LimitChip from './ui/LimitChip.vue'
 import TabNav, { type TabNavItem } from './ui/TabNav.vue'
 
 const props = defineProps<{
@@ -52,7 +53,7 @@ const checkError = ref<string | null>(null)
 
 // Only monitors the server scans itself can be re-checked from here: an agent's
 // targets sit on its network, and it rescans them every minute anyway.
-const canCheckNow = computed(() => isLocalAgent(detail.value?.certificate.agent_id))
+const canCheckNow = computed(() => isLocalAgent(detail.value?.certificate.agent_id) && !detail.value?.certificate.limited)
 
 async function checkNow() {
   if (checking.value) return
@@ -149,7 +150,8 @@ function countdownBgColor(days: number | undefined): string {
         >
           SNI: {{ detail.certificate.server_name }}
         </span>
-        <CertificateStatusBadge :status="detail.certificate.status" />
+        <LimitChip v-if="detail.certificate.limited" />
+        <CertificateStatusBadge v-else :status="detail.certificate.status" />
         <span
           class="rounded-full px-2 py-0.5 text-xs font-medium"
           :style="{

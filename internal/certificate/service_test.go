@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -330,10 +331,6 @@ func (m *mockCertStore) GetMonitorByHostPortAgent(ctx context.Context, _ *string
 	return nil, nil
 }
 
-func (m *mockCertStore) CountStandaloneMonitors(_ context.Context) (int, error) {
-	return m.standaloneCount, nil
-}
-
 // Stub implementations for required interface methods
 func (m *mockCertStore) GetMonitorByID(_ context.Context, id string) (*CertMonitor, error) {
 	return m.monitors[id], nil
@@ -341,8 +338,14 @@ func (m *mockCertStore) GetMonitorByID(_ context.Context, id string) (*CertMonit
 func (m *mockCertStore) GetMonitorByEndpointID(_ context.Context, _ string) (*CertMonitor, error) {
 	return nil, nil
 }
-func (m *mockCertStore) ListMonitors(_ context.Context, _ ListCertificatesOpts) ([]*CertMonitor, error) {
-	return nil, nil
+func (m *mockCertStore) ListMonitors(_ context.Context, opts ListCertificatesOpts) ([]*CertMonitor, error) {
+	var out []*CertMonitor
+	for _, mon := range m.monitors {
+		if opts.IncludeInactive || mon.InactiveSince == nil {
+			out = append(out, mon)
+		}
+	}
+	return out, nil
 }
 func (m *mockCertStore) UpdateMonitor(_ context.Context, _ *CertMonitor) error {
 	return nil
@@ -382,6 +385,47 @@ func (m *mockCertStore) ListDueScheduledMonitors(_ context.Context, _ time.Time)
 func (m *mockCertStore) DeleteCheckResultsBefore(_ context.Context, _ time.Time, _ int) (int64, error) {
 	return 0, nil
 }
+func (m *mockCertStore) DeactivateMonitor(_ context.Context, id string) error {
+	if mon, ok := m.monitors[id]; ok {
+		now := time.Now()
+		mon.InactiveSince = &now
+	}
+	return nil
+}
+func (m *mockCertStore) SetMonitorLimited(_ context.Context, id string, limited bool) error {
+	if mon, ok := m.monitors[id]; ok {
+		mon.Limited = limited
+	}
+	return nil
+}
+func (m *mockCertStore) CountActiveMonitors(_ context.Context, sources ...CertSource) (int, error) {
+	count := 0
+	for _, mon := range m.monitors {
+		if mon.InactiveSince == nil && (len(sources) == 0 || slices.Contains(sources, mon.Source)) {
+			count++
+		}
+	}
+	return count, nil
+}
+func (m *mockCertStore) CountLimitedMonitors(_ context.Context) (int, error) {
+	count := 0
+	for _, mon := range m.monitors {
+		if mon.InactiveSince == nil && mon.Limited {
+			count++
+		}
+	}
+	return count, nil
+}
+func (m *mockCertStore) DeleteInactiveMonitorsBefore(_ context.Context, before time.Time) (int64, error) {
+	var n int64
+	for id, mon := range m.monitors {
+		if mon.InactiveSince != nil && mon.InactiveSince.Before(before) {
+			delete(m.monitors, id)
+			n++
+		}
+	}
+	return n, nil
+}
 
 func noopLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -392,47 +436,33 @@ func noopLogger() *slog.Logger {
 // ---------------------------------------------------------------------------
 
 func TestService_CreateStandalone_QuotaEnforced(t *testing.T) {
+	prev := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return extension.Community }
+	t.Cleanup(func() { extension.CurrentEdition = prev })
 	store := newMockCertStore()
-	svc := NewService(Deps{
-		Store:          store,
-		Logger:         noopLogger(),
-		LicenseChecker: certificateCap(2),
-	})
+	svc := NewService(Deps{Store: store, Logger: noopLogger()})
 	ctx := context.Background()
+	limit := extension.Limit(extension.ResourceCertificates)
+	require.Positive(t, limit)
 
-	// Create first monitor - should succeed
-	monitor1, _, err := svc.CreateStandalone(ctx, CreateCertificateInput{
-		Hostname:             "example.com",
+	for i := range limit {
+		monitor, _, err := svc.CreateStandalone(ctx, CreateCertificateInput{
+			Hostname:             "host-" + strconv.Itoa(i) + ".invalid",
+			Port:                 443,
+			CheckIntervalSeconds: 3600,
+		})
+		require.NoError(t, err)
+		assert.False(t, monitor.Limited)
+	}
+
+	monitor, _, err := svc.CreateStandalone(ctx, CreateCertificateInput{
+		Hostname:             "one-too-many.invalid",
 		Port:                 443,
 		CheckIntervalSeconds: 3600,
 	})
-	require.NoError(t, err)
-	assert.NotNil(t, monitor1)
-	assert.Equal(t, "example.com", monitor1.Hostname)
-
-	// Create second monitor - should succeed
-	monitor2, _, err := svc.CreateStandalone(ctx, CreateCertificateInput{
-		Hostname:             "example.org",
-		Port:                 443,
-		CheckIntervalSeconds: 3600,
-	})
-	require.NoError(t, err)
-	assert.NotNil(t, monitor2)
-
-	// Create third monitor - should fail due to quota
-	monitor3, _, err := svc.CreateStandalone(ctx, CreateCertificateInput{
-		Hostname:             "example.net",
-		Port:                 443,
-		CheckIntervalSeconds: 3600,
-	})
-	assert.Error(t, err)
-	assert.True(t, errors.Is(err, ErrLimitReached), "expected ErrLimitReached")
-	assert.Nil(t, monitor3)
-
-	// Verify count
-	count, err := store.CountStandaloneMonitors(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, 2, count)
+	assert.True(t, errors.Is(err, ErrLimitReached), "expected ErrLimitReached, got %v", err)
+	assert.Nil(t, monitor)
+	assert.Equal(t, limit, store.standaloneCount)
 }
 
 // ---------------------------------------------------------------------------
@@ -484,18 +514,6 @@ func TestService_CreateStandalone_SNICoexistsAndDedups(t *testing.T) {
 		Hostname: "proxy2.invalid", Port: 443, ServerName: "service.example.invalid", CheckIntervalSeconds: 3600,
 	})
 	assert.True(t, errors.Is(err, ErrDuplicateMonitor), "expected ErrDuplicateMonitor, got %v", err)
-}
-
-type certificateCap int
-
-func (c certificateCap) CanCreateCertificate(currentCount int) bool { return currentCount < int(c) }
-
-func TestDefaultLicenseChecker_AppliesTheRunningEditionCap(t *testing.T) {
-	limit := extension.Limit(extension.ResourceCertificates)
-	require.Positive(t, limit)
-	c := DefaultLicenseChecker{}
-	assert.True(t, c.CanCreateCertificate(limit-1))
-	assert.False(t, c.CanCreateCertificate(limit))
 }
 
 // ---------------------------------------------------------------------------
@@ -658,7 +676,7 @@ func TestProcessCheckResult_NoEventWhenStatusHolds(t *testing.T) {
 	assert.Zero(t, changed, "an unchanged status must not be announced again")
 }
 
-func TestDeleteLabelMonitors_LocalOnlyTouchesLocalAgent(t *testing.T) {
+func TestLabelMonitors_LocalContainerOnlyTouchesLocalAgent(t *testing.T) {
 	store := newMockCertStore()
 	svc := NewService(Deps{Store: store, Logger: noopLogger()})
 	ctx := context.Background()
@@ -676,7 +694,11 @@ func TestDeleteLabelMonitors_LocalOnlyTouchesLocalAgent(t *testing.T) {
 	store.monitors[local.ID] = local
 
 	svc.HandleContainerDestroy(ctx, ext)
+	assert.Empty(t, store.deleted, "a destroyed container deactivates its monitors")
+	assert.NotNil(t, local.InactiveSince)
+	assert.Nil(t, remote.InactiveSince, "a local container destroy must not touch a remote agent's monitors")
 
+	svc.SyncFromLabels(ctx, ext, map[string]string{})
 	assert.Equal(t, []string{local.ID}, store.deleted,
-		"a local container destroy must not delete a remote agent's monitors")
+		"removing the label deletes the local monitors only")
 }

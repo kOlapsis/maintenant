@@ -74,6 +74,7 @@ type Service struct {
 	alertCallback     AlertCallback
 	onEndpointRemoved EndpointRemovedCallback
 	ctx               context.Context
+	limitMu           sync.Mutex
 
 	// manualChecks holds the endpoint ids with an on-demand check in flight.
 	manualChecks sync.Map
@@ -120,9 +121,24 @@ func (s *Service) SetEndpointRemovedCallback(cb EndpointRemovedCallback) {
 	s.onEndpointRemoved = cb
 }
 
-// Start stores the context for adding endpoints later and resumes checks of the active standalone endpoints.
+// Start stores the context for adding endpoints later, allocates the slots every minute and resumes checks of the active standalone endpoints.
 func (s *Service) Start(ctx context.Context) {
+	s.limitMu.Lock()
 	s.ctx = ctx
+	s.limitMu.Unlock()
+	s.applyLimitLogged(ctx)
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.applyLimitLogged(ctx)
+			}
+		}
+	}()
 	eps, err := s.store.ListEndpoints(ctx, ListEndpointsOpts{Source: string(SourceStandalone)})
 	if err != nil {
 		s.logger.Error("load standalone endpoints", "error", err)
@@ -138,124 +154,70 @@ func (s *Service) Stop() {
 	s.engine.Stop()
 }
 
+// ContainerLabels is one container's labels as seen by a full discovery pass.
+type ContainerLabels struct {
+	Name       string
+	ExternalID string
+	Labels     map[string]string
+}
+
+type syncedEndpoint struct {
+	id         string
+	discovered map[string]interface{}
+}
+
 // SyncEndpoints synchronizes endpoint definitions from container labels with the store and check engine.
 func (s *Service) SyncEndpoints(ctx context.Context, containerName, externalID string, labels map[string]string) {
+	synced := s.syncLabels(ctx, uid.LocalAgent, containerName, externalID, labels)
+	s.applyLimitLogged(ctx)
+	s.finishSync(ctx, synced)
+}
+
+// SyncAllEndpoints synchronizes every container of a full discovery pass, retires the orphans and allocates the slots once, returning how many endpoints it retired.
+func (s *Service) SyncAllEndpoints(ctx context.Context, sets []ContainerLabels, seen map[string]struct{}) int {
+	var synced []syncedEndpoint
+	for _, c := range sets {
+		synced = append(synced, s.syncLabels(ctx, uid.LocalAgent, c.Name, c.ExternalID, c.Labels)...)
+	}
+	swept := s.sweepOrphans(ctx, seen)
+	s.applyLimitLogged(ctx)
+	s.finishSync(ctx, synced)
+	return swept
+}
+
+// SyncAgentEndpoints synchronizes a remote agent's container labels, never enrolling them in the local check engine since the agent probes them.
+func (s *Service) SyncAgentEndpoints(ctx context.Context, agentID, containerName, externalID string, labels map[string]string) {
+	synced := s.syncLabels(ctx, agentID, containerName, externalID, labels)
+	s.applyLimitLogged(ctx)
+	s.finishSync(ctx, synced)
+}
+
+func (s *Service) syncLabels(ctx context.Context, agentID, containerName, externalID string, labels map[string]string) []syncedEndpoint {
+	remote := !probedLocally(agentID)
+	withAgent := func(data map[string]interface{}) map[string]interface{} {
+		if remote {
+			data["agent_id"] = agentID
+		}
+		return data
+	}
+
 	parsed, parseErrors := ParseEndpointLabels(labels, s.logger.With("container", containerName))
 	s.logger.Debug("endpoint: sync started", "external_id", externalID, "count", len(parsed))
 
-	// Emit config errors
 	for _, pe := range parseErrors {
-		s.emitEvent(event.EndpointConfigError, map[string]interface{}{
+		s.emitEvent(event.EndpointConfigError, withAgent(map[string]interface{}{
 			"endpoint_id":    nil,
 			"container_name": containerName,
 			"label_key":      pe.LabelKey,
 			"error":          pe.Message,
 			"timestamp":      time.Now(),
-		})
-	}
-
-	// Get currently stored endpoints for this container
-	existing, err := s.store.ListEndpointsByExternalID(ctx, uid.LocalAgent, externalID)
-	if err != nil {
-		s.logger.Error("list endpoints by external ID", "external_id", externalID, "error", err)
-		return
-	}
-
-	// Build maps for comparison
-	existingByKey := make(map[string]*Endpoint, len(existing))
-	for _, ep := range existing {
-		existingByKey[ep.LabelKey] = ep
-	}
-
-	parsedKeys := make(map[string]bool, len(parsed))
-
-	for _, p := range parsed {
-		parsedKeys[p.LabelKey] = true
-
-		ep := &Endpoint{
-			ContainerName: containerName,
-			LabelKey:      p.LabelKey,
-			ExternalID:    externalID,
-			EndpointType:  p.EndpointType,
-			Target:        p.Target,
-			Config:        p.Config,
-		}
-
-		id, err := s.store.UpsertEndpoint(ctx, ep)
-		if err != nil {
-			s.logger.Error("upsert endpoint", "container", containerName, "label", p.LabelKey, "error", err)
-			continue
-		}
-		ep.ID = id
-
-		// Reload full endpoint from store to get current status/counters
-		full, err := s.store.GetEndpointByID(ctx, id)
-		if err != nil || full == nil {
-			s.logger.Error("reload endpoint after upsert", "id", id, "error", err)
-			continue
-		}
-
-		// Check if this is new (not in existing map) or reconfigured
-		prev, wasExisting := existingByKey[p.LabelKey]
-		if !wasExisting {
-			s.emitEvent(event.EndpointDiscovered, map[string]interface{}{
-				"endpoint_id":    id,
-				"container_name": containerName,
-				"endpoint_type":  string(p.EndpointType),
-				"target":         p.Target,
-			})
-		} else if prev.Target != p.Target || prev.EndpointType != p.EndpointType {
-			// Target or type changed — reconfigure
-			ClearLinkLocalWarning(id)
-		}
-
-		// Start or reconfigure check
-		if s.ctx != nil {
-			s.engine.ReconfigureEndpoint(s.ctx, full)
-		}
-	}
-
-	// Deactivate endpoints that are no longer in labels
-	for key, ep := range existingByKey {
-		if !parsedKeys[key] {
-			if err := s.store.DeactivateEndpoint(ctx, ep.ID); err != nil {
-				s.logger.Error("deactivate endpoint", "id", ep.ID, "error", err)
-				continue
-			}
-			s.engine.RemoveEndpoint(ep.ID)
-			if s.onEndpointRemoved != nil {
-				s.onEndpointRemoved(ctx, ep.ID)
-			}
-			s.emitEvent(event.EndpointRemoved, map[string]interface{}{
-				"endpoint_id":    ep.ID,
-				"container_name": containerName,
-				"reason":         "label_removed",
-			})
-		}
-	}
-}
-
-// SyncAgentEndpoints provisions label-discovered endpoints for a REMOTE agent's
-// container. Mirrors SyncEndpoints but (a) attributes every endpoint to agentID
-// and (b) never enrolls them in the local check engine — the agent probes them
-// on its own host and pushes results (FR-018a). Reconciles removed labels.
-func (s *Service) SyncAgentEndpoints(ctx context.Context, agentID, containerName, externalID string, labels map[string]string) {
-	parsed, parseErrors := ParseEndpointLabels(labels, s.logger.With("container", containerName))
-	for _, pe := range parseErrors {
-		s.emitEvent(event.EndpointConfigError, map[string]interface{}{
-			"endpoint_id":    nil,
-			"container_name": containerName,
-			"label_key":      pe.LabelKey,
-			"error":          pe.Message,
-			"agent_id":       agentID,
-			"timestamp":      time.Now(),
-		})
+		}))
 	}
 
 	existing, err := s.store.ListEndpointsByExternalID(ctx, agentID, externalID)
 	if err != nil {
-		s.logger.Error("list agent endpoints by external ID", "external_id", externalID, "error", err)
-		return
+		s.logger.Error("list endpoints by external ID", "external_id", externalID, "agent_id", agentID, "error", err)
+		return nil
 	}
 	existingByKey := make(map[string]*Endpoint, len(existing))
 	for _, ep := range existing {
@@ -263,9 +225,10 @@ func (s *Service) SyncAgentEndpoints(ctx context.Context, agentID, containerName
 	}
 	parsedKeys := make(map[string]bool, len(parsed))
 
+	synced := make([]syncedEndpoint, 0, len(parsed))
 	for _, p := range parsed {
 		parsedKeys[p.LabelKey] = true
-		ep := &Endpoint{
+		id, err := s.store.UpsertEndpoint(ctx, &Endpoint{
 			ContainerName: containerName,
 			LabelKey:      p.LabelKey,
 			ExternalID:    externalID,
@@ -274,43 +237,65 @@ func (s *Service) SyncAgentEndpoints(ctx context.Context, agentID, containerName
 			Config:        p.Config,
 			Source:        SourceLabel,
 			AgentID:       agentID,
-		}
-		id, err := s.store.UpsertEndpoint(ctx, ep)
+		})
 		if err != nil {
-			s.logger.Error("upsert agent endpoint", "container", containerName, "label", p.LabelKey, "agent_id", agentID, "error", err)
+			s.logger.Error("upsert endpoint", "container", containerName, "label", p.LabelKey, "agent_id", agentID, "error", err)
 			continue
 		}
-		if _, wasExisting := existingByKey[p.LabelKey]; !wasExisting {
-			s.emitEvent(event.EndpointDiscovered, map[string]interface{}{
+		se := syncedEndpoint{id: id}
+		if prev, wasExisting := existingByKey[p.LabelKey]; !wasExisting {
+			se.discovered = withAgent(map[string]interface{}{
 				"endpoint_id":    id,
 				"container_name": containerName,
 				"endpoint_type":  string(p.EndpointType),
 				"target":         p.Target,
-				"agent_id":       agentID,
 			})
+		} else if prev.Target != p.Target || prev.EndpointType != p.EndpointType {
+			ClearLinkLocalWarning(id)
 		}
-		// Intentionally NOT enrolled in s.engine: the agent owns probing.
+		synced = append(synced, se)
 	}
 
-	// Deactivate endpoints whose label was removed.
 	for key, ep := range existingByKey {
 		if parsedKeys[key] {
 			continue
 		}
 		if err := s.store.DeactivateEndpoint(ctx, ep.ID); err != nil {
-			s.logger.Error("deactivate agent endpoint", "id", ep.ID, "error", err)
+			s.logger.Error("deactivate endpoint", "id", ep.ID, "error", err)
 			continue
 		}
+		s.engine.RemoveEndpoint(ep.ID)
 		if s.onEndpointRemoved != nil {
 			s.onEndpointRemoved(ctx, ep.ID)
 		}
-		s.emitEvent(event.EndpointRemoved, map[string]interface{}{
+		s.emitEvent(event.EndpointRemoved, withAgent(map[string]interface{}{
 			"endpoint_id":    ep.ID,
 			"container_name": containerName,
 			"reason":         "label_removed",
-			"agent_id":       agentID,
-		})
+		}))
 	}
+	return synced
+}
+
+func (s *Service) finishSync(ctx context.Context, synced []syncedEndpoint) {
+	for _, se := range synced {
+		full, err := s.store.GetEndpointByID(ctx, se.id)
+		if err != nil || full == nil {
+			s.logger.Error("reload endpoint after upsert", "id", se.id, "error", err)
+			continue
+		}
+		if s.ctx != nil && probedLocally(full.AgentID) {
+			s.engine.ReconfigureEndpoint(s.ctx, full)
+		}
+		if se.discovered != nil {
+			se.discovered["limited"] = full.Limited
+			s.emitEvent(event.EndpointDiscovered, se.discovered)
+		}
+	}
+}
+
+func probedLocally(agentID string) bool {
+	return agentID == "" || agentID == uid.LocalAgent
 }
 
 // statusForResult maps a probe outcome to the endpoint's reported status. A
@@ -344,7 +329,10 @@ func (s *Service) CheckNow(ctx context.Context, endpointID string) (*Endpoint, e
 	if ep == nil {
 		return nil, ErrEndpointNotFound
 	}
-	if ep.AgentID != "" && ep.AgentID != uid.LocalAgent {
+	if ep.Limited {
+		return nil, ErrLimited
+	}
+	if !probedLocally(ep.AgentID) {
 		return nil, ErrAgentProbed
 	}
 
@@ -375,6 +363,9 @@ func (s *Service) ProcessCheckResult(ctx context.Context, endpointID string, res
 	ep, err := s.store.GetEndpointByID(ctx, endpointID)
 	if err != nil || ep == nil {
 		s.logger.Error("get endpoint for check result", "endpoint_id", endpointID, "error", err)
+		return
+	}
+	if ep.Limited {
 		return
 	}
 
@@ -511,6 +502,7 @@ func (s *Service) HandleContainerDestroy(ctx context.Context, externalID string)
 			"reason":         "container_destroyed",
 		})
 	}
+	s.applyLimitLogged(ctx)
 }
 
 // SweepOrphanedLabelEndpoints deactivates label-discovered endpoints whose
@@ -523,6 +515,14 @@ func (s *Service) HandleContainerDestroy(ctx context.Context, externalID string)
 // containers come and go. Without this sweep such an endpoint stays active
 // forever, reporting a container that no longer exists.
 func (s *Service) SweepOrphanedLabelEndpoints(ctx context.Context, seen map[string]struct{}) int {
+	swept := s.sweepOrphans(ctx, seen)
+	if swept > 0 {
+		s.applyLimitLogged(ctx)
+	}
+	return swept
+}
+
+func (s *Service) sweepOrphans(ctx context.Context, seen map[string]struct{}) int {
 	endpoints, err := s.store.ListEndpoints(ctx, ListEndpointsOpts{Source: string(SourceLabel)})
 	if err != nil {
 		s.logger.Error("list label endpoints for orphan sweep", "error", err)
@@ -557,9 +557,17 @@ func (s *Service) ListEndpoints(ctx context.Context, opts ListEndpointsOpts) ([]
 	return s.store.ListEndpoints(ctx, opts)
 }
 
-// CountStandaloneEndpoints returns the number of active manually-created endpoints.
-func (s *Service) CountStandaloneEndpoints(ctx context.Context) (int, error) {
-	return s.store.CountStandaloneEndpoints(ctx)
+// LimitUsage returns how many active endpoints are monitored and how many the edition cap leaves out.
+func (s *Service) LimitUsage(ctx context.Context) (monitored, limited int, err error) {
+	active, err := s.store.CountActiveEndpoints(ctx, "")
+	if err != nil {
+		return 0, 0, err
+	}
+	limited, err = s.store.CountLimitedEndpoints(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	return active - limited, limited, nil
 }
 
 // GetEndpoint retrieves an endpoint by ID.
@@ -597,11 +605,13 @@ func (s *Service) CalculateUptime(ctx context.Context, endpointID string) map[st
 
 // CreateStandalone creates a manually-defined endpoint and starts monitoring it.
 func (s *Service) CreateStandalone(ctx context.Context, name, target string, epType EndpointType, config EndpointConfig) (*Endpoint, error) {
-	count, err := s.store.CountStandaloneEndpoints(ctx)
+	s.limitMu.Lock()
+	defer s.limitMu.Unlock()
+	_, cands, err := s.limitCandidates(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("count endpoints: %w", err)
 	}
-	if !s.licenseChecker.CanCreateEndpoint(count) {
+	if !s.licenseChecker.CanCreateEndpoint(len(cands)) {
 		return nil, ErrLimitReached
 	}
 
@@ -616,6 +626,9 @@ func (s *Service) CreateStandalone(ctx context.Context, name, target string, epT
 	id, err := s.store.InsertStandaloneEndpoint(ctx, ep)
 	if err != nil {
 		return nil, fmt.Errorf("create standalone endpoint: %w", err)
+	}
+	if err := s.applyLimit(ctx); err != nil {
+		s.logger.Error("apply endpoint limit", "error", err)
 	}
 
 	full, err := s.store.GetEndpointByID(ctx, id)
@@ -633,6 +646,7 @@ func (s *Service) CreateStandalone(ctx context.Context, name, target string, epT
 		"target":        target,
 		"source":        "standalone",
 		"name":          name,
+		"limited":       full.Limited,
 	})
 
 	return full, nil
@@ -703,6 +717,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		"endpoint_id": id,
 		"reason":      "user_deleted",
 	})
+	s.applyLimitLogged(ctx)
 
 	return nil
 }
@@ -715,5 +730,70 @@ func (s *Service) emitEvent(eventType string, data interface{}) {
 
 // ApplyLimit gives monitoring slots to endpoints under the running edition's cap.
 func (s *Service) ApplyLimit(ctx context.Context) error {
-	panic("not implemented")
+	s.limitMu.Lock()
+	defer s.limitMu.Unlock()
+	return s.applyLimit(ctx)
+}
+
+func (s *Service) applyLimitLogged(ctx context.Context) {
+	if err := s.ApplyLimit(ctx); err != nil {
+		s.logger.Error("apply endpoint limit", "error", err)
+	}
+}
+
+func (s *Service) applyLimit(ctx context.Context) error {
+	eps, cands, err := s.limitCandidates(ctx)
+	if err != nil {
+		return err
+	}
+	limited := extension.Allocate(cands, extension.Limit(extension.ResourceEndpoints))
+	var errs []error
+	for _, ep := range eps {
+		toLimited := limited[ep.ID]
+		if !ep.Active || ep.Limited == toLimited {
+			continue
+		}
+		if err := s.store.SetEndpointLimited(ctx, ep.ID, toLimited); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if toLimited {
+			s.engine.RemoveEndpoint(ep.ID)
+			if s.onEndpointRemoved != nil {
+				s.onEndpointRemoved(ctx, ep.ID)
+			}
+		} else if s.ctx != nil && probedLocally(ep.AgentID) {
+			full, err := s.store.GetEndpointByID(ctx, ep.ID)
+			if err != nil || full == nil {
+				errs = append(errs, fmt.Errorf("reload endpoint %s: %w", ep.ID, err))
+			} else {
+				s.engine.AddEndpoint(s.ctx, full)
+			}
+		}
+		s.emitEvent(event.EndpointLimitChanged, map[string]interface{}{
+			"endpoint_id": ep.ID,
+			"limited":     toLimited,
+		})
+	}
+	return errors.Join(errs...)
+}
+
+func (s *Service) limitCandidates(ctx context.Context) ([]*Endpoint, []extension.LimitCandidate, error) {
+	eps, err := s.store.ListEndpoints(ctx, ListEndpointsOpts{IncludeInactive: true})
+	if err != nil {
+		return nil, nil, fmt.Errorf("list endpoints: %w", err)
+	}
+	cands := make([]extension.LimitCandidate, 0, len(eps))
+	for _, ep := range eps {
+		if !ep.Active {
+			continue
+		}
+		cands = append(cands, extension.LimitCandidate{
+			ID:            ep.ID,
+			Grandfathered: ep.Grandfathered,
+			Since:         ep.FirstSeenAt,
+			Key:           ep.ContainerName + "\x00" + ep.LabelKey + "\x00" + ep.Name,
+		})
+	}
+	return eps, cands, nil
 }

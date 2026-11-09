@@ -109,6 +109,9 @@ func (h *CertificateHandler) HandleCheckNow(w http.ResponseWriter, r *http.Reque
 	case errors.Is(err, certificate.ErrCheckInProgress):
 		WriteError(w, http.StatusConflict, "CHECK_IN_PROGRESS", "A check is already running for this monitor")
 		return
+	case errors.Is(err, certificate.ErrLimited):
+		refuseQuota(w, extension.ResourceCertificates)
+		return
 	case err != nil:
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to check certificate")
 		return

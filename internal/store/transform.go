@@ -293,11 +293,11 @@ func copyStatements() []stmt {
 		{"endpoints", `INSERT INTO endpoints
 			(id, agent_id, container_name, label_key, external_id, endpoint_type, target, status, alert_state,
 			 consecutive_failures, consecutive_successes, last_check_at, last_response_time_ms, last_http_status,
-			 last_error, config_json, active, first_seen_at, last_seen_at, source, name)
+			 last_error, config_json, active, first_seen_at, last_seen_at, source, name, grandfathered, limited)
 			SELECT mnt_endpoint_id('` + s + `', container_name, label_key), '` + s + `', container_name, label_key,
 			 external_id, endpoint_type, target, status, alert_state, consecutive_failures, consecutive_successes,
 			 last_check_at, last_response_time_ms, last_http_status, last_error, config_json, active,
-			 first_seen_at, last_seen_at, source, name
+			 first_seen_at, last_seen_at, source, name, grandfathered, limited
 			FROM _old_endpoints`},
 
 		{"check_results", `INSERT INTO check_results
@@ -311,11 +311,12 @@ func copyStatements() []stmt {
 		{"cert_monitors", `INSERT INTO cert_monitors
 			(id, agent_id, hostname, port, source, endpoint_id, status, check_interval_seconds,
 			 warning_thresholds_json, last_alerted_threshold, last_check_at, next_check_at, last_error,
-			 created_at, external_id, server_name)
+			 created_at, external_id, server_name, grandfathered, limited, inactive_since)
 			SELECT mnt_cert_id('` + s + `', cm.hostname, cm.port, cm.server_name), '` + s + `', cm.hostname, cm.port, cm.source,
 			 (SELECT mnt_endpoint_id('` + s + `', e.container_name, e.label_key) FROM _old_endpoints e WHERE e.id = cm.endpoint_id),
 			 cm.status, cm.check_interval_seconds, cm.warning_thresholds_json, cm.last_alerted_threshold,
-			 cm.last_check_at, cm.next_check_at, cm.last_error, cm.created_at, cm.external_id, cm.server_name
+			 cm.last_check_at, cm.next_check_at, cm.last_error, cm.created_at, cm.external_id, cm.server_name,
+			 cm.grandfathered, cm.limited, cm.inactive_since
 			FROM _old_cert_monitors cm`},
 
 		{"cert_check_results", `INSERT INTO cert_check_results

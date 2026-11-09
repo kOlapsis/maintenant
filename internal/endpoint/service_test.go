@@ -34,6 +34,7 @@ type memStore struct {
 	// Recorded calls for assertions
 	deactivated []string
 	updated     []string
+	limitWrites int
 }
 
 func newMemStore() *memStore {
@@ -60,12 +61,16 @@ func (m *memStore) UpsertEndpoint(_ context.Context, e *Endpoint) (string, error
 		stored.Target = e.Target
 		stored.EndpointType = e.EndpointType
 		stored.Config = e.Config
+		stored.ExternalID = e.ExternalID
 		stored.Active = true
+		stored.LastSeenAt = time.Now()
 		return id, nil
 	}
 
 	ec := m.cloneEp(e)
 	ec.Active = true
+	ec.FirstSeenAt = time.Now()
+	ec.LastSeenAt = ec.FirstSeenAt
 	if ec.Source == "" {
 		ec.Source = SourceLabel
 	}
@@ -137,26 +142,52 @@ func (m *memStore) ListEndpointsByExternalID(_ context.Context, agentID, externa
 	return out, nil
 }
 
-func (m *memStore) CountStandaloneEndpoints(_ context.Context) (int, error) {
+func (m *memStore) DeactivateEndpoint(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if ep, ok := m.endpoints[id]; ok {
+		ep.Active = false
+		ep.LastSeenAt = time.Now()
+		m.deactivated = append(m.deactivated, id)
+	}
+	return nil
+}
+
+func (m *memStore) SetEndpointLimited(_ context.Context, id string, limited bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.limitWrites++
+	if ep, ok := m.endpoints[id]; ok {
+		ep.Limited = limited
+		if limited {
+			ep.Status = StatusUnknown
+		}
+	}
+	return nil
+}
+
+func (m *memStore) CountActiveEndpoints(_ context.Context, source string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	count := 0
 	for _, ep := range m.endpoints {
-		if ep.Active && ep.Source == SourceStandalone {
+		if ep.Active && (source == "" || string(ep.Source) == source) {
 			count++
 		}
 	}
 	return count, nil
 }
 
-func (m *memStore) DeactivateEndpoint(_ context.Context, id string) error {
+func (m *memStore) CountLimitedEndpoints(_ context.Context) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if ep, ok := m.endpoints[id]; ok {
-		ep.Active = false
-		m.deactivated = append(m.deactivated, id)
+	count := 0
+	for _, ep := range m.endpoints {
+		if ep.Active && ep.Limited {
+			count++
+		}
 	}
-	return nil
+	return count, nil
 }
 
 func (m *memStore) UpdateCheckResult(_ context.Context, id string, status EndpointStatus, alertState AlertState,
@@ -238,6 +269,8 @@ func (m *memStore) InsertStandaloneEndpoint(_ context.Context, e *Endpoint) (str
 	ec.ID = id
 	ec.Active = true
 	ec.Source = SourceStandalone
+	ec.FirstSeenAt = time.Now()
+	ec.LastSeenAt = ec.FirstSeenAt
 	m.endpoints[id] = ec
 	return id, nil
 }
@@ -727,14 +760,12 @@ func TestService_CreateStandalone_QuotaEnforced(t *testing.T) {
 	assert.Nil(t, ep3)
 
 	// Verify count
-	count, err := store.CountStandaloneEndpoints(ctx)
+	count, err := store.CountActiveEndpoints(ctx, string(SourceStandalone))
 	require.NoError(t, err)
 	assert.Equal(t, 2, count)
 }
 
-// Label-declared endpoints are outside the standalone cap: an operator running
-// a dozen of them must still be able to add one by hand.
-func TestService_CreateStandalone_LabelEndpointsDoNotConsumeQuota(t *testing.T) {
+func TestService_CreateStandalone_LabelEndpointsConsumeQuota(t *testing.T) {
 	store := newMemStore()
 	svc := NewService(Deps{
 		Store:          store,
@@ -744,34 +775,17 @@ func TestService_CreateStandalone_LabelEndpointsDoNotConsumeQuota(t *testing.T) 
 	})
 	ctx := context.Background()
 
-	labels := map[string]string{}
-	for i := 1; i <= 5; i++ {
-		labels[fmt.Sprintf("maintenant.endpoint.%d.http", i)] = fmt.Sprintf("http://svc:80%d/health", i)
-	}
-	svc.SyncEndpoints(ctx, "web", "container-1", labels)
+	svc.SyncEndpoints(ctx, "web", "container-1", map[string]string{"maintenant.endpoint.http": "http://svc:80/health"})
 
-	all, err := store.ListEndpoints(ctx, ListEndpointsOpts{})
+	_, err := svc.CreateStandalone(ctx, "ep1", "http://example.com", TypeHTTP, DefaultConfig())
 	require.NoError(t, err)
-	require.Len(t, all, 5)
 
-	count, err := store.CountStandaloneEndpoints(ctx)
-	require.NoError(t, err)
-	require.Equal(t, 0, count, "label endpoints must not count against the cap")
-
-	ep1, err := svc.CreateStandalone(ctx, "ep1", "http://example.com", TypeHTTP, DefaultConfig())
-	require.NoError(t, err)
-	require.NotNil(t, ep1)
-
-	ep2, err := svc.CreateStandalone(ctx, "ep2", "http://example.org", TypeHTTP, DefaultConfig())
-	require.NoError(t, err)
-	require.NotNil(t, ep2)
-
-	_, err = svc.CreateStandalone(ctx, "ep3", "http://example.net", TypeHTTP, DefaultConfig())
+	_, err = svc.CreateStandalone(ctx, "ep2", "http://example.org", TypeHTTP, DefaultConfig())
 	require.ErrorIs(t, err, ErrLimitReached)
 
-	count, err = store.CountStandaloneEndpoints(ctx)
+	count, err := store.CountActiveEndpoints(ctx, string(SourceStandalone))
 	require.NoError(t, err)
-	require.Equal(t, 2, count, "the reported usage never exceeds the cap")
+	require.Equal(t, 1, count)
 }
 
 type endpointCap int

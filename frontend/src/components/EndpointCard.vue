@@ -15,6 +15,7 @@ import EndpointStatusBadge from './EndpointStatusBadge.vue'
 import AgentBadge from './AgentBadge.vue'
 import UptimeBar90 from './ui/UptimeBar90.vue'
 import UiButton from './ui/UiButton.vue'
+import LimitChip from './ui/LimitChip.vue'
 
 const props = defineProps<{
   endpoint: Endpoint
@@ -134,14 +135,17 @@ function formatResponseTime(ms: number | undefined): string {
           alerting
         </span>
         <span
-          v-if="endpoint.stale"
+          v-if="!endpoint.limited && endpoint.stale"
           class="rounded-full px-2 py-0.5 text-xs font-medium text-mnt-sev-unknown bg-mnt-sev-unknown"
           :title="endpointStaleBadge(endpoint).title"
         >
           {{ endpointStaleBadge(endpoint).text }}
         </span>
-        <EndpointStatusBadge v-else :status="endpoint.status" />
+        <EndpointStatusBadge v-else-if="!endpoint.limited" :status="endpoint.status" />
       </div>
+    </div>
+    <div v-if="endpoint.limited" class="mt-2">
+      <LimitChip />
     </div>
 
     <!-- 90-day uptime bar -->

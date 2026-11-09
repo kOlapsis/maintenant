@@ -14,6 +14,7 @@ import { createCertificate, type CertMonitor, type CertSource } from '@/services
 import CertificateCard from '@/components/CertificateCard.vue'
 import CertificateRow from '@/components/CertificateRow.vue'
 import CertificateStatusBadge from '@/components/CertificateStatusBadge.vue'
+import LimitChip from '@/components/ui/LimitChip.vue'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
 import LoadingSkeleton from '@/components/ui/LoadingSkeleton.vue'
@@ -224,6 +225,7 @@ function handleSelect(id: string) {
           :value="`${quota.used}/${quota.limit}`"
           :tone="quota.isAtLimit ? 'danger' : quota.nearLimit ? 'warn' : 'neutral'"
         />
+        <CountBadge v-if="quota.unmonitored > 0" :value="`${quota.unmonitored} not monitored`" tone="warn" />
         <router-link
           v-if="quota.nearLimit && !quota.isAtLimit"
           :to="{ name: 'editions' }"
@@ -235,7 +237,7 @@ function handleSelect(id: string) {
         <UiButton
           variant="primary"
           :disabled="quota.isAtLimit"
-          :title="quota.isAtLimit ? `Your edition is limited to ${quota.limit} certificate monitors` : ''"
+          :title="quota.isAtLimit ? `Your edition is limited to ${quota.limit} certificate monitors, label-declared ones included` : ''"
           @click="showCreateForm = !showCreateForm"
         >
           {{ showCreateForm ? 'Cancel' : 'New Monitor' }}
@@ -446,7 +448,8 @@ function handleSelect(id: string) {
         {{ row.latest_check?.issuer_cn || '-' }}
       </template>
       <template #cell-status="{ row }">
-        <CertificateStatusBadge :status="row.status" />
+        <LimitChip v-if="row.limited" />
+        <CertificateStatusBadge v-else :status="row.status" />
       </template>
       <template #cell-days="{ row }">
         <span

@@ -42,4 +42,14 @@ describe('OptionCards', () => {
     expect(document.activeElement).toBe(radios[2]!.element)
     wrapper.unmount()
   })
+
+  it('renders the footer slot beside the card, outside the button', () => {
+    const wrapper = mount(OptionCards, {
+      props: { options, ariaLabel: 'Channel type', modelValue: null },
+      slots: { footer: '<a data-test="footer">more</a>' },
+    })
+    const footers = wrapper.findAll('[data-test="footer"]')
+    expect(footers).toHaveLength(options.length)
+    expect(footers[0]!.element.closest('button')).toBeNull()
+  })
 })

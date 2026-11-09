@@ -180,7 +180,9 @@ POST /api/v1/endpoints
 
 Only endpoints the server probes can be checked on demand: an endpoint probed by a remote agent answers `409 AGENT_PROBED`, and a second check while one is running answers `409 CHECK_IN_PROGRESS`.
 
-Community is limited to **10 manual endpoints**. Endpoints created from labels are not counted, and Personal and Pro have no cap. Above the cap, creation answers `403 QUOTA_EXCEEDED`.
+Community is limited to **10 endpoints**, label endpoints included. Personal and Pro have no cap. Above the cap, creation answers `403 QUOTA_EXCEEDED`.
+
+Endpoints that exist when you upgrade stay monitored, even beyond 10. A label endpoint beyond the cap appears as **Not monitored: Community limit**: it is listed with the status `unknown`, carries `limited: true`, is never checked and raises no alert, and `POST /api/v1/endpoints/{id}/check` on it answers `403 QUOTA_EXCEEDED`. It starts being checked when a slot frees up. A destroyed container frees its slot at once.
 
 !!! note "Probes are not restricted to public addresses"
     A check can target a private, loopback or link-local address: that is how a container is reached by its name on the Docker network. maintenant logs a warning, once per endpoint, when a target resolves to a loopback, link-local or cloud metadata address. Since the API has no authentication of its own, keep it behind a reverse proxy (see [Security](../security.md)).
@@ -211,6 +213,7 @@ Endpoint events are broadcast on the SSE stream (`GET /api/v1/containers/events`
 | `endpoint.alert` | The failure threshold is reached | `endpoint_id`, `container_name`, `target`, `consecutive_failures`, `threshold`, `last_error`, `timestamp` |
 | `endpoint.recovery` | The recovery threshold is reached | `endpoint_id`, `container_name`, `target`, `consecutive_successes`, `threshold`, `timestamp` |
 | `endpoint.config_error` | A label target is malformed | `endpoint_id` (always `null`), `container_name`, `label_key`, `error`, `timestamp` |
+| `endpoint.limit_changed` | An endpoint becomes monitored or is left out by the Community cap | `endpoint_id`, `limited` |
 
 [Webhook subscriptions](../api/reference.md#webhooks) receive `endpoint.discovered`, `endpoint.status_changed` and `endpoint.removed` under the single type `endpoint.status_changed`, with the payload above as `data`. `endpoint.alert`, `endpoint.recovery` and `endpoint.config_error` are not sent to webhooks: the alert itself reaches them as `alert.fired` and `alert.resolved`.
 

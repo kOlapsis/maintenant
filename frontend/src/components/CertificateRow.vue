@@ -14,6 +14,7 @@ import {
 } from '@/utils/certFormat'
 import ListRow from '@/components/ui/ListRow.vue'
 import CertificateStatusBadge from './CertificateStatusBadge.vue'
+import LimitChip from '@/components/ui/LimitChip.vue'
 
 const props = defineProps<{ certificate: CertMonitor }>()
 
@@ -39,7 +40,8 @@ const issuer = computed(() => props.certificate.latest_check?.issuer_cn || 'Unkn
       </div>
 
       <div>
-        <CertificateStatusBadge :status="certificate.status" />
+        <LimitChip v-if="certificate.limited" />
+        <CertificateStatusBadge v-else :status="certificate.status" />
       </div>
 
       <span
@@ -59,7 +61,7 @@ const issuer = computed(() => props.certificate.latest_check?.issuer_cn || 'Unkn
 <style scoped>
 .row-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 88px 80px;
+  grid-template-columns: minmax(0, 1fr) minmax(88px, auto) 80px;
 }
 .col-expiry {
   display: none;
@@ -67,7 +69,7 @@ const issuer = computed(() => props.certificate.latest_check?.issuer_cn || 'Unkn
 
 @media (min-width: 640px) {
   .row-grid {
-    grid-template-columns: minmax(0, 1fr) 88px 80px 112px;
+    grid-template-columns: minmax(0, 1fr) minmax(88px, auto) 80px 112px;
   }
   .col-expiry {
     display: block;

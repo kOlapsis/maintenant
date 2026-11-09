@@ -7,6 +7,7 @@
 import { computed, ref } from 'vue'
 import { useEdition } from '@/composables/useEdition'
 import { Lock } from 'lucide-vue-next'
+import { RouterLink } from 'vue-router'
 import SegmentedToggle from './ui/SegmentedToggle.vue'
 
 /**
@@ -35,7 +36,7 @@ const emit = defineEmits<{
   'update:period': [value: Period]
 }>()
 
-const { historyWindows, isWindowOpen } = useEdition()
+const { historyWindows, isWindowOpen, isCommunity, maxHistoryWindow } = useEdition()
 
 const activeMetric = ref<'cpu' | 'memory'>(props.metric)
 const activePeriod = ref<Period>(props.period)
@@ -105,6 +106,15 @@ function formatValue(consumer: TopConsumer): string {
         @update:model-value="switchPeriod"
       />
     </div>
+
+    <RouterLink
+      v-if="isCommunity && periodOptions.some((o) => o.locked)"
+      :to="{ name: 'editions' }"
+      class="mb-3 block text-xs font-medium transition-opacity hover:opacity-80"
+      style="color: var(--mnt-accent)"
+    >
+      Community keeps {{ maxHistoryWindow }} of history. Pro and Personal go further.
+    </RouterLink>
 
     <!-- Ranked list -->
     <div v-if="consumers.length === 0" class="text-xs" :style="{ color: 'var(--mnt-text-muted)' }">

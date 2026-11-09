@@ -299,9 +299,9 @@ func refuseCapability(w http.ResponseWriter, c extension.Capability) {
 
 // resourceLabel is how a capped resource is named in a refusal message.
 var resourceLabel = map[extension.Resource]string{
-	extension.ResourceEndpoints:        "endpoints",
+	extension.ResourceEndpoints:        "endpoints, label-discovered ones included",
 	extension.ResourceHeartbeats:       "heartbeat monitors",
-	extension.ResourceCertificates:     "certificate monitors",
+	extension.ResourceCertificates:     "certificate monitors, label-declared ones included",
 	extension.ResourceStatusComponents: "status page components",
 	extension.ResourceAgentHosts:       "remote agents",
 }
