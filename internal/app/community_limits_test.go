@@ -695,9 +695,7 @@ func TestCommunityLimit_RemovingGrandfatheredLabelsKeepsTheRest(t *testing.T) {
 	e.declareAll(clNames("svc", 1, 14)...)
 	require.Empty(t, e.limited())
 
-	var removed []string
 	for _, n := range []string{"svc-02", "svc-07", "svc-12"} {
-		removed = append(removed, e.find(n).ID)
 		e.a.endpointSvc.SyncEndpoints(e.ctx, n, clExt(n, 0), map[string]string{})
 	}
 	monitored, limited := e.split()
@@ -707,9 +705,6 @@ func TestCommunityLimit_RemovingGrandfatheredLabelsKeepsTheRest(t *testing.T) {
 	e.declare("svc-20-new", 1)
 	assert.Equal(t, []string{"svc-20-new"}, e.limited(), "11 still exceed the cap: nothing new is monitored")
 
-	for _, id := range removed {
-		e.exec(`UPDATE endpoints SET last_seen_at=? WHERE id=?`, time.Now().Add(-11*time.Minute).Unix(), id)
-	}
 	require.NoError(t, e.a.endpointSvc.ApplyLimit(e.ctx))
 	assert.Equal(t, []string{"svc-20-new"}, e.limited(), "the freed rights are not handed to a newcomer while the total stays above 10")
 	assert.Equal(t, 11, e.a.checkEngine.ActiveCount())
@@ -746,7 +741,7 @@ func TestCommunityLimit_RightDisappearsWithThePurge(t *testing.T) {
 
 // US1 scenario 2, SC-005, FR-005, edge case "docker compose up": recreating a
 // container under the same name, twenty times in a row, never changes what is
-// monitored nor loses history, and a waiting endpoint never takes the slot.
+// monitored once the recreation is over, nor loses history.
 func TestCommunityLimit_RecreatingAContainerNeverChangesWhatIsMonitored(t *testing.T) {
 	clPinEdition(t, extension.Community)
 	e := clOpen(t, "", nil)
@@ -769,26 +764,30 @@ func TestCommunityLimit_RecreatingAContainerNeverChangesWhatIsMonitored(t *testi
 	assert.GreaterOrEqual(t, e.checksTotal(id), history, "history survives the recreations")
 }
 
-// FR-005, edge case "un conteneur est renommé": a destroyed endpoint keeps its
-// slot ten minutes while others wait, a renamed container is a new identity, and
-// once the delay is over the oldest waiting endpoint takes the slot.
-func TestCommunityLimit_VanishedEndpointHoldsItsSlotTenMinutesWhileOthersWait(t *testing.T) {
+// FR-005, edge cases "docker compose up" et "un conteneur est renommé": a destroyed
+// endpoint frees its slot at once to the oldest waiting, recreating it under the
+// same name takes the slot back, a renamed container is a new identity.
+func TestCommunityLimit_VanishedEndpointFreesItsSlotToTheOldestWaiting(t *testing.T) {
 	clPinEdition(t, extension.Community)
 	e := clOpen(t, "", nil)
-	e.declareAll(clNames("svc", 1, 11)...)
-	require.Equal(t, []string{"svc-11"}, e.limited())
+	e.declareAll(clNames("svc", 1, 12)...)
+	require.Equal(t, []string{"svc-11", "svc-12"}, e.limited())
 	vanished := e.find("svc-05").ID
 
 	e.a.endpointSvc.HandleContainerDestroy(e.ctx, clExt("svc-05", 0))
-	assert.Equal(t, []string{"svc-11"}, e.limited(), "a waiting endpoint does not take the slot of a container being recreated")
+	assert.Equal(t, []string{"svc-12"}, e.limited(), "the oldest waiting endpoint takes the slot at once")
+	assert.Equal(t, 10, e.a.checkEngine.ActiveCount())
 
-	e.a.endpointSvc.HandleContainerStart(e.ctx, "zz-svc-05-renamed", clExt("zz-svc-05-renamed", 0), clTCPLabels(e.target, 1))
-	assert.Equal(t, []string{"svc-11", "zz-svc-05-renamed"}, e.limited(), "a renamed container is a new endpoint")
-
-	e.exec(`UPDATE endpoints SET last_seen_at=? WHERE id=?`, time.Now().Add(-11*time.Minute).Unix(), vanished)
-	require.NoError(t, e.a.endpointSvc.ApplyLimit(e.ctx))
+	e.a.endpointSvc.HandleContainerStart(e.ctx, "svc-05", clExt("svc-05", 1), clTCPLabels(e.target, 1))
 	monitored, limited := e.split()
-	assert.Equal(t, []string{"zz-svc-05-renamed"}, limited, "after ten minutes the slot goes to the oldest waiting")
+	assert.Equal(t, vanished, e.find("svc-05").ID, "same name, same endpoint")
+	assert.Equal(t, clNames("svc", 1, 10), monitored, "the recreated endpoint takes its slot back by seniority")
+	assert.Equal(t, []string{"svc-11", "svc-12"}, limited, "the one that held it is not monitored again")
+
+	e.a.endpointSvc.HandleContainerDestroy(e.ctx, clExt("svc-05", 1))
+	e.a.endpointSvc.HandleContainerStart(e.ctx, "zz-svc-05-renamed", clExt("zz-svc-05-renamed", 0), clTCPLabels(e.target, 1))
+	monitored, limited = e.split()
+	assert.Equal(t, []string{"svc-12", "zz-svc-05-renamed"}, limited, "a renamed container is a new endpoint, behind the older waiting one")
 	assert.Contains(t, monitored, "svc-11")
 	assert.Equal(t, 10, e.a.checkEngine.ActiveCount())
 }
@@ -800,15 +799,12 @@ func TestCommunityLimit_VanishedEndpointFreesItsSlotWhenNobodyWaits(t *testing.T
 	e.declareAll(clNames("svc", 1, 10)...)
 	require.Empty(t, e.limited())
 
-	vanished := e.find("svc-05").ID
-
 	e.a.endpointSvc.HandleContainerDestroy(e.ctx, clExt("svc-05", 0))
 	e.declare("svc-11", 1)
 
 	assert.Empty(t, e.limited(), "the freed slot is taken by the next endpoint")
 	assert.Equal(t, 10, e.a.checkEngine.ActiveCount())
 
-	e.exec(`UPDATE endpoints SET last_seen_at=? WHERE id=?`, time.Now().Add(-11*time.Minute).Unix(), vanished)
 	e.declare("svc-12", 1)
 	assert.Equal(t, []string{"svc-12"}, e.limited(), "the cap still holds once the slot is taken")
 }
@@ -854,11 +850,8 @@ func TestCommunityLimit_FreedSlotGoesToTheOldestWaiting(t *testing.T) {
 		e := clOpen(t, "", nil)
 		e.declareAll(clNames("svc", 1, 13)...)
 		require.Equal(t, clNames("svc", 11, 13), e.limited())
-		removed := e.find("svc-02").ID
 
 		e.a.endpointSvc.SyncEndpoints(e.ctx, "svc-02", clExt("svc-02", 0), map[string]string{})
-		e.exec(`UPDATE endpoints SET last_seen_at=? WHERE id=?`, time.Now().Add(-11*time.Minute).Unix(), removed)
-		require.NoError(t, e.a.endpointSvc.ApplyLimit(e.ctx))
 
 		monitored, limited := e.split()
 		assert.NotContains(t, monitored, "svc-02")
@@ -1184,8 +1177,8 @@ func TestCommunityLimit_SixthLabelCertificateIsNotMonitored(t *testing.T) {
 	e.assertQuota("certificates", 5, 5, 1)
 }
 
-// FR-005 for certificates: a label certificate keeps its slot and its history
-// when its container is recreated, and a waiting one does not take it.
+// FR-005 and FR-009 for certificates: a destroyed container frees its slots to the
+// waiting ones, and recreating it takes them back with the same monitors and history.
 func TestCommunityLimit_LabelCertificateKeepsItsSlotAcrossRecreation(t *testing.T) {
 	clPinEdition(t, extension.Community)
 	e := clOpen(t, "", nil)
@@ -1204,13 +1197,13 @@ func TestCommunityLimit_LabelCertificateKeepsItsSlotAcrossRecreation(t *testing.
 
 	e.a.certSvc.HandleContainerDestroy(e.ctx, "ext-a")
 	monitored, limited := e.certSplit()
-	assert.Empty(t, monitored, "the monitors of a destroyed container leave the list")
-	assert.Equal(t, []string{"cert-06.example.com"}, limited, "a waiting certificate does not take their slots")
+	assert.Equal(t, []string{"cert-06.example.com"}, monitored, "the monitors of a destroyed container leave the list, the waiting one takes a slot")
+	assert.Empty(t, limited)
 
 	e.a.certSvc.SyncFromLabels(e.ctx, "ext-a-2", clCertLabels(hosts...))
 	monitored, limited = e.certSplit()
-	assert.Equal(t, hosts, monitored)
-	assert.Equal(t, []string{"cert-06.example.com"}, limited)
+	assert.Equal(t, hosts, monitored, "the recreated monitors take their slots back by seniority")
+	assert.Equal(t, []string{"cert-06.example.com"}, limited, "the one that held a slot is not monitored again")
 	for _, h := range hosts {
 		assert.Equal(t, before[h], e.cert(h).ID, "%s is the same monitor", h)
 	}
