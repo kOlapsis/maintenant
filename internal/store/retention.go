@@ -45,17 +45,18 @@ type RetentionConfig struct {
 	BatchSize       int           // rows deleted per transaction
 
 	// Windows
-	Snapshots         time.Duration
-	Hourly            time.Duration
-	Daily             time.Duration
-	Transitions       time.Duration
-	Archived          time.Duration
-	CheckResults      time.Duration
-	InactiveEndpoints time.Duration
-	HeartbeatPings    time.Duration
-	HeartbeatExecs    time.Duration
-	CertCheckResults  time.Duration
-	UptimeDaily       time.Duration
+	Snapshots            time.Duration
+	Hourly               time.Duration
+	Daily                time.Duration
+	Transitions          time.Duration
+	Archived             time.Duration
+	CheckResults         time.Duration
+	InactiveEndpoints    time.Duration
+	HeartbeatPings       time.Duration
+	HeartbeatExecs       time.Duration
+	CertCheckResults     time.Duration
+	InactiveCertMonitors time.Duration
+	UptimeDaily          time.Duration
 }
 
 // withDefaults fills unset fields and rejects values that would break the loop
@@ -94,6 +95,7 @@ func (c RetentionConfig) withDefaults(logger *slog.Logger) RetentionConfig {
 	c.HeartbeatPings = orDefault(c.HeartbeatPings, heartbeatPingRetention)
 	c.HeartbeatExecs = orDefault(c.HeartbeatExecs, heartbeatExecRetention)
 	c.CertCheckResults = orDefault(c.CertCheckResults, certCheckResultRetention)
+	c.InactiveCertMonitors = orDefault(c.InactiveCertMonitors, inactiveEndpointRetention)
 	c.UptimeDaily = orDefault(c.UptimeDaily, uptimeDailyRetention)
 
 	return c
@@ -279,6 +281,9 @@ func runCertificateCleanup(ctx context.Context, now time.Time, store *Certificat
 	cutoff := now.Add(-cfg.CertCheckResults)
 	deleted, truncated, err := store.deleteCheckResultsBefore(ctx, cutoff, cfg.batchOpts())
 	pass.record(logger, "cert check results", deleted, truncated, err)
+
+	monitorsDeleted, err := store.DeleteInactiveMonitorsBefore(ctx, now.Add(-cfg.InactiveCertMonitors))
+	pass.record(logger, "inactive cert monitors", monitorsDeleted, false, err)
 }
 
 func runResourceCleanup(ctx context.Context, now time.Time, store *ResourceStore, logger *slog.Logger, cfg RetentionConfig, pass *retentionPass) {

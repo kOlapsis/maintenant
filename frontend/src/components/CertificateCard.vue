@@ -13,6 +13,7 @@ import CertificateStatusBadge from './CertificateStatusBadge.vue'
 import AgentBadge from './AgentBadge.vue'
 import OCSPStatusBadge from './OCSPStatusBadge.vue'
 import UiButton from './ui/UiButton.vue'
+import LimitChip from './ui/LimitChip.vue'
 
 const props = defineProps<{
   certificate: CertMonitor
@@ -129,8 +130,11 @@ async function handleDelete() {
         >
           {{ certificate.source }}
         </span>
-        <CertificateStatusBadge :status="certificate.status" />
+        <CertificateStatusBadge v-if="!certificate.limited" :status="certificate.status" />
       </div>
+    </div>
+    <div v-if="certificate.limited" class="mt-2">
+      <LimitChip />
     </div>
 
     <!-- Expiry progress bar -->

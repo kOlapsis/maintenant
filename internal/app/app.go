@@ -590,8 +590,9 @@ func (a *App) wireCoreServices() {
 		RawWindow:    a.cfg.Retention.Snapshots,
 	})
 	a.certSvc = certificate.NewService(certificate.Deps{
-		Store:  a.certStore,
-		Logger: a.logger,
+		Store:        a.certStore,
+		Logger:       a.logger,
+		HTTPSTargets: a.monitoredHTTPSTargets,
 	})
 }
 

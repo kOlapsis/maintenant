@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, RouterLinkStub } from '@vue/test-utils'
 import ChannelWizard from '@/components/ChannelWizard.vue'
 
 // The capability table the running edition opens. Telegram is Personal, like
@@ -31,7 +31,7 @@ vi.mock('@/services/alertApi', () => ({
 }))
 
 function mountWizard() {
-  return mount(ChannelWizard, { global: { stubs: { EditionBadge: true, SmtpNotConfigured: true } } })
+  return mount(ChannelWizard, { global: { stubs: { EditionBadge: true, SmtpNotConfigured: true, RouterLink: RouterLinkStub } } })
 }
 
 /** The n-th input of the form, asserted present so the test fails on a missing

@@ -8,6 +8,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 export interface QuotaEntry {
   used: number
   limit: number
+  unmonitored?: number
 }
 
 export type QuotaResource =

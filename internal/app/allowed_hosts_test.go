@@ -188,7 +188,8 @@ func TestStart_WarnsWhenListeningBeyondLoopbackWithoutAllowedHosts(t *testing.T)
 			}, 5*time.Second, 50*time.Millisecond, "the HTTP server must come up")
 			cancel()
 			select {
-			case <-done:
+			case err := <-done:
+				assert.NoError(t, err)
 			case <-time.After(10 * time.Second):
 				t.Fatal("Start did not return")
 			}

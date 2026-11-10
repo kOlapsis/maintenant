@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/certificate"
@@ -31,7 +32,8 @@ func NewCertificateStore(d *DB) *CertificateStore {
 
 const certMonitorColumns = `id, hostname, port, source, endpoint_id, status,
 	check_interval_seconds, warning_thresholds_json, last_alerted_threshold,
-	last_check_at, next_check_at, last_error, created_at, external_id, agent_id, server_name`
+	last_check_at, next_check_at, last_error, created_at, external_id, agent_id, server_name,
+	grandfathered, limited, inactive_since`
 
 // CreateMonitor upserts a cert monitor. Its id is derived deterministically from
 // (agent_id, hostname, port, server_name) so the agent and server mint the same
@@ -65,7 +67,7 @@ func (s *CertificateStore) CreateMonitor(ctx context.Context, m *certificate.Cer
 			source=excluded.source, endpoint_id=excluded.endpoint_id,
 			check_interval_seconds=excluded.check_interval_seconds,
 			warning_thresholds_json=excluded.warning_thresholds_json,
-			external_id=excluded.external_id`,
+			external_id=excluded.external_id, inactive_since=NULL`,
 		m.ID, m.AgentID, m.Hostname, m.Port, m.ServerName, string(m.Source), endpointID, string(m.Status),
 		m.CheckIntervalSeconds, thresholdsJSON,
 		nextCheckAt, now, m.ExternalID,
@@ -118,6 +120,9 @@ func (s *CertificateStore) ListMonitors(ctx context.Context, opts certificate.Li
 	query := `SELECT ` + certMonitorColumns + ` FROM cert_monitors WHERE 1=1`
 	var args []interface{}
 
+	if !opts.IncludeInactive {
+		query += ` AND inactive_since IS NULL`
+	}
 	if opts.Status != "" {
 		query += ` AND status=?`
 		args = append(args, opts.Status)
@@ -155,16 +160,6 @@ func (s *CertificateStore) ListMonitors(ctx context.Context, opts certificate.Li
 		monitors = append(monitors, m)
 	}
 	return monitors, rows.Err()
-}
-
-func (s *CertificateStore) CountStandaloneMonitors(ctx context.Context) (int, error) {
-	var count int
-	err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM cert_monitors WHERE source='standalone'`).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("count standalone cert monitors: %w", err)
-	}
-	return count, nil
 }
 
 func (s *CertificateStore) UpdateMonitor(ctx context.Context, m *certificate.CertMonitor) error {
@@ -335,6 +330,7 @@ func (s *CertificateStore) ListDueScheduledMonitors(ctx context.Context, now tim
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+certMonitorColumns+` FROM cert_monitors
 		WHERE source IN ('standalone','label') AND agent_id=? AND (next_check_at IS NULL OR next_check_at<=?)
+			AND limited = 0 AND inactive_since IS NULL
 		ORDER BY next_check_at`,
 		uid.LocalAgent, now.Unix())
 	if err != nil {
@@ -410,16 +406,18 @@ func (s *CertificateStore) deleteCheckResultsBefore(ctx context.Context, before 
 
 func (s *CertificateStore) scanMonitor(row rowScanner) (*certificate.CertMonitor, error) {
 	var m certificate.CertMonitor
-	var lastAlertedThreshold, lastCheckAt, nextCheckAt sql.NullInt64
+	var lastAlertedThreshold, lastCheckAt, nextCheckAt, inactiveSince sql.NullInt64
 	var endpointID, lastError sql.NullString
 	var thresholdsJSON string
 	var createdAt int64
+	var grandfathered, limited int
 
 	err := row.Scan(
 		&m.ID, &m.Hostname, &m.Port, &m.Source, &endpointID, &m.Status,
 		&m.CheckIntervalSeconds, &thresholdsJSON, &lastAlertedThreshold,
 		&lastCheckAt, &nextCheckAt, &lastError, &createdAt,
 		&m.ExternalID, &m.AgentID, &m.ServerName,
+		&grandfathered, &limited, &inactiveSince,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -429,6 +427,12 @@ func (s *CertificateStore) scanMonitor(row rowScanner) (*certificate.CertMonitor
 	}
 
 	m.CreatedAt = time.Unix(createdAt, 0)
+	m.Grandfathered = grandfathered != 0
+	m.Limited = limited != 0
+	if inactiveSince.Valid {
+		t := time.Unix(inactiveSince.Int64, 0)
+		m.InactiveSince = &t
+	}
 
 	if endpointID.Valid {
 		v := endpointID.String
@@ -546,16 +550,71 @@ func (s *CertificateStore) scanCheckResult(row rowScanner) (*certificate.CertChe
 	return &r, nil
 }
 
-// CountConfigured returns the number of certificate monitors. Operator-created
-// and auto-detected entries are both counted; the table uses hard-delete only,
-// so no soft-delete filter is needed.
-// Used by the telemetry subsystem; see specs/015-shm-telemetry.
+// CountConfigured returns the number of active certificate monitors, operator-created and auto-detected alike.
 func (s *CertificateStore) CountConfigured(ctx context.Context) (int, error) {
 	var count int
 	if err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM cert_monitors`,
+		`SELECT COUNT(*) FROM cert_monitors WHERE inactive_since IS NULL`,
 	).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count configured certificates: %w", err)
 	}
 	return count, nil
+}
+
+// DeactivateMonitor marks a certificate monitor inactive.
+func (s *CertificateStore) DeactivateMonitor(ctx context.Context, id string) error {
+	if _, err := s.writer.Exec(ctx,
+		`UPDATE cert_monitors SET inactive_since=? WHERE id=?`, time.Now().Unix(), id); err != nil {
+		return fmt.Errorf("deactivate cert monitor %s: %w", id, err)
+	}
+	return nil
+}
+
+// SetMonitorLimited marks a certificate monitor as monitored or left out by the edition cap.
+func (s *CertificateStore) SetMonitorLimited(ctx context.Context, id string, limited bool) error {
+	query := `UPDATE cert_monitors SET limited=0 WHERE id=?`
+	if limited {
+		query = `UPDATE cert_monitors SET limited=1, last_alerted_threshold=NULL WHERE id=?`
+	}
+	if _, err := s.writer.Exec(ctx, query, id); err != nil {
+		return fmt.Errorf("set cert monitor %s limited: %w", id, err)
+	}
+	return nil
+}
+
+// CountActiveMonitors counts active certificate monitors of the given sources, every source when none.
+func (s *CertificateStore) CountActiveMonitors(ctx context.Context, sources ...certificate.CertSource) (int, error) {
+	query := `SELECT COUNT(*) FROM cert_monitors WHERE inactive_since IS NULL`
+	args := make([]any, 0, len(sources))
+	if len(sources) > 0 {
+		query += ` AND source IN (?` + strings.Repeat(`, ?`, len(sources)-1) + `)`
+		for _, src := range sources {
+			args = append(args, string(src))
+		}
+	}
+	var count int
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count active cert monitors: %w", err)
+	}
+	return count, nil
+}
+
+// CountLimitedMonitors counts active certificate monitors left out by the edition cap.
+func (s *CertificateStore) CountLimitedMonitors(ctx context.Context) (int, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM cert_monitors WHERE inactive_since IS NULL AND limited=1`).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count limited cert monitors: %w", err)
+	}
+	return count, nil
+}
+
+// DeleteInactiveMonitorsBefore deletes certificate monitors inactive since before.
+func (s *CertificateStore) DeleteInactiveMonitorsBefore(ctx context.Context, before time.Time) (int64, error) {
+	res, err := s.writer.Exec(ctx,
+		`DELETE FROM cert_monitors WHERE inactive_since IS NOT NULL AND inactive_since<?`, before.Unix())
+	if err != nil {
+		return 0, fmt.Errorf("delete inactive cert monitors: %w", err)
+	}
+	return res.RowsAffected, nil
 }

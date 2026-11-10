@@ -121,7 +121,8 @@ func TestSupervisor_MultipleStartStop(t *testing.T) {
 			go func() { done <- a.Start(ctx) }()
 
 			select {
-			case <-done:
+			case err := <-done:
+				assert.NoError(t, err)
 			case <-time.After(5 * time.Second):
 			}
 		}()

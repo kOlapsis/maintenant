@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
-	"github.com/kolapsis/maintenant/internal/event"
 )
 
 // HandleAgentEvent records a TLS certificate scan pushed by a remote agent.
@@ -42,13 +41,11 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		if _, err := s.store.CreateMonitor(ctx, monitor); err != nil {
 			return fmt.Errorf("create agent cert monitor %s:%d: %w", host, port, err)
 		}
-		s.emit(event.CertificateCreated, map[string]interface{}{
-			"monitor_id": monitor.ID,
-			"hostname":   host,
-			"port":       port,
-			"source":     string(SourceLabel),
-			"agent_id":   agentID,
-		})
+		s.applyLimitLogged(ctx)
+		s.emitCreated(ctx, monitor, map[string]interface{}{"source": string(SourceLabel), "agent_id": agentID})
+	}
+	if monitor.Limited {
+		return nil
 	}
 
 	s.processCheckResult(ctx, monitor, agentCertToRaw(ev), true)

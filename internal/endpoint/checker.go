@@ -35,10 +35,12 @@ func NewCheckEngine(callback CheckResultCallback, logger *slog.Logger) *CheckEng
 	}
 }
 
-// AddEndpoint starts a check goroutine for the given endpoint.
-// If a goroutine already exists for this endpoint, it is stopped first.
+// AddEndpoint starts a check goroutine for the given endpoint, replacing a running one, unless the endpoint is limited.
 func (e *CheckEngine) AddEndpoint(ctx context.Context, ep *Endpoint) {
 	e.RemoveEndpoint(ep.ID)
+	if ep.Limited {
+		return
+	}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	runner := &endpointRunner{

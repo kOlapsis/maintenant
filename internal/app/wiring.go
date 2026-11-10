@@ -215,6 +215,9 @@ func (a *App) wireEndpointEvents(alertDetector *alert.EndpointAlertDetector) {
 		if m, ok := data.(map[string]any); ok && eventType == event.EndpointStatusChanged {
 			a.statusSvc.NotifyMonitorChanged(ctx, "endpoint", toString(m["endpoint_id"]))
 		}
+		if eventType == event.EndpointDiscovered || eventType == event.EndpointLimitChanged {
+			a.applyCertLimit(ctx)
+		}
 	})
 
 	a.endpointSvc.SetAlertCallback(func(ep *endpoint.Endpoint, result endpoint.CheckResult) (string, any) {
@@ -238,7 +241,29 @@ func (a *App) wireEndpointEvents(alertDetector *alert.EndpointAlertDetector) {
 		if err := a.statusCompStore.RemoveDanglingMonitorRefs(callCtx, "endpoint", endpointID); err != nil {
 			a.logger.Error("failed to remove dangling endpoint refs from status components", "endpoint_id", endpointID, "error", err)
 		}
+		a.applyCertLimit(callCtx)
 	})
+}
+
+// monitoredHTTPSTargets lists the targets of the monitored HTTPS endpoints, whose certificates the cap does not count.
+func (a *App) monitoredHTTPSTargets(ctx context.Context) ([]string, error) {
+	eps, err := a.endpointSvc.ListEndpoints(ctx, endpoint.ListEndpointsOpts{EndpointType: string(endpoint.TypeHTTP)})
+	if err != nil {
+		return nil, err
+	}
+	var targets []string
+	for _, ep := range eps {
+		if !ep.Limited && certificate.IsHTTPS(ep.Target) {
+			targets = append(targets, ep.Target)
+		}
+	}
+	return targets, nil
+}
+
+func (a *App) applyCertLimit(ctx context.Context) {
+	if err := a.certSvc.ApplyLimit(ctx); err != nil {
+		a.logger.Error("certificate: apply limit after an endpoint change", "error", err)
+	}
 }
 
 // endpointTrustEvent raises or clears the certificate_untrusted alert of a check, false when the check does neither.
@@ -386,7 +411,7 @@ func (a *App) wireCertificateEvents() {
 			a.statusSvc.NotifyMonitorChanged(ctx, "certificate", toString(m["monitor_id"]))
 		}
 
-		if eventType == event.CertificateDeleted {
+		if eventType == event.CertificateDeleted || (eventType == event.CertificateLimitChanged && m["limited"] == true) {
 			certID := toString(m["monitor_id"])
 			a.alertEngine.ResolveByEntity(ctx, "certificate", certID)
 			if err := a.statusCompStore.RemoveDanglingMonitorRefs(ctx, "certificate", certID); err != nil {
@@ -864,8 +889,8 @@ func toString(v any) string {
 	return fmt.Sprintf("%v", v)
 }
 
-// wireLicenseSubscriber propagates edition transitions to the escalation
-// service. Must be called before licenseMgr.Start so the initial transition is
+// wireLicenseSubscriber reapplies the endpoint and certificate caps and
+// propagates edition transitions to the escalation service. Must be called before licenseMgr.Start so the initial transition is
 // never missed.
 //
 // It compares access to alert_escalation before and after rather than the
@@ -874,12 +899,21 @@ func toString(v any) string {
 // itself) and only crossing the Pro boundary flips it. Reasoning in capability
 // terms means the matrix never has to be enumerated here.
 func (a *App) wireLicenseSubscriber(_ context.Context) {
-	if a.licenseMgr == nil || a.escalationSvc == nil {
+	if a.licenseMgr == nil {
 		return
 	}
 	required := extension.MinEdition(extension.CapAlertEscalation)
 
 	a.licenseMgr.RegisterEditionChangeCallback(func(ctx context.Context, prev, next extension.Edition) {
+		if err := a.endpointSvc.ApplyLimit(ctx); err != nil {
+			a.logger.ErrorContext(ctx, "endpoint: apply limit on edition change failed", "error", err, "from", prev, "to", next)
+		}
+		if err := a.certSvc.ApplyLimit(ctx); err != nil {
+			a.logger.ErrorContext(ctx, "certificate: apply limit on edition change failed", "error", err, "from", prev, "to", next)
+		}
+		if a.escalationSvc == nil {
+			return
+		}
 		was, now := prev.AtLeast(required), next.AtLeast(required)
 		switch {
 		case was && !now:

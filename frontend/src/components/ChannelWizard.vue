@@ -5,6 +5,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { RouterLink } from 'vue-router'
 import { createChannel, testChannel } from '@/services/alertApi'
 import { useEdition } from '@/composables/useEdition'
 import SmtpNotConfigured from '@/components/SmtpNotConfigured.vue'
@@ -16,6 +17,8 @@ import CheckboxInput from '@/components/ui/CheckboxInput.vue'
 import OptionCards from '@/components/ui/OptionCards.vue'
 
 const { hasFeature, editionPermits, requiredEditionFor } = useEdition()
+
+const editionLabel = (e: string) => e.charAt(0).toUpperCase() + e.slice(1)
 
 const emit = defineEmits<{
   created: [id: string]
@@ -305,6 +308,16 @@ function goBack() {
             <span class="text-sm font-medium" style="color: var(--mnt-text-primary)">{{ option.label }}</span>
             <span class="text-[11px]" style="color: var(--mnt-text-muted)">{{ option.description }}</span>
           </template>
+        </template>
+        <template #footer="{ option }">
+          <RouterLink
+            v-if="option.disabled && requiredEditionFor(gatedChannelTypes.find((t) => t.key === option.value)!.feature)"
+            :to="{ name: 'editions' }"
+            class="text-center text-xs font-medium underline transition-opacity hover:opacity-80"
+            style="color: var(--mnt-accent)"
+          >
+            Available from {{ editionLabel(requiredEditionFor(gatedChannelTypes.find((t) => t.key === option.value)!.feature)!) }}
+          </RouterLink>
         </template>
       </OptionCards>
 

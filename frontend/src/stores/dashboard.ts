@@ -59,6 +59,7 @@ function containerStatus(c: Container): { status: UnifiedStatus; label: string }
 }
 
 function endpointStatus(e: Endpoint): { status: UnifiedStatus; label: string } {
+  if (e.limited) return { status: 'unknown', label: 'Not monitored' }
   if (e.stale) return { status: 'unknown', label: e.agent_offline ? 'Agent offline' : 'Not checked recently' }
   if (e.status === 'up') return { status: 'ok', label: 'Up' }
   if (e.status === 'down') return { status: 'down', label: 'Down' }
@@ -76,6 +77,7 @@ function heartbeatStatus(h: Heartbeat): { status: UnifiedStatus; label: string }
 }
 
 function certStatus(c: CertMonitor): { status: UnifiedStatus; label: string } {
+  if (c.limited) return { status: 'unknown', label: 'Not monitored' }
   const days = c.latest_check?.days_remaining
   if (days != null) {
     if (days < 3) return { status: 'down', label: `${days}d left` }

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { createApp, defineComponent, nextTick, reactive, ref } from 'vue'
+import { computed, createApp, defineComponent, nextTick, reactive, ref } from 'vue'
 import { tierFromCount, useEditionBanner, type EditionBannerHandle } from '@/composables/useEditionBanner'
 import { useContainersStore as _useContainersStore } from '@/stores/containers'
 import { useEdition as _useEdition } from '@/composables/useEdition'
@@ -12,14 +12,19 @@ const mockedUseEdition = vi.mocked(_useEdition)
 
 type ContainerMock = { containerCount: number; groups: unknown[] }
 
+type Unmonitored = { endpoints: number; certificates: number }
+
 function mountEditionBanner(
   store: ContainerMock,
   isCommunity = ref(true),
+  unmonitored: Unmonitored = reactive({ endpoints: 0, certificates: 0 }),
 ): { handle: EditionBannerHandle; unmount: () => void } {
   mockedUseContainersStore.mockReturnValue(store as ReturnType<typeof _useContainersStore>)
-  mockedUseEdition.mockReturnValue(
-    { isCommunity } as ReturnType<typeof _useEdition>,
-  )
+  mockedUseEdition.mockReturnValue({
+    isCommunity,
+    getQuota: (resource: 'endpoints' | 'certificates') =>
+      computed(() => ({ unmonitored: unmonitored[resource] })),
+  } as unknown as ReturnType<typeof _useEdition>)
 
   let handle!: EditionBannerHandle
   const app = createApp(
@@ -252,6 +257,21 @@ describe('useEditionBanner — tier-keyed dismissal & cooldown', () => {
     unmount()
   })
 
+  it('FR-016 cooldown is 7 days: hidden after 6 days, shown after 8', async () => {
+    const DAY = 24 * 60 * 60 * 1000
+    localStorage.setItem('mnt:banner:edition-tier-1', String(Date.now() - 6 * DAY))
+    const first = mountEditionBanner({ containerCount: 15, groups: groups(15) })
+    await nextTick()
+    expect(first.handle.visible.value).toBe(false)
+    first.unmount()
+
+    localStorage.setItem('mnt:banner:edition-tier-1', String(Date.now() - 8 * DAY))
+    const second = mountEditionBanner({ containerCount: 15, groups: groups(15) })
+    await nextTick()
+    expect(second.handle.visible.value).toBe(true)
+    second.unmount()
+  })
+
   it('FR-011 cooldown expired — banner shown after 31 days', async () => {
     localStorage.setItem('mnt:banner:edition-tier-1', String(Date.now() - 31 * 24 * 60 * 60 * 1000))
     const { handle, unmount } = mountEditionBanner({ containerCount: 15, groups: groups(15) })
@@ -368,4 +388,103 @@ describe('useEditionBanner — license gate', () => {
     vi.useRealTimers()
   })
 
+})
+
+describe('useEditionBanner limit state', () => {
+  const DAY = 24 * 60 * 60 * 1000
+
+  beforeEach(() => {
+    localStorage.clear()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-15T12:00:00Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('exposes the counts and shows whatever the container count', async () => {
+    for (const n of [0, 5, 60]) {
+      const { handle, unmount } = mountEditionBanner(
+        { containerCount: n, groups: n === 0 ? [] : groups(n) },
+        ref(true),
+        { endpoints: 3, certificates: 0 },
+      )
+      await nextTick()
+      expect(handle.unmonitoredEndpoints.value).toBe(3)
+      expect(handle.unmonitoredCertificates.value).toBe(0)
+      expect(handle.limitVisible.value).toBe(true)
+      unmount()
+    }
+  })
+
+  it('stays hidden with nothing left out, and on a paid edition', async () => {
+    const none = mountEditionBanner({ containerCount: 30, groups: groups(30) })
+    await nextTick()
+    expect(none.handle.limitVisible.value).toBe(false)
+    none.unmount()
+
+    const paid = mountEditionBanner({ containerCount: 30, groups: groups(30) }, ref(false), {
+      endpoints: 2,
+      certificates: 1,
+    })
+    await nextTick()
+    expect(paid.handle.limitVisible.value).toBe(false)
+    paid.unmount()
+  })
+
+  it('follows the counts as they change', async () => {
+    const left = reactive({ endpoints: 0, certificates: 0 })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 0, groups: [] }, ref(true), left)
+    await nextTick()
+    expect(handle.limitVisible.value).toBe(false)
+    left.certificates = 1
+    await nextTick()
+    expect(handle.limitVisible.value).toBe(true)
+    unmount()
+  })
+
+  it('dismissal hides the whole banner for 7 days, the container message included', async () => {
+    const { handle, unmount } = mountEditionBanner(
+      { containerCount: 30, groups: groups(30) },
+      ref(true),
+      { endpoints: 1, certificates: 0 },
+    )
+    await nextTick()
+    handle.dismissLimit()
+    expect(localStorage.getItem('mnt:banner:edition-limit')).toBe(String(Date.now()))
+    expect(handle.limitVisible.value).toBe(false)
+    expect(handle.visible.value).toBe(false)
+    unmount()
+
+    vi.setSystemTime(Date.now() + 6 * DAY)
+    const early = mountEditionBanner({ containerCount: 30, groups: groups(30) }, ref(true), {
+      endpoints: 0,
+      certificates: 0,
+    })
+    expect(early.handle.limitVisible.value).toBe(false)
+    expect(early.handle.visible.value).toBe(false)
+    early.unmount()
+
+    vi.setSystemTime(Date.now() + 2 * DAY)
+    const late = mountEditionBanner({ containerCount: 30, groups: groups(30) }, ref(true), {
+      endpoints: 1,
+      certificates: 0,
+    })
+    expect(late.handle.limitVisible.value).toBe(true)
+    late.unmount()
+  })
+
+  it('dismissing the container banner does not hide it', async () => {
+    const { handle, unmount } = mountEditionBanner(
+      { containerCount: 30, groups: groups(30) },
+      ref(true),
+      { endpoints: 1, certificates: 0 },
+    )
+    await nextTick()
+    handle.dismiss()
+    expect(handle.visible.value).toBe(false)
+    expect(handle.limitVisible.value).toBe(true)
+    unmount()
+  })
 })

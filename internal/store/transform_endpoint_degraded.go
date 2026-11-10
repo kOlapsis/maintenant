@@ -52,17 +52,19 @@ func rebuildEndpointsForDegraded(ctx context.Context, db *sql.DB, logger *slog.L
     last_seen_at    BIGINT NOT NULL,
     source          TEXT NOT NULL DEFAULT 'label' CHECK(source IN ('label','standalone')),
     name            TEXT NOT NULL DEFAULT '',
+    grandfathered   INTEGER NOT NULL DEFAULT 0,
+    limited         INTEGER NOT NULL DEFAULT 0,
     UNIQUE(agent_id, container_name, label_key)
 )`},
 			{"copy rows", `INSERT INTO endpoints_new
 				(id, agent_id, container_name, label_key, external_id, endpoint_type, target,
 				 status, alert_state, consecutive_failures, consecutive_successes, last_check_at,
 				 last_response_time_ms, last_http_status, last_error, config_json, active,
-				 first_seen_at, last_seen_at, source, name)
+				 first_seen_at, last_seen_at, source, name, grandfathered, limited)
 				SELECT id, agent_id, container_name, label_key, external_id, endpoint_type, target,
 				 status, alert_state, consecutive_failures, consecutive_successes, last_check_at,
 				 last_response_time_ms, last_http_status, last_error, config_json, active,
-				 first_seen_at, last_seen_at, source, name
+				 first_seen_at, last_seen_at, source, name, grandfathered, limited
 				FROM endpoints`},
 			{"drop old table", `DROP TABLE endpoints`},
 			{"rename", `ALTER TABLE endpoints_new RENAME TO endpoints`},

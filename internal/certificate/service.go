@@ -29,6 +29,7 @@ var (
 	ErrInvalidInput        = errors.New("invalid input")
 	ErrCannotDeleteAuto    = errors.New("cannot delete auto-detected certificate monitors")
 	ErrLimitReached        = errors.New("certificate monitor limit reached")
+	ErrLimited             = errors.New("certificate monitor is not monitored: Community limit")
 	// ErrAgentScanned rejects an on-demand check for a monitor the server never
 	// dials itself: it lives on an agent's network, and that agent scans it.
 	ErrAgentScanned = errors.New("certificate is scanned by a remote agent")
@@ -36,18 +37,6 @@ var (
 	// so a stuck button cannot turn the server into a load generator.
 	ErrCheckInProgress = errors.New("a check is already running for this monitor")
 )
-
-// LicenseChecker determines license-gated capabilities for certificate monitors.
-type LicenseChecker interface {
-	CanCreateCertificate(currentCount int) bool
-}
-
-// DefaultLicenseChecker caps certificate monitors at the running edition's limit, read at every call.
-type DefaultLicenseChecker struct{}
-
-func (DefaultLicenseChecker) CanCreateCertificate(currentCount int) bool {
-	return extension.WithinLimit(extension.ResourceCertificates, currentCount)
-}
 
 // checkTimeout bounds a single TLS dial, scheduled or on demand.
 const checkTimeout = 10 * time.Second
@@ -57,19 +46,23 @@ type EventCallback func(eventType string, data interface{})
 
 // Deps holds all dependencies for the certificate Service.
 type Deps struct {
-	Store          CertificateStore // required
-	Logger         *slog.Logger     // required
-	LicenseChecker LicenseChecker   // optional, defaults to DefaultLicenseChecker
-	EventCallback  EventCallback    // optional — nil-safe
+	Store         CertificateStore // required
+	Logger        *slog.Logger     // required
+	EventCallback EventCallback    // optional — nil-safe
+	HTTPSTargets  HTTPSTargets     // optional — nil means no certificate is covered by an endpoint
 }
+
+// HTTPSTargets returns the target URLs of the HTTPS endpoints currently monitored.
+type HTTPSTargets func(ctx context.Context) ([]string, error)
 
 // Service orchestrates certificate monitoring.
 type Service struct {
-	store          CertificateStore
-	logger         *slog.Logger
-	licenseChecker LicenseChecker
-	onEvent        EventCallback
-	mu             sync.Mutex
+	store   CertificateStore
+	logger  *slog.Logger
+	onEvent EventCallback
+	targets HTTPSTargets
+	mu      sync.Mutex
+	limitMu sync.Mutex
 
 	// manualChecks holds the monitor ids with an on-demand check in flight.
 	manualChecks sync.Map
@@ -83,15 +76,11 @@ func NewService(d Deps) *Service {
 	if d.Logger == nil {
 		panic("certificate.NewService: Logger is required")
 	}
-	lc := d.LicenseChecker
-	if lc == nil {
-		lc = DefaultLicenseChecker{}
-	}
 	return &Service{
-		store:          d.Store,
-		logger:         d.Logger,
-		licenseChecker: lc,
-		onEvent:        d.EventCallback,
+		store:   d.Store,
+		logger:  d.Logger,
+		onEvent: d.EventCallback,
+		targets: d.HTTPSTargets,
 	}
 }
 
@@ -167,6 +156,7 @@ func (s *Service) EnsureAutoDetected(ctx context.Context, endpointID string, tar
 		"hostname":   monitor.Hostname,
 		"port":       monitor.Port,
 		"source":     "auto",
+		"limited":    false,
 	})
 
 	return monitor, nil
@@ -224,12 +214,6 @@ func (s *Service) CreateStandalone(ctx context.Context, input CreateCertificateI
 		return nil, nil, fmt.Errorf("%w: server_name must be a bare hostname (no port, scheme or path)", ErrInvalidInput)
 	}
 
-	// Check quota for standalone monitors
-	count, err := s.store.CountStandaloneMonitors(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("count standalone monitors: %w", err)
-	}
-
 	// Check for existing monitor (FR-018)
 	existing, err := s.store.GetMonitorByHostPort(ctx, input.Hostname, input.Port, input.ServerName)
 	if err != nil {
@@ -252,20 +236,25 @@ func (s *Service) CreateStandalone(ctx context.Context, input CreateCertificateI
 		return nil, nil, ErrDuplicateMonitor
 	}
 
-	if !s.licenseChecker.CanCreateCertificate(count) {
+	fits, err := s.newMonitorFits(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !fits {
 		return nil, nil, ErrLimitReached
 	}
 	if _, err := s.store.CreateMonitor(ctx, monitor); err != nil {
 		return nil, nil, fmt.Errorf("create standalone monitor: %w", err)
 	}
+	s.applyLimitLogged(ctx)
 
-	s.emit(event.CertificateCreated, map[string]interface{}{
-		"monitor_id":  monitor.ID,
-		"hostname":    monitor.Hostname,
-		"port":        monitor.Port,
+	s.emitCreated(ctx, monitor, map[string]interface{}{
 		"server_name": monitor.ServerName,
 		"source":      "standalone",
 	})
+	if monitor.Limited {
+		return monitor, nil, nil
+	}
 
 	// Run first check immediately
 	checkResult := CheckCertificate(monitor.Hostname, monitor.Port, monitor.ServerName, 10*time.Second)
@@ -323,6 +312,7 @@ func (s *Service) DeleteMonitor(ctx context.Context, id string) error {
 		"monitor_id": id,
 		"hostname":   monitor.Hostname,
 	})
+	s.applyLimitLogged(ctx)
 
 	return nil
 }
@@ -352,10 +342,12 @@ func (s *Service) SyncFromLabels(ctx context.Context, containerExternalID string
 	parsed := ParseCertificateLabels(labels)
 	if len(parsed) == 0 {
 		s.deleteLabelMonitors(ctx, containerExternalID, nil)
+		s.applyLimitLogged(ctx)
 		return
 	}
 
 	desired := make(map[string]bool)
+	var created []*CertMonitor
 	for _, p := range parsed {
 		key := p.Hostname + ":" + strconv.Itoa(p.Port)
 		desired[key] = true
@@ -366,7 +358,17 @@ func (s *Service) SyncFromLabels(ctx context.Context, containerExternalID string
 			continue
 		}
 		if existing != nil {
-			s.logger.Debug("certificate: label monitor exists, skipping", "hostname", p.Hostname, "port", p.Port)
+			if !readoptable(existing, containerExternalID) {
+				s.logger.Debug("certificate: label monitor exists, skipping", "hostname", p.Hostname, "port", p.Port)
+				continue
+			}
+			existing.ExternalID = containerExternalID
+			if _, err := s.store.CreateMonitor(ctx, existing); err != nil {
+				s.logger.Error("readopt label cert monitor", "error", err, "hostname", p.Hostname, "port", p.Port)
+				continue
+			}
+			s.logger.Info("readopted label-discovered cert monitor", "hostname", p.Hostname, "port", p.Port, "container", containerExternalID)
+			created = append(created, existing)
 			continue
 		}
 
@@ -385,20 +387,42 @@ func (s *Service) SyncFromLabels(ctx context.Context, containerExternalID string
 		}
 
 		s.logger.Info("created label-discovered cert monitor", "hostname", p.Hostname, "port", p.Port, "container", containerExternalID)
-		s.emit(event.CertificateCreated, map[string]interface{}{
-			"monitor_id": monitor.ID,
-			"hostname":   monitor.Hostname,
-			"port":       monitor.Port,
-			"source":     "label",
-		})
+		created = append(created, monitor)
 	}
 
 	s.deleteLabelMonitors(ctx, containerExternalID, desired)
+	s.applyLimitLogged(ctx)
+	for _, m := range created {
+		s.emitCreated(ctx, m, map[string]interface{}{"source": "label"})
+	}
 }
 
-// HandleContainerDestroy removes all label-discovered monitors for a destroyed container.
+func readoptable(m *CertMonitor, externalID string) bool {
+	return m.Source == SourceLabel && m.AgentID == uid.LocalAgent && (m.InactiveSince != nil || m.ExternalID != externalID)
+}
+
+// HandleContainerDestroy deactivates the label-discovered monitors of a destroyed container.
 func (s *Service) HandleContainerDestroy(ctx context.Context, externalID string) {
-	s.deleteLabelMonitors(ctx, externalID, nil)
+	monitors, err := s.store.ListMonitorsByExternalID(ctx, uid.LocalAgent, externalID)
+	if err != nil {
+		s.logger.Error("list label monitors for container", "error", err, "external_id", externalID)
+		return
+	}
+	for _, m := range monitors {
+		if m.InactiveSince != nil {
+			continue
+		}
+		if err := s.store.DeactivateMonitor(ctx, m.ID); err != nil {
+			s.logger.Error("deactivate label cert monitor", "error", err, "monitor_id", m.ID)
+			continue
+		}
+		s.logger.Info("deactivated label cert monitor", "hostname", m.Hostname, "port", m.Port, "container", externalID)
+		s.emit(event.CertificateDeleted, map[string]interface{}{
+			"monitor_id": m.ID,
+			"hostname":   m.Hostname,
+		})
+	}
+	s.applyLimitLogged(ctx)
 }
 
 func (s *Service) deleteLabelMonitors(ctx context.Context, externalID string, keep map[string]bool) {
@@ -438,10 +462,12 @@ func (s *Service) SyncAgentCerts(ctx context.Context, agentID, containerExternal
 	parsed := ParseCertificateLabels(labels)
 	if len(parsed) == 0 {
 		s.deleteAgentLabelMonitors(ctx, agentID, containerExternalID, nil)
+		s.applyLimitLogged(ctx)
 		return
 	}
 
 	desired := make(map[string]bool)
+	var created []*CertMonitor
 	for _, p := range parsed {
 		desired[p.Hostname+":"+strconv.Itoa(p.Port)] = true
 
@@ -468,16 +494,14 @@ func (s *Service) SyncAgentCerts(ctx context.Context, agentID, containerExternal
 			s.logger.Error("create agent cert monitor", "error", err, "hostname", p.Hostname, "port", p.Port)
 			continue
 		}
-		s.emit(event.CertificateCreated, map[string]interface{}{
-			"monitor_id": monitor.ID,
-			"hostname":   monitor.Hostname,
-			"port":       monitor.Port,
-			"source":     string(SourceLabel),
-			"agent_id":   agentID,
-		})
+		created = append(created, monitor)
 	}
 
 	s.deleteAgentLabelMonitors(ctx, agentID, containerExternalID, desired)
+	s.applyLimitLogged(ctx)
+	for _, m := range created {
+		s.emitCreated(ctx, m, map[string]interface{}{"source": string(SourceLabel), "agent_id": agentID})
+	}
 }
 
 // deleteAgentLabelMonitors removes this agent's label monitors for a container
@@ -510,9 +534,18 @@ func (s *Service) ListMonitors(ctx context.Context, opts ListCertificatesOpts) (
 	return s.store.ListMonitors(ctx, opts)
 }
 
-// CountStandaloneMonitors returns the count of standalone (manually-added) certificate monitors.
-func (s *Service) CountStandaloneMonitors(ctx context.Context) (int, error) {
-	return s.store.CountStandaloneMonitors(ctx)
+// LimitUsage returns how many active capped monitors are monitored and how many the edition cap leaves out.
+func (s *Service) LimitUsage(ctx context.Context) (monitored, limited int, err error) {
+	cands, capped, err := s.limitCandidates(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, m := range capped {
+		if m.Limited {
+			limited++
+		}
+	}
+	return len(cands) - limited, limited, nil
 }
 
 // GetMonitor returns a certificate monitor by ID.
@@ -556,6 +589,7 @@ func (s *Service) Start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			s.applyLimitLogged(ctx)
 			s.runScheduledChecks(ctx)
 		}
 	}
@@ -609,6 +643,9 @@ func (s *Service) CheckNow(ctx context.Context, monitorID string) (*CertMonitor,
 	}
 	if monitor.AgentID != uid.LocalAgent {
 		return nil, ErrAgentScanned
+	}
+	if monitor.Limited {
+		return nil, ErrLimited
 	}
 
 	if _, running := s.manualChecks.LoadOrStore(monitorID, struct{}{}); running {
@@ -1023,4 +1060,112 @@ func extractHostPort(targetURL string) (string, int, error) {
 // IsHTTPS isHTTPS checks if a target URL uses the HTTPS scheme.
 func IsHTTPS(target string) bool {
 	return strings.HasPrefix(target, "https://")
+}
+
+// ApplyLimit gives monitoring slots to certificate monitors under the running edition's cap.
+func (s *Service) ApplyLimit(ctx context.Context) error {
+	s.limitMu.Lock()
+	defer s.limitMu.Unlock()
+
+	cands, capped, err := s.limitCandidates(ctx)
+	if err != nil {
+		return err
+	}
+	limited := extension.Allocate(cands, extension.Limit(extension.ResourceCertificates))
+	for _, m := range capped {
+		want := limited[m.ID]
+		if m.Limited == want {
+			continue
+		}
+		if err := s.store.SetMonitorLimited(ctx, m.ID, want); err != nil {
+			return err
+		}
+		s.logger.Info("certificate: limit changed", "monitor_id", m.ID, "hostname", m.Hostname, "port", m.Port, "limited", want)
+		s.emit(event.CertificateLimitChanged, map[string]interface{}{
+			"monitor_id": m.ID,
+			"limited":    want,
+		})
+	}
+	return nil
+}
+
+func (s *Service) applyLimitLogged(ctx context.Context) {
+	if err := s.ApplyLimit(ctx); err != nil {
+		s.logger.Error("certificate: apply limit", "error", err)
+	}
+}
+
+func (s *Service) newMonitorFits(ctx context.Context) (bool, error) {
+	limit := extension.Limit(extension.ResourceCertificates)
+	if limit == extension.Unlimited {
+		return true, nil
+	}
+	cands, _, err := s.limitCandidates(ctx)
+	if err != nil {
+		return false, err
+	}
+	return len(cands) < limit, nil
+}
+
+// limitCandidates returns the monitors that count against the cap, and every active manual or label monitor.
+func (s *Service) limitCandidates(ctx context.Context) ([]extension.LimitCandidate, []*CertMonitor, error) {
+	monitors, err := s.store.ListMonitors(ctx, ListCertificatesOpts{IncludeInactive: true})
+	if err != nil {
+		return nil, nil, fmt.Errorf("list cert monitors: %w", err)
+	}
+	covered, err := s.coveredHostPorts(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	var capped []*CertMonitor
+	cands := make([]extension.LimitCandidate, 0, len(monitors))
+	for _, m := range monitors {
+		if m.Source == SourceAuto || m.InactiveSince != nil {
+			continue
+		}
+		capped = append(capped, m)
+		if m.ServerName == "" && covered[hostPortKey(m.Hostname, m.Port)] {
+			continue
+		}
+		cands = append(cands, extension.LimitCandidate{
+			ID:            m.ID,
+			Grandfathered: m.Grandfathered,
+			Since:         m.CreatedAt,
+			Key:           m.Hostname + "\x00" + strconv.Itoa(m.Port) + "\x00" + m.ServerName,
+		})
+	}
+	return cands, capped, nil
+}
+
+// coveredHostPorts returns the host:port pairs of the monitored HTTPS endpoints, whose certificate is free like an auto-detected one.
+func (s *Service) coveredHostPorts(ctx context.Context) (map[string]bool, error) {
+	if s.targets == nil {
+		return nil, nil
+	}
+	targets, err := s.targets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list monitored https endpoints: %w", err)
+	}
+	covered := make(map[string]bool, len(targets))
+	for _, t := range targets {
+		if host, port, err := extractHostPort(t); err == nil {
+			covered[hostPortKey(host, port)] = true
+		}
+	}
+	return covered, nil
+}
+
+func hostPortKey(host string, port int) string {
+	return host + "\x00" + strconv.Itoa(port)
+}
+
+func (s *Service) emitCreated(ctx context.Context, m *CertMonitor, data map[string]interface{}) {
+	if cur, err := s.store.GetMonitorByID(ctx, m.ID); err == nil && cur != nil {
+		m.Limited = cur.Limited
+	}
+	data["monitor_id"] = m.ID
+	data["hostname"] = m.Hostname
+	data["port"] = m.Port
+	data["limited"] = m.Limited
+	s.emit(event.CertificateCreated, data)
 }

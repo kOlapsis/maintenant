@@ -71,6 +71,9 @@ const {
   tierLimit,
 } = useEdition()
 const personalHostLimit = computed(() => tierLimit('personal', 'agent_hosts'))
+const personalMachines = computed(() =>
+  personalHostLimit.value === null ? 'more machines' : `${personalHostLimit.value} machines`,
+)
 const swarmStore = useSwarmStore()
 const runtimeStore = useRuntimeStore()
 const storageStore = useStorageStore()
@@ -112,6 +115,19 @@ const licenseMessageParts = computed(() => {
 })
 
 const editionBanner = useEditionBanner()
+
+function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`
+}
+
+const leftOutMessage = computed(() => {
+  const parts = [
+    editionBanner.unmonitoredEndpoints.value > 0 ? plural(editionBanner.unmonitoredEndpoints.value, 'endpoint') : '',
+    editionBanner.unmonitoredCertificates.value > 0 ? plural(editionBanner.unmonitoredCertificates.value, 'certificate') : '',
+  ].filter(Boolean)
+  const single = editionBanner.unmonitoredEndpoints.value + editionBanner.unmonitoredCertificates.value === 1
+  return `${parts.join(' and ')} ${single ? 'is' : 'are'} not monitored: Community limit. Pro and Personal monitor ${single ? 'it' : 'them all'}.`
+})
 
 const mobileMenuOpen = ref(false)
 
@@ -359,31 +375,44 @@ watch(
           </RouterLink>
         </template>
       </AlertBanner>
+      <AlertBanner
+        v-if="editionBanner.limitVisible.value"
+        severity="info"
+        label="EDITIONS"
+        dismissible
+        class="shrink-0"
+        @dismiss="editionBanner.dismissLimit()"
+      >
+        {{ leftOutMessage }}
+        <template #action>
+          <RouterLink
+            to="/editions"
+            class="license-action license-action--info inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-semibold transition-colors"
+          >
+            Compare editions →
+          </RouterLink>
+        </template>
+      </AlertBanner>
       <!-- Upsell banner: Community only, segmented by container count -->
       <AlertBanner
-        v-if="editionBanner.visible.value"
+        v-else-if="editionBanner.visible.value"
         severity="info"
         label="EDITIONS"
         dismissible
         class="shrink-0"
         @dismiss="editionBanner.dismiss()"
       >
-        <!-- Tier 1 leads with Personal: at this size it is most likely a homelab,
-             and Personal is what removes the friction they just hit. -->
         <template v-if="editionBanner.tier.value === 1">
-          Hitting the Community limits? Personal lifts them all<template v-if="personalHostLimit !== null">
-            and monitors up to {{ personalHostLimit }} machines</template>, for €149 once, for life.
+          Pro adds team alerting at €29/mo. Personal monitors {{ personalMachines }} for €149 once, for life.
         </template>
-        <!-- Tier 2 names both: the size no longer tells you which one fits. -->
         <template v-else-if="editionBanner.tier.value === 2">
-          You're monitoring {{ editionBanner.count.value }} containers. Personal removes every limit
-          for €149 once. Pro adds the team layer (Slack, escalation, subscribers) at €29/mo.
+          You're monitoring {{ editionBanner.count.value }} containers. Pro adds team alerting at €29/mo,
+          Personal {{ personalMachines }} for €149 once.
         </template>
         <!-- Tier 3 stays Pro-only: at this scale it is a team, or someone
              else's infrastructure, which Personal does not cover. -->
         <template v-else-if="editionBanner.tier.value === 3">
-          Running 50+ containers in production. Pro adds incident management, alert escalation and
-          Slack routing. Want to discuss your setup with the founder?
+          50+ containers in production? Pro adds escalation, incidents and Slack routing. Talk to the founder?
         </template>
         <template #action>
           <template v-if="editionBanner.tier.value === 1 || editionBanner.tier.value === 2">

@@ -20,7 +20,7 @@ const props = defineProps<{
 }>()
 
 const resourcesStore = useResourcesStore()
-const { historyWindows, isWindowOpen, requiredEditionForWindow, largestOpenWindow, reload } =
+const { historyWindows, isWindowOpen, requiredEditionForWindow, largestOpenWindow, reload, isCommunity, maxHistoryWindow } =
   useEdition()
 const selectedRange = ref('1h')
 const loading = ref(false)
@@ -231,11 +231,14 @@ onMounted(() => fetchHistory())
         :style="{ color: 'var(--mnt-text-muted)' }"
       >
         <Lock class="h-3 w-3" />
-        <span>{{ firstClosedWindow.window }} and beyond</span>
-        <EditionBadge
-          v-if="requiredEditionForWindow(firstClosedWindow.window)"
-          :edition="requiredEditionForWindow(firstClosedWindow.window)!"
-        />
+        <span v-if="isCommunity">Community keeps {{ maxHistoryWindow }} of history. Pro and Personal go further.</span>
+        <template v-else>
+          <span>{{ firstClosedWindow.window }} and beyond</span>
+          <EditionBadge
+            v-if="requiredEditionForWindow(firstClosedWindow.window)"
+            :edition="requiredEditionForWindow(firstClosedWindow.window)!"
+          />
+        </template>
       </router-link>
     </div>
 

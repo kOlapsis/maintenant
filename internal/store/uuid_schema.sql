@@ -208,6 +208,8 @@ CREATE TABLE endpoints (
     last_seen_at    BIGINT NOT NULL,
     source          TEXT NOT NULL DEFAULT 'label' CHECK(source IN ('label','standalone')),
     name            TEXT NOT NULL DEFAULT '',
+    grandfathered   INTEGER NOT NULL DEFAULT 0,
+    limited         INTEGER NOT NULL DEFAULT 0,
     UNIQUE(agent_id, container_name, label_key)
 );
 CREATE INDEX idx_endpoint_external_id ON endpoints(external_id);
@@ -255,6 +257,9 @@ CREATE TABLE cert_monitors (
     created_at      BIGINT NOT NULL,
     external_id     TEXT NOT NULL DEFAULT '',
     server_name     TEXT NOT NULL DEFAULT '',               -- SNI; '' = validate against hostname
+    grandfathered   INTEGER NOT NULL DEFAULT 0,
+    limited         INTEGER NOT NULL DEFAULT 0,
+    inactive_since  BIGINT,
     UNIQUE(agent_id, hostname, port, server_name)
 );
 CREATE INDEX idx_cert_monitor_endpoint ON cert_monitors(endpoint_id) WHERE endpoint_id IS NOT NULL;

@@ -13,6 +13,7 @@ import (
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/docker"
+	"github.com/kolapsis/maintenant/internal/endpoint"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/retry"
@@ -136,9 +137,10 @@ func (a *App) reconcile(ctx context.Context) {
 
 			now := time.Now()
 			seen := make(map[string]struct{}, len(results))
+			sets := make([]endpoint.ContainerLabels, 0, len(results))
 			for _, r := range results {
 				seen[r.Container.ExternalID] = struct{}{}
-				a.endpointSvc.SyncEndpoints(ctx, r.Container.Name, r.Container.ExternalID, r.Labels)
+				sets = append(sets, endpoint.ContainerLabels{Name: r.Container.Name, ExternalID: r.Container.ExternalID, Labels: r.Labels})
 				a.certSvc.SyncFromLabels(ctx, r.Container.ExternalID, r.Labels)
 
 				dbC := dbByExtID[r.Container.ExternalID]
@@ -146,7 +148,7 @@ func (a *App) reconcile(ctx context.Context) {
 					a.securitySvc.UpdateContainer(dbC.ID, dbC.Name, dockerInsights(dbC, r.SecurityConfig, now))
 				}
 			}
-			if swept := a.endpointSvc.SweepOrphanedLabelEndpoints(ctx, seen); swept > 0 {
+			if swept := a.endpointSvc.SyncAllEndpoints(ctx, sets, seen); swept > 0 {
 				a.logger.Info("retired endpoints whose container is gone", "count", swept)
 			}
 			a.logger.Info("endpoint discovery complete", "active_checks", a.checkEngine.ActiveCount())

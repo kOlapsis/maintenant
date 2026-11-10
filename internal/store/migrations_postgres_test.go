@@ -131,6 +131,8 @@ func TestMigratePostgres_ConcurrentCatchUp(t *testing.T) {
 		"DROP INDEX uq_heartbeats_ping_token",                                                                     // 42
 		"ALTER TABLE heartbeats DROP COLUMN ping_token",                                                           // 42
 		"ALTER TABLE status_component_monitors DROP COLUMN label",                                                 // 43
+		"ALTER TABLE endpoints DROP COLUMN grandfathered, DROP COLUMN limited",                                    // 44
+		"ALTER TABLE cert_monitors DROP COLUMN grandfathered, DROP COLUMN limited, DROP COLUMN inactive_since",    // 44
 	} {
 		_, err = db.ReadDB().Exec(undo)
 		require.NoError(t, err, undo)

@@ -86,3 +86,13 @@ func TestLiftingEdition_DefaultPolicyLiftsNothing(t *testing.T) {
 		t.Errorf("LiftingEdition(endpoints) under the default policy = %q, want %q", got, Pro)
 	}
 }
+
+func TestAllocate_SameSinceAndKeyFallBackToTheID(t *testing.T) {
+	cands := []LimitCandidate{
+		{ID: "b", Since: allocBase, Key: "web"},
+		{ID: "a", Since: allocBase, Key: "web"},
+	}
+	if got := Allocate(cands, 1); !reflect.DeepEqual(got, map[string]bool{"b": true}) {
+		t.Errorf("Allocate = %v, want b limited", got)
+	}
+}

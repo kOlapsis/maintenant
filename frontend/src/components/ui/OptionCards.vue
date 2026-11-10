@@ -54,24 +54,25 @@ const columnsClass: Record<2 | 3 | 4, string> = {
 
 <template>
   <div role="radiogroup" :aria-label="ariaLabel" class="grid grid-cols-1 gap-3" :class="columnsClass[columns]">
-    <button
-      v-for="(option, index) in options"
-      :key="option.value"
-      :ref="(el) => (cardRefs[index] = el as HTMLButtonElement | null)"
-      type="button"
-      role="radio"
-      :aria-checked="model === option.value"
-      :aria-disabled="option.disabled || undefined"
-      :tabindex="model === option.value || (model === null && index === 0) ? 0 : -1"
-      class="focus-ring relative flex flex-col items-center gap-2 rounded-lg border bg-mnt-elevated p-4 text-center transition-all"
-      :class="[
-        option.disabled ? 'cursor-not-allowed opacity-50' : '',
-        model === option.value ? 'border-mnt-accent' : 'border-mnt-default hover:border-mnt-accent',
-      ]"
-      @click="select(option)"
-      @keydown="onKeydown($event, index)"
-    >
-      <slot :option="option" :selected="model === option.value" />
-    </button>
+    <div v-for="(option, index) in options" :key="option.value" role="none" class="flex flex-col gap-1.5">
+      <button
+        :ref="(el) => (cardRefs[index] = el as HTMLButtonElement | null)"
+        type="button"
+        role="radio"
+        :aria-checked="model === option.value"
+        :aria-disabled="option.disabled || undefined"
+        :tabindex="model === option.value || (model === null && index === 0) ? 0 : -1"
+        class="focus-ring relative flex flex-1 flex-col items-center gap-2 rounded-lg border bg-mnt-elevated p-4 text-center transition-all"
+        :class="[
+          option.disabled ? 'cursor-not-allowed opacity-50' : '',
+          model === option.value ? 'border-mnt-accent' : 'border-mnt-default hover:border-mnt-accent',
+        ]"
+        @click="select(option)"
+        @keydown="onKeydown($event, index)"
+      >
+        <slot :option="option" :selected="model === option.value" />
+      </button>
+      <slot name="footer" :option="option" />
+    </div>
   </div>
 </template>

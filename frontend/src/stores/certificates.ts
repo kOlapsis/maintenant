@@ -77,6 +77,22 @@ export const useCertificatesStore = defineStore('certificates', () => {
     }
   }
 
+  function onLimitChanged(e: MessageEvent) {
+    let data
+    try {
+      data = JSON.parse(e.data)
+    } catch {
+      return
+    }
+    const idx = certificates.value.findIndex((c) => c.id === data.monitor_id)
+    if (idx < 0) return
+    certificates.value[idx] = {
+      ...certificates.value[idx]!,
+      limited: data.limited,
+      ...(data.limited ? { status: 'unknown' as const } : {}),
+    }
+  }
+
   function onAlert() {
     fetchCertificates()
   }
@@ -103,6 +119,7 @@ export const useCertificatesStore = defineStore('certificates', () => {
     sseBus.on('certificate.created', onCreated)
     sseBus.on('certificate.check_completed', onCheckCompleted)
     sseBus.on('certificate.status_changed', onStatusChanged)
+    sseBus.on('certificate.limit_changed', onLimitChanged)
     sseBus.on('certificate.alert', onAlert)
     sseBus.on('certificate.recovery', onRecovery)
     sseBus.on('certificate.deleted', onDeleted)
@@ -114,6 +131,7 @@ export const useCertificatesStore = defineStore('certificates', () => {
     sseBus.off('certificate.created', onCreated)
     sseBus.off('certificate.check_completed', onCheckCompleted)
     sseBus.off('certificate.status_changed', onStatusChanged)
+    sseBus.off('certificate.limit_changed', onLimitChanged)
     sseBus.off('certificate.alert', onAlert)
     sseBus.off('certificate.recovery', onRecovery)
     sseBus.off('certificate.deleted', onDeleted)

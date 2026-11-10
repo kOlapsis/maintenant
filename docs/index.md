@@ -63,7 +63,7 @@ The core of maintenant is licensed under **Apache 2.0** and needs no key: it is 
 
 | Edition | For | Adds |
 |---|---|---|
-| **Community** | Everyone, free | Containers, endpoints, heartbeats, certificates, the status page, alerts with Discord and webhook channels, the Swarm and Kubernetes views, 7 days of resource history, on a single host, with caps on hand-made monitors (10 endpoints, 5 heartbeats, 5 certificate monitors, 3 status components). |
+| **Community** | Everyone, free | Containers, endpoints, heartbeats, certificates, the status page, alerts with Discord and webhook channels, the Swarm and Kubernetes views, 7 days of resource history, on a single host, with caps on monitors, label-declared ones included (10 endpoints, 5 heartbeats, 5 certificate monitors, 3 status components). |
 | **Personal** | One person, on their own infrastructure, freelancers included | No caps, up to 20 remote hosts, email and Telegram alerts, CVE enrichment, risk scoring, security posture, incidents, changelog, 30 days of resource history, advanced trigger filters, OCSP stapling. Bought once, it never expires and includes a year of updates. |
 | **Pro** | Teams, and anyone running it for others | Everything in Personal with unlimited hosts, Slack and Teams, escalation policies, maintenance windows, status page subscribers and branding, 90 days of resource history, and support. Subscription. |
 

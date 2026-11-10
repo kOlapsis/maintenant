@@ -44,15 +44,18 @@ func rebuildCertMonitorsForSNI(ctx context.Context, db *sql.DB, logger *slog.Log
     created_at      BIGINT NOT NULL,
     external_id     TEXT NOT NULL DEFAULT '',
     server_name     TEXT NOT NULL DEFAULT '',               -- SNI; '' = validate against hostname
+    grandfathered   INTEGER NOT NULL DEFAULT 0,
+    limited         INTEGER NOT NULL DEFAULT 0,
+    inactive_since  BIGINT,
     ` + certSNIConstraint + `
 )`},
 			{"copy rows", `INSERT INTO cert_monitors_new
 				(id, agent_id, hostname, port, source, endpoint_id, status, check_interval_seconds,
 				 warning_thresholds_json, last_alerted_threshold, last_check_at, next_check_at, last_error,
-				 created_at, external_id, server_name)
+				 created_at, external_id, server_name, grandfathered, limited, inactive_since)
 				SELECT id, agent_id, hostname, port, source, endpoint_id, status, check_interval_seconds,
 				 warning_thresholds_json, last_alerted_threshold, last_check_at, next_check_at, last_error,
-				 created_at, external_id, server_name
+				 created_at, external_id, server_name, grandfathered, limited, inactive_since
 				FROM cert_monitors`},
 			{"drop old table", `DROP TABLE cert_monitors`},
 			{"rename", `ALTER TABLE cert_monitors_new RENAME TO cert_monitors`},

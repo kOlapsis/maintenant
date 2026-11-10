@@ -208,17 +208,17 @@ and add an `agent_label` to each row that belongs to a remote agent.
 | `list_containers` | List all monitored containers with state, health, and metadata | Community |
 | `get_container` | Detailed info for one container (`container_id`) with recent state transitions | Community |
 | `get_container_logs` | Recent log lines from a container (`container_id`): `lines` (default 100, at most 1000) and optional `timestamps`. A container on a remote agent is read through that agent. The answer starts with a fixed line warning that what follows is untrusted container output; a line over 4096 bytes is cut there and marked ` …[truncated]`, and when the lines exceed 1 MiB (1 048 576 bytes) the oldest are dropped and their count is given on the first line. | Community |
-| `list_endpoints` | Active HTTP/TCP endpoints with status, last response time, HTTP status and error | Community |
+| `list_endpoints` | Active HTTP/TCP endpoints with status, last response time, HTTP status and error, and `limited` (a limited endpoint is not checked) | Community |
 | `get_endpoint_history` | Check history for a specific endpoint (`endpoint_id`, `limit` defaulting to 50) | Community |
 | `list_heartbeats` | All heartbeat monitors with status, last ping, periods | Community |
-| `list_certificates` | TLS certificate monitors with status (`valid`, `expiring`, `expired`, `error`, `unknown`), check times and last error | Community |
+| `list_certificates` | TLS certificate monitors with status (`valid`, `expiring`, `expired`, `error`, `unknown`), check times and last error, and `limited` (a limited monitor is not scanned) | Community |
 | `list_alerts` | Active alerts that are not yet acknowledged (or the last 100 alerts, acknowledged, resolved and silenced included, with `active_only: false`) | Community |
 | `get_resources` | Resource summary: CPU, memory and network throughput (`net_rx_rate` and `net_tx_rate`, in bytes per second) across the containers, plus disk usage of the server's root filesystem | Community |
 | `get_top_consumers` | Containers ranked by CPU or memory usage (`metric`, `limit` defaulting to 10, at most 20), live or over a history window (`period`) | Community (see above) |
 | `get_updates` | Returns `updates` (available image updates), `hosts` (each host's OS and end-of-support status) and `eol_table` | Community |
 | `get_health` | maintenant version, runtime, and status | Community |
 | `list_agents` | Active remote agents with label, hostname, runtime and connection state | Personal |
-| `get_edition` | Running edition, which capability each edition opens, quota usage, history windows, and the notification channels the edition has suspended | Community |
+| `get_edition` | Running edition, which capability each edition opens, quota usage (with `unmonitored`, the endpoints and certificates left out by the Community cap), history windows, and the notification channels the edition has suspended | Community |
 
 ### Security & supply chain (read)
 

@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -284,6 +285,7 @@ func TestService_Start_ThenDeleteStopsChecks(t *testing.T) {
 }
 
 func TestService_Start_ResumesHundreds(t *testing.T) {
+	pinEdition(t, extension.Pro)
 	store := newMemStore()
 	for i := 0; i < 300; i++ {
 		seedStandalone(t, store, "http://127.0.0.1:1/"+strings.Repeat("x", i%7)+string(rune('a'+i%26))+time.Duration(i).String(), fastConfig(time.Hour), true)

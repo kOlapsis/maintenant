@@ -467,7 +467,7 @@ Three refusals with one cause: what you asked for is outside the running edition
 
 On the resource history, the refusal also carries `window` and `max_window`: a window longer than your edition's cap (7 days on Community, 30 on Personal, 90 on Pro) is refused rather than silently shortened.
 
-**`403 QUOTA_EXCEEDED`:** Community caps what you create by hand at 10 endpoints, 5 heartbeats, 5 certificate monitors and 3 status page components. Endpoints and certificate monitors that come from container labels are not counted. The body gives `resource`, `limit` and `required_edition`, for instance `The Community edition is limited to 10 endpoints.` Personal and Pro lift these caps.
+**`403 QUOTA_EXCEEDED`:** Community caps 10 endpoints, 5 heartbeats, 5 certificate monitors and 3 status page components. Endpoints and certificate monitors that come from container labels count towards their caps, and a label item beyond the cap shows as "Not monitored: Community limit" and is never checked. The body gives `resource`, `limit` and `required_edition`, for instance `The Community edition is limited to 10 endpoints, label-discovered ones included.` Personal and Pro lift these caps.
 
 **`409 HOST_LIMIT_REACHED`:** Personal accepts 20 remote hosts. The refusal comes when generating an enrollment token, before the install command is run; Pro has no cap.
 
