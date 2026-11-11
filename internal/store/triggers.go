@@ -94,7 +94,7 @@ func (s *TriggerStoreImpl) listTriggersWhere(ctx context.Context, where string) 
 
 	var triggers []*alert.AlertTrigger
 	for rows.Next() {
-		t, err := scanTriggerRow(rows)
+		t, err := scanTrigger(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -208,7 +208,7 @@ func (s *TriggerStoreImpl) ListTriggersForChannel(ctx context.Context, channelID
 
 	var triggers []*alert.AlertTrigger
 	for rows.Next() {
-		t, err := scanTriggerRow(rows)
+		t, err := scanTrigger(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -230,27 +230,11 @@ func (s *TriggerStoreImpl) ListTriggersForChannel(ctx context.Context, channelID
 
 // --- Scan helpers ---
 
-func scanTrigger(row *sql.Row) (*alert.AlertTrigger, error) {
+func scanTrigger(row rowScanner) (*alert.AlertTrigger, error) {
 	t := &alert.AlertTrigger{}
 	var enabled, notifyOnResolve int
 	var createdAt, updatedAt int64
 	err := row.Scan(&t.ID, &t.Name, &t.FilterSeverities, &t.FilterSources,
-		&t.FilterScopes, &enabled, &notifyOnResolve, &createdAt, &updatedAt)
-	if err != nil {
-		return nil, err
-	}
-	t.Enabled = enabled == 1
-	t.NotifyOnResolve = notifyOnResolve == 1
-	t.CreatedAt = time.Unix(createdAt, 0)
-	t.UpdatedAt = time.Unix(updatedAt, 0)
-	return t, nil
-}
-
-func scanTriggerRow(rows *sql.Rows) (*alert.AlertTrigger, error) {
-	t := &alert.AlertTrigger{}
-	var enabled, notifyOnResolve int
-	var createdAt, updatedAt int64
-	err := rows.Scan(&t.ID, &t.Name, &t.FilterSeverities, &t.FilterSources,
 		&t.FilterScopes, &enabled, &notifyOnResolve, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err

@@ -173,6 +173,7 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 		currentTag:    currentTag,
 		registry:      registry,
 		runningDigest: runningDigest(c, imageRef),
+		repoDigests:   repoDigestsFor(c.RepoDigests, imageRef),
 		alertOn:       cfg.AlertOn,
 	}
 
@@ -259,6 +260,7 @@ type scanTarget struct {
 	currentTag    string
 	registry      string
 	runningDigest string
+	repoDigests   []string
 	alertOn       string
 }
 
@@ -277,6 +279,10 @@ func (sc *Scanner) checkDigest(ctx context.Context, t scanTarget) (*UpdateResult
 	}
 	if remote.Digest == "" {
 		return nil, nil
+	}
+
+	if i := slices.IndexFunc(t.repoDigests, remote.Contains); i >= 0 {
+		t.runningDigest = t.repoDigests[i]
 	}
 
 	current, err := sc.currentDigest(ctx, t, remote)
@@ -376,8 +382,8 @@ func runningImage(c ContainerInfo) UpdateResult {
 
 // runningDigest names the image a container runs by the digest its runtime pulled for repo, else by the digest pinned in its reference.
 func runningDigest(c ContainerInfo, repo string) string {
-	if d := repoDigestFor(c.RepoDigests, repo); d != "" {
-		return d
+	if ds := repoDigestsFor(c.RepoDigests, repo); len(ds) > 0 {
+		return ds[0]
 	}
 	if _, d, ok := strings.Cut(c.Image, "@"); ok {
 		return d
@@ -385,16 +391,17 @@ func runningDigest(c ContainerInfo, repo string) string {
 	return ""
 }
 
-// repoDigestFor returns the digest recorded for repo among an image's repo digests.
-func repoDigestFor(repoDigests []string, repo string) string {
+// repoDigestsFor returns every digest recorded for repo among an image's repo digests.
+func repoDigestsFor(repoDigests []string, repo string) []string {
 	want := familiarRepo(repo)
+	var digests []string
 	for _, rd := range repoDigests {
 		name, digest, ok := strings.Cut(rd, "@")
 		if ok && familiarRepo(name) == want {
-			return digest
+			digests = append(digests, digest)
 		}
 	}
-	return ""
+	return digests
 }
 
 // familiarRepo reduces a Docker Hub repository to the short form Docker prints ("library/nginx" -> "nginx").

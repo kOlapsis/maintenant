@@ -70,7 +70,7 @@ const labelText = computed(() => props.label ?? meta.value.defaultLabel)
       </span>
 
       <!-- Message -->
-      <div class="alert-banner__message flex-1 min-w-0 text-xs font-medium leading-snug">
+      <div class="alert-banner__message flex-1 min-w-0 text-xs font-medium leading-snug xl:truncate">
         <slot />
       </div>
 

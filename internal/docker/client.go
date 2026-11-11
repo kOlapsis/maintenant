@@ -82,7 +82,7 @@ func (c *Client) Connect(ctx context.Context) error {
 		c.mu.Lock()
 		c.connected = false
 		c.mu.Unlock()
-		return fmt.Errorf("docker ping failed: %w", err)
+		return &SocketUnavailableError{Err: err}
 	}
 	c.mu.Lock()
 	c.connected = true
@@ -96,7 +96,7 @@ func (c *Client) Connect(ctx context.Context) error {
 func (c *Client) TryConnect(ctx context.Context) error {
 	if err := c.ping(ctx); err != nil {
 		c.SetDisconnected()
-		return fmt.Errorf("docker ping failed: %w", err)
+		return &SocketUnavailableError{Err: err}
 	}
 	c.mu.Lock()
 	c.connected = true
@@ -180,7 +180,7 @@ func (c *Client) StatsOneShot(ctx context.Context, containerID string) (*Contain
 	return &stats, nil
 }
 
-// SocketUnavailableError is returned when the Docker socket is not accessible.
+// SocketUnavailableError reports a Docker daemon that does not answer, with how to make it reachable.
 type SocketUnavailableError struct {
 	Err error
 }

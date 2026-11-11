@@ -30,7 +30,7 @@ func TestService_DatadirUnwritable(t *testing.T) {
 
 	svc := New(cfg, Deps{Edition: staticEdition{value: extension.Community}}, logger)
 
-	if svc.IsActive() {
+	if isActive(svc) {
 		t.Fatalf("service must be inactive when datadir is unwritable")
 	}
 
@@ -73,7 +73,7 @@ func TestService_ContextCancellationExits(t *testing.T) {
 		Webhooks:         fakeCounter{value: 0},
 		StatusComponents: fakeCounter{value: 0},
 	}, logger)
-	if !svc.IsActive() {
+	if !isActive(svc) {
 		t.Fatalf("expected active service")
 	}
 

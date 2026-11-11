@@ -35,6 +35,7 @@ const CATALOG = [
 ]
 
 const maxSeconds = ref(21600) // Community
+const isCommunity = computed(() => maxSeconds.value === 21600)
 const reload = vi.fn()
 
 vi.mock('@/composables/useEdition', () => ({
@@ -52,6 +53,10 @@ vi.mock('@/composables/useEdition', () => ({
       largestOpenWindow: computed(
         () => CATALOG.filter((w) => w.seconds <= maxSeconds.value).slice(-1)[0]?.window ?? '',
       ),
+      maxHistoryWindow: computed(
+        () => CATALOG.filter((w) => w.seconds <= maxSeconds.value).slice(-1)[0]?.window ?? '',
+      ),
+      isCommunity,
       reload,
     }
   },
@@ -118,6 +123,21 @@ describe('ResourceCharts window selector', () => {
     await wrapper.vm.$nextTick()
 
     expect(getResourceHistory).toHaveBeenCalledWith('c1', '6h')
+  })
+
+  it('on Community, the upgrade link reads like the top consumers widget', () => {
+    const link = mountCharts().find('a')
+
+    expect(link.text()).toBe('Community keeps 6h of history. Pro and Personal go further.')
+    expect(link.find('edition-badge-stub').exists()).toBe(false)
+  })
+
+  it('on a paid edition, the upgrade link names the next window and its edition', () => {
+    maxSeconds.value = 2592000 // Personal
+    const link = mountCharts().find('a')
+
+    expect(link.text()).toBe('90d and beyond')
+    expect(link.find('edition-badge-stub').attributes('edition')).toBe('pro')
   })
 
   // The cap comes from the server, so a Personal instance opens more without the

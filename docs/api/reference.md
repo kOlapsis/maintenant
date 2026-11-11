@@ -65,14 +65,14 @@ Three answers are not JSON:
 
 | Resource | Community | Personal | Pro |
 |----------|:---------:|:--------:|:---:|
-| Standalone endpoints | 10 | unlimited | unlimited |
+| Endpoints (label-discovered included) | 10 | unlimited | unlimited |
 | Heartbeat monitors | 5 | unlimited | unlimited |
-| Standalone certificate monitors | 5 | unlimited | unlimited |
+| Certificate monitors (label-declared included) | 5 | unlimited | unlimited |
 | Status page components | 3 | unlimited | unlimited |
 | Remote agents | 0 | 20 | unlimited |
 | History window (resources) | 7 days | 30 days | 90 days |
 
-The caps are read from the running edition at each creation, so a licence change applies without a restart. The tables under each section give the edition a route needs in the **Edition** column. A dash means the route is open in every edition.
+Endpoints and certificate monitors that already existed when the cap started to count label items stay monitored, even beyond the cap. An item left out by the cap carries `limited: true`, is never checked, and refuses an on-demand check with `403 QUOTA_EXCEEDED`. The caps are read from the running edition at each creation, so a licence change applies without a restart. The tables under each section give the edition a route needs in the **Edition** column. A dash means the route is open in every edition.
 
 ### Host scope
 
@@ -138,7 +138,7 @@ A demo build of maintenant is read-only. Every request other than `GET`, `HEAD` 
 | `demo` | `true` in demo mode |
 | `features` | Every capability mapped to a boolean: does the running edition open it. `smtp` is also `false` until SMTP is configured |
 | `feature_editions` | Every capability mapped to the lowest edition that opens it |
-| `quotas` | For each capped resource present (`agent_hosts`, `endpoints`, `heartbeats`, `certificates`, `status_components`), an object `{ "used": n, "limit": n }`. A limit of `-1` means unlimited |
+| `quotas` | For each capped resource present (`agent_hosts`, `endpoints`, `heartbeats`, `certificates`, `status_components`), an object `{ "used": n, "limit": n }`. A limit of `-1` means unlimited. `used` counts the monitored items of every origin and can exceed `limit`. `endpoints` and `certificates` also carry `unmonitored`, the number of active items left out by the cap |
 | `tiers` | The cap of every resource for every edition: `{ "community": {...}, "personal": {...}, "pro": {...} }` |
 | `suspended_channels` | `{ "count": n, "channels": [{ "id", "name", "type", "required_edition" }] }`: enabled channels the running edition no longer opens |
 | `resource_history` | `{ "max_window", "max_window_seconds", "windows": [{ "window", "seconds", "min_edition" }] }`. The window catalogue is the same in every edition |
@@ -190,7 +190,7 @@ Errors:
 
 ## Endpoints
 
-Endpoint monitors are discovered from labels or created through the API (a standalone endpoint). All routes are open in every edition, except that creating a standalone endpoint is capped.
+Endpoint monitors are discovered from labels or created through the API (a standalone endpoint). All routes are open in every edition, except that creating a standalone endpoint is capped, and the cap counts label endpoints too.
 
 | Method | Endpoint | Description | Edition |
 |--------|----------|-------------|:-------:|
@@ -203,19 +203,19 @@ Endpoint monitors are discovered from labels or created through the API (a stand
 | `POST` | `/api/v1/endpoints/{id}/check` | Probe now and return the refreshed endpoint | — |
 | `GET` | `/api/v1/endpoints/{id}/uptime/daily` | Daily uptime percentages | — |
 
-An endpoint has `id`, `endpoint_type` (`http` or `tcp`), `target`, `status` (`up`, `down`, `degraded` or `unknown`), `alert_state` (`normal` or `alerting`), the consecutive counters, the last check fields, `source` (`label` or `standalone`), `name` (present only when `source` is `standalone`, on the list, the detail and the creation answer), `agent_id` and a `config` object (`interval` and `timeout` as duration strings such as `30s`, `failure_threshold`, `recovery_threshold`, `method`, `expected_status`, `tls_verify`, `headers`, `max_redirects`). A new standalone endpoint defaults to a 30-second interval, a 10-second timeout, failure threshold 3, recovery threshold 2, method `GET`, expected status `2xx`, TLS verification on and 5 redirects.
+An endpoint has `id`, `endpoint_type` (`http` or `tcp`), `target`, `status` (`up`, `down`, `degraded` or `unknown`), `alert_state` (`normal` or `alerting`), the consecutive counters, the last check fields, `source` (`label` or `standalone`), `name` (present only when `source` is `standalone`, on the list, the detail and the creation answer), `agent_id`, `limited` (`true` when the Community cap leaves the endpoint unmonitored: its `status` stays `unknown` and it is not checked) and a `config` object (`interval` and `timeout` as duration strings such as `30s`, `failure_threshold`, `recovery_threshold`, `method`, `expected_status`, `tls_verify`, `headers`, `max_redirects`). A new standalone endpoint defaults to a 30-second interval, a 10-second timeout, failure threshold 3, recovery threshold 2, method `GET`, expected status `2xx`, TLS verification on and 5 redirects.
 
 - `GET /api/v1/endpoints` query parameters: `status`, `container` (container name), `type`, `source`, `include_inactive=true` and `agent_id`. The answer is `{ "endpoints": [...], "total" }`. `stale` and `agent_offline` mark an endpoint probed by an agent with no live stream.
 - `POST /api/v1/endpoints` body: `name` (required), `target` (required; an absolute `http` or `https` URL for `http`, a `host:port` address with a port from 1 to 65535 for `tcp`), `endpoint_type` (required, `http` or `tcp`), `interval` (duration, at least 5s, default 30s; an interval below 5s in a `maintenant.endpoint.*.interval` label is raised to 5s), `timeout` (duration, at least 1s, default 10s, not above the interval), `method` (default `GET`) and `headers` (object). Thresholds, expected status, TLS verification and redirects cannot be set through the API. Answers `201` with `{ "endpoint": {...} }`.
 - `PUT /api/v1/endpoints/{id}` accepts the same fields, all optional; an omitted or empty field keeps its value and `headers` replaces the whole map. The resulting target is validated for the endpoint type as on creation. Only standalone endpoints can be updated.
 - `GET /api/v1/endpoints/{id}` answers `{ "endpoint", "uptime": { "1h", "24h", "7d", "30d" } }`.
 - `GET /api/v1/endpoints/{id}/checks` takes `limit` (default 50, at most 500), `offset` and `since` (Unix seconds). The answer is `{ "endpoint_id", "checks", "total", "has_more" }`.
-- `POST /api/v1/endpoints/{id}/check` probes synchronously and answers `{ "endpoint", "uptime" }`.
+- `POST /api/v1/endpoints/{id}/check` probes synchronously and answers `{ "endpoint", "uptime" }`. On an endpoint with `limited: true` it answers `403 QUOTA_EXCEEDED`.
 
 Errors:
 
 - `400 INVALID_JSON`, `400 INVALID_INPUT` (the message names the field), `400 NOT_STANDALONE` (updating a label-discovered endpoint).
-- `403 QUOTA_EXCEEDED`: creating past the cap (`resource: "endpoints"`, `limit: 10` on Community).
+- `403 QUOTA_EXCEEDED`: creating past the cap (`resource: "endpoints"`, `limit: 10` on Community, message `The Community edition is limited to 10 endpoints, label-discovered ones included.`), or checking an endpoint with `limited: true`.
 - `404 ENDPOINT_NOT_FOUND`.
 - `409 ENDPOINT_LIVE`: deleting an endpoint whose container still runs. It becomes deletable once its container is gone.
 - `409 AGENT_PROBED`: `check` on an endpoint an agent probes itself. `409 CHECK_IN_PROGRESS`: a check is already running.
@@ -289,7 +289,7 @@ A target has `id`, `name`, `url`, `interval_seconds`, `enabled`, `last_sent_at`,
 
 ## Certificates
 
-All routes are open in every edition, except that creating a standalone monitor is capped.
+All routes are open in every edition, except that creating a standalone monitor is capped, and the cap counts label monitors too. Auto-detected monitors do not count.
 
 | Method | Endpoint | Description | Edition |
 |--------|----------|-------------|:-------:|
@@ -301,7 +301,7 @@ All routes are open in every edition, except that creating a standalone monitor 
 | `GET` | `/api/v1/certificates/{id}/checks` | List check history | — |
 | `POST` | `/api/v1/certificates/{id}/check` | Scan now and return the refreshed monitor | — |
 
-A monitor has `id`, `hostname`, `port`, `server_name`, `source` (`auto`, `standalone` or `label`), `status` (`valid`, `expiring`, `expired`, `error` or `unknown`), `check_interval_seconds`, `warning_thresholds` (days, default `[30, 14, 7, 3, 1]`), the last check and next check times, `agent_id` and timestamps.
+A monitor has `id`, `hostname`, `port`, `server_name`, `source` (`auto`, `standalone` or `label`), `status` (`valid`, `expiring`, `expired`, `error` or `unknown`), `check_interval_seconds`, `warning_thresholds` (days, default `[30, 14, 7, 3, 1]`), the last check and next check times, `agent_id`, `limited` (`true` when the Community cap leaves the monitor unmonitored: it is not scanned) and timestamps.
 
 - `GET /api/v1/certificates` query parameters: `status`, `source` and `agent_id`. Each monitor carries a `latest_check` object, and the answer is `{ "certificates", "total" }`.
 - `POST /api/v1/certificates` body: `hostname` (required), `port` (default 443), `server_name` (a bare host name, optional), `check_interval_seconds` (3600 to 604800, default 43200) and `warning_thresholds`. The first TLS check runs before the answer, so `201` returns `{ "certificate", "latest_check" }`.
@@ -312,7 +312,7 @@ A monitor has `id`, `hostname`, `port`, `server_name`, `source` (`auto`, `standa
 Errors:
 
 - `400 INVALID_JSON`, `400 INVALID_INPUT`, `400 CANNOT_DELETE_AUTO` (an auto-detected monitor is removed by removing its label).
-- `403 QUOTA_EXCEEDED` (`resource: "certificates"`, `limit: 5` on Community).
+- `403 QUOTA_EXCEEDED` (`resource: "certificates"`, `limit: 5` on Community, message `The Community edition is limited to 5 certificate monitors, label-declared ones included.`), also when checking a monitor with `limited: true`.
 - `404 NOT_FOUND`.
 - `409 DUPLICATE_MONITOR`, `409 ALREADY_AUTO_DETECTED`, `409 AGENT_SCANNED` (the agent scans this one itself) and `409 CHECK_IN_PROGRESS`.
 
@@ -877,6 +877,7 @@ The SSE `event:` field is the event type, and `data:` holds the JSON payload onl
 | `endpoint.alert` | An endpoint reaches its failure threshold | `endpoint_id`, `container_name`, `target`, `consecutive_failures`, `threshold`, `last_error`, `timestamp` |
 | `endpoint.recovery` | An alerting endpoint reaches its recovery threshold | `endpoint_id`, `container_name`, `target`, `consecutive_successes`, `threshold`, `timestamp` |
 | `endpoint.config_error` | An endpoint label cannot be parsed | `endpoint_id` (`null`), `container_name`, `label_key`, `error`, `timestamp`, plus `agent_id` for an agent's container |
+| `endpoint.limit_changed` | An endpoint becomes monitored or is left out by the Community cap | `endpoint_id`, `limited` |
 | `heartbeat.created` | A heartbeat monitor is created | `heartbeat_id`, `name`, `status` |
 | `heartbeat.updated` | A heartbeat monitor is edited | `heartbeat_id`, `name`, `interval_seconds`, `grace_seconds`, plus `next_deadline_at` when the heartbeat has a deadline |
 | `heartbeat.ping_received` | A ping arrives (`ping_type`: `success`, `start` or `exit_code`) | `heartbeat_id`, `ping_type`, `status`, plus `exit_code` or `agent_id` |
@@ -890,6 +891,7 @@ The SSE `event:` field is the event type, and `data:` holds the JSON payload onl
 | `certificate.alert` | Expiry threshold, invalid chain, hostname mismatch, revoked OCSP response or expiry | `monitor_id`, `hostname`, `port`, `alert_type`, `severity`, `timestamp`, `agent_id` and details |
 | `certificate.recovery` | A certificate alert clears: the certificate was renewed, or the chain, hostname or OCSP problem is gone | `monitor_id`, `hostname`, `port`, `previous_alert_type` (`expiring`, `expired`, `chain_invalid`, `hostname_mismatch` or `ocsp_revoked`), `days_remaining`, `timestamp`, `agent_id`, plus `new_not_after` and `server_name` when they apply |
 | `certificate.deleted` | A certificate monitor is deleted | `monitor_id`, `hostname` |
+| `certificate.limit_changed` | A certificate monitor becomes monitored or is left out by the Community cap | `monitor_id`, `limited` |
 | `resource.snapshot` | A sample is stored (live samples only) | `container_id`, `cpu_percent`, `mem_used`, `mem_limit`, `mem_percent`, `net_rx_bytes`, `net_tx_bytes`, `block_read_bytes`, `block_write_bytes`, `timestamp`, `agent_id` |
 | `resource.alert` | CPU or memory stays over its threshold (one event per metric) | `container_id`, `container_name`, `alert_type` (`cpu` or `memory`), `current_value`, `threshold`, `timestamp`, `agent_id` |
 | `resource.recovery` | CPU or memory returns to normal (one event per metric) | `container_id`, `container_name`, `recovered_type` (`cpu` or `memory`), `current_value`, `threshold`, `timestamp`, `agent_id` |

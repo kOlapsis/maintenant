@@ -72,14 +72,8 @@ func (r *Runtime) streamEvents(ctx context.Context) <-chan runtime.RuntimeEvent 
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
-				pod, ok := obj.(*corev1.Pod)
-				if !ok {
-					tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-					if ok {
-						pod, _ = tombstone.Obj.(*corev1.Pod)
-					}
-				}
-				if pod == nil || hasControllerOwner(pod) {
+				pod, ok := deletedObject[*corev1.Pod](obj)
+				if !ok || hasControllerOwner(pod) {
 					return
 				}
 				emit(podToEvent("destroy", pod))
@@ -87,95 +81,9 @@ func (r *Runtime) streamEvents(ctx context.Context) <-chan runtime.RuntimeEvent 
 		},
 	})
 
-	// Deployment events — for controller-level rollout tracking.
-	_, _ = depInformer.AddEventHandler(cache.FilteringResourceEventHandler{
-		FilterFunc: func(obj interface{}) bool {
-			dep, ok := obj.(*appsv1.Deployment)
-			return ok && r.nsFilter.IsAllowed(dep.Namespace)
-		},
-		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				dep := obj.(*appsv1.Deployment)
-				emit(deploymentToEvent("start", dep))
-			},
-			UpdateFunc: func(_, newObj interface{}) {
-				dep := newObj.(*appsv1.Deployment)
-				emit(deploymentToEvent("update", dep))
-			},
-			DeleteFunc: func(obj interface{}) {
-				dep, ok := obj.(*appsv1.Deployment)
-				if !ok {
-					tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-					if ok {
-						dep, _ = tombstone.Obj.(*appsv1.Deployment)
-					}
-				}
-				if dep != nil {
-					emit(deploymentToEvent("destroy", dep))
-				}
-			},
-		},
-	})
-
-	// StatefulSet events.
-	_, _ = ssInformer.AddEventHandler(cache.FilteringResourceEventHandler{
-		FilterFunc: func(obj interface{}) bool {
-			ss, ok := obj.(*appsv1.StatefulSet)
-			return ok && r.nsFilter.IsAllowed(ss.Namespace)
-		},
-		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				ss := obj.(*appsv1.StatefulSet)
-				emit(statefulSetToEvent("start", ss))
-			},
-			UpdateFunc: func(_, newObj interface{}) {
-				ss := newObj.(*appsv1.StatefulSet)
-				emit(statefulSetToEvent("update", ss))
-			},
-			DeleteFunc: func(obj interface{}) {
-				ss, ok := obj.(*appsv1.StatefulSet)
-				if !ok {
-					tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-					if ok {
-						ss, _ = tombstone.Obj.(*appsv1.StatefulSet)
-					}
-				}
-				if ss != nil {
-					emit(statefulSetToEvent("destroy", ss))
-				}
-			},
-		},
-	})
-
-	// DaemonSet events.
-	_, _ = dsInformer.AddEventHandler(cache.FilteringResourceEventHandler{
-		FilterFunc: func(obj interface{}) bool {
-			ds, ok := obj.(*appsv1.DaemonSet)
-			return ok && r.nsFilter.IsAllowed(ds.Namespace)
-		},
-		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				ds := obj.(*appsv1.DaemonSet)
-				emit(daemonSetToEvent("start", ds))
-			},
-			UpdateFunc: func(_, newObj interface{}) {
-				ds := newObj.(*appsv1.DaemonSet)
-				emit(daemonSetToEvent("update", ds))
-			},
-			DeleteFunc: func(obj interface{}) {
-				ds, ok := obj.(*appsv1.DaemonSet)
-				if !ok {
-					tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-					if ok {
-						ds, _ = tombstone.Obj.(*appsv1.DaemonSet)
-					}
-				}
-				if ds != nil {
-					emit(daemonSetToEvent("destroy", ds))
-				}
-			},
-		},
-	})
+	watchController(r, depInformer, emit, deploymentToEvent)
+	watchController(r, ssInformer, emit, statefulSetToEvent)
+	watchController(r, dsInformer, emit, daemonSetToEvent)
 
 	stop := make(chan struct{})
 	factory.Start(stop)
@@ -188,6 +96,42 @@ func (r *Runtime) streamEvents(ctx context.Context) <-chan runtime.RuntimeEvent 
 	}()
 
 	return out
+}
+
+// watchController emits the start, update and destroy events of one controller kind in the allowed namespaces.
+func watchController[T metav1.Object](r *Runtime, informer cache.SharedIndexInformer, emit func(runtime.RuntimeEvent), toEvent func(string, T) runtime.RuntimeEvent) {
+	_, _ = informer.AddEventHandler(cache.FilteringResourceEventHandler{
+		FilterFunc: func(obj interface{}) bool {
+			o, ok := obj.(T)
+			return ok && r.nsFilter.IsAllowed(o.GetNamespace())
+		},
+		Handler: cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				emit(toEvent("start", obj.(T)))
+			},
+			UpdateFunc: func(_, newObj interface{}) {
+				emit(toEvent("update", newObj.(T)))
+			},
+			DeleteFunc: func(obj interface{}) {
+				if o, ok := deletedObject[T](obj); ok {
+					emit(toEvent("destroy", o))
+				}
+			},
+		},
+	})
+}
+
+// deletedObject unwraps the object of a delete notification, tombstone included.
+func deletedObject[T any](obj interface{}) (T, bool) {
+	if o, ok := obj.(T); ok {
+		return o, true
+	}
+	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+		o, ok := tombstone.Obj.(T)
+		return o, ok
+	}
+	var zero T
+	return zero, false
 }
 
 // waitForLoss returns when ctx ends, the runtime closes, or probeMisses probes in a row find the API server unreachable.
@@ -315,72 +259,36 @@ func podHealthString(pod *corev1.Pod) string {
 }
 
 func deploymentToEvent(action string, dep *appsv1.Deployment) runtime.RuntimeEvent {
-	state, errorDetail := deploymentState(dep)
-	_ = state
-	replicas := int32(1)
-	if dep.Spec.Replicas != nil {
-		replicas = *dep.Spec.Replicas
-	}
-	healthStatus := ""
-	if dep.Status.ReadyReplicas >= replicas && replicas > 0 {
-		healthStatus = "healthy"
-	} else if dep.Status.ReadyReplicas > 0 {
-		healthStatus = "starting"
-	} else if replicas > 0 {
-		healthStatus = "unhealthy"
-	}
-
-	return runtime.RuntimeEvent{
-		Action:       action,
-		ExternalID:   fmt.Sprintf("%s/Deployment/%s", dep.Namespace, dep.Name),
-		Name:         dep.Name,
-		HealthStatus: healthStatus,
-		ErrorDetail:  errorDetail,
-		Timestamp:    time.Now(),
-		Labels:       dep.Labels,
-	}
+	_, errorDetail := deploymentState(dep)
+	evt := controllerEvent(action, "Deployment", dep.ObjectMeta, dep.Status.ReadyReplicas, desiredReplicas(dep.Spec.Replicas))
+	evt.ErrorDetail = errorDetail
+	return evt
 }
 
 func statefulSetToEvent(action string, ss *appsv1.StatefulSet) runtime.RuntimeEvent {
-	replicas := int32(1)
-	if ss.Spec.Replicas != nil {
-		replicas = *ss.Spec.Replicas
-	}
-	healthStatus := ""
-	if ss.Status.ReadyReplicas >= replicas && replicas > 0 {
-		healthStatus = "healthy"
-	} else if ss.Status.ReadyReplicas > 0 {
-		healthStatus = "starting"
-	} else if replicas > 0 {
-		healthStatus = "unhealthy"
-	}
-
-	return runtime.RuntimeEvent{
-		Action:       action,
-		ExternalID:   fmt.Sprintf("%s/StatefulSet/%s", ss.Namespace, ss.Name),
-		Name:         ss.Name,
-		HealthStatus: healthStatus,
-		Timestamp:    time.Now(),
-		Labels:       ss.Labels,
-	}
+	return controllerEvent(action, "StatefulSet", ss.ObjectMeta, ss.Status.ReadyReplicas, desiredReplicas(ss.Spec.Replicas))
 }
 
 func daemonSetToEvent(action string, ds *appsv1.DaemonSet) runtime.RuntimeEvent {
-	healthStatus := ""
-	if ds.Status.NumberReady >= ds.Status.DesiredNumberScheduled && ds.Status.DesiredNumberScheduled > 0 {
-		healthStatus = "healthy"
-	} else if ds.Status.NumberReady > 0 {
-		healthStatus = "starting"
-	} else if ds.Status.DesiredNumberScheduled > 0 {
-		healthStatus = "unhealthy"
-	}
+	return controllerEvent(action, "DaemonSet", ds.ObjectMeta, ds.Status.NumberReady, ds.Status.DesiredNumberScheduled)
+}
 
+func controllerEvent(action, kind string, meta metav1.ObjectMeta, ready, desired int32) runtime.RuntimeEvent {
+	health := ""
+	switch {
+	case desired > 0 && ready >= desired:
+		health = "healthy"
+	case ready > 0:
+		health = "starting"
+	case desired > 0:
+		health = "unhealthy"
+	}
 	return runtime.RuntimeEvent{
 		Action:       action,
-		ExternalID:   fmt.Sprintf("%s/DaemonSet/%s", ds.Namespace, ds.Name),
-		Name:         ds.Name,
-		HealthStatus: healthStatus,
+		ExternalID:   workloadID(meta.Namespace, kind, meta.Name),
+		Name:         meta.Name,
+		HealthStatus: health,
 		Timestamp:    time.Now(),
-		Labels:       ds.Labels,
+		Labels:       meta.Labels,
 	}
 }

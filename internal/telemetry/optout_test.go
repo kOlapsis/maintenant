@@ -23,7 +23,7 @@ func TestService_OptOut_NoSDKInit(t *testing.T) {
 
 	beforeGoroutines := runtime.NumGoroutine()
 	svc := New(cfg, deps, logger)
-	if svc.IsActive() {
+	if isActive(svc) {
 		t.Fatalf("opted-out service should not be active, logs:\n%s", buf.String())
 	}
 
@@ -117,7 +117,11 @@ func TestService_DefaultBoot_NotDisabled(t *testing.T) {
 		Edition:          staticEdition{value: extension.Community},
 	}, logger)
 
-	if !svc.IsActive() {
+	if !isActive(svc) {
 		t.Fatalf("default boot should be active")
 	}
+}
+
+func isActive(s *Service) bool {
+	return s != nil && s.client != nil
 }

@@ -41,10 +41,13 @@ CREATE TABLE endpoints (
     name            TEXT NOT NULL DEFAULT '',
     UNIQUE(agent_id, container_name, label_key)
 );
+ALTER TABLE endpoints ADD COLUMN grandfathered INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE endpoints ADD COLUMN limited INTEGER NOT NULL DEFAULT 0;
 INSERT INTO endpoints (id, container_name, label_key, external_id, endpoint_type, target,
                        status, first_seen_at, last_seen_at)
 VALUES ('legacy-ep', 'web', 'http', 'ext-1', 'http', 'https://legacy.example.com',
         'up', 1700000000, 1700000000);
+UPDATE endpoints SET grandfathered = 1;
 `
 
 func TestRebuildEndpointsForDegraded(t *testing.T) {
@@ -69,6 +72,7 @@ func TestRebuildEndpointsForDegraded(t *testing.T) {
 
 	// The row survived, and the state now persists.
 	require.Equal(t, "legacy-ep", scanString(t, rw, `SELECT id FROM endpoints`))
+	require.Equal(t, "1", scanString(t, rw, `SELECT grandfathered FROM endpoints`))
 	_, err = rw.ExecContext(ctx, `UPDATE endpoints SET status='degraded' WHERE id='legacy-ep'`)
 	require.NoError(t, err)
 	require.Equal(t, "degraded", scanString(t, rw, `SELECT status FROM endpoints`))

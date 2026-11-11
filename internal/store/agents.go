@@ -498,12 +498,7 @@ func (s *AgentStore) GcExpiredTokens(ctx context.Context) error {
 	return nil
 }
 
-// scanner is satisfied by both *sql.Row and *sql.Rows.
-type scanner interface {
-	Scan(dest ...any) error
-}
-
-func scanAgent(s scanner) (*agent.Agent, error) {
+func scanAgent(s rowScanner) (*agent.Agent, error) {
 	a := &agent.Agent{}
 	var lastSeen, revokedAt, osReportedAt sql.NullInt64
 	var revokedBy sql.NullString
@@ -535,7 +530,7 @@ func scanAgent(s scanner) (*agent.Agent, error) {
 	return a, nil
 }
 
-func scanToken(s scanner) (*agent.EnrollmentToken, error) {
+func scanToken(s rowScanner) (*agent.EnrollmentToken, error) {
 	t := &agent.EnrollmentToken{}
 	var consumedAt sql.NullInt64
 	var consumedBy sql.NullString

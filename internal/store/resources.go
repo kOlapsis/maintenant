@@ -191,12 +191,7 @@ func (s *ResourceStore) deleteSnapshotsBefore(ctx context.Context, before time.T
 	return deleteRowsBefore(ctx, s.writer, o, "resource_snapshots", "timestamp", before)
 }
 
-// rowScanner is implemented by both *sql.Row and *sql.Rows.
-type resourceRowScanner interface {
-	Scan(dest ...interface{}) error
-}
-
-func scanSnapshot(row resourceRowScanner) (*resource.ResourceSnapshot, error) {
+func scanSnapshot(row rowScanner) (*resource.ResourceSnapshot, error) {
 	var s resource.ResourceSnapshot
 	var ts int64
 	err := row.Scan(&s.ID, &s.ContainerID, &s.AgentID, &s.CPUPercent, &s.MemUsed, &s.MemLimit,
@@ -223,7 +218,7 @@ func collectSnapshots(rows *sql.Rows) ([]*resource.ResourceSnapshot, error) {
 	return result, rows.Err()
 }
 
-func scanAlertConfig(row resourceRowScanner) (*resource.ResourceAlertConfig, error) {
+func scanAlertConfig(row rowScanner) (*resource.ResourceAlertConfig, error) {
 	var cfg resource.ResourceAlertConfig
 	var enabled int
 	var alertState string

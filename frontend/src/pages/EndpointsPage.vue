@@ -21,6 +21,7 @@ import FeatureHint from '@/components/ui/FeatureHint.vue'
 import ListToolbar from '@/components/ui/ListToolbar.vue'
 import DataTable, { type Column } from '@/components/ui/DataTable.vue'
 import EndpointStatusBadge from '@/components/EndpointStatusBadge.vue'
+import LimitChip from '@/components/ui/LimitChip.vue'
 import type { StatusChip } from '@/components/ui/listFilters'
 import { usePreferencesStore } from '@/stores/preferences'
 import { endpointStaleBadge, endpointTone } from '@/utils/endpointTone'
@@ -179,6 +180,7 @@ onUnmounted(() => {
           :value="`${quota.used}/${quota.limit}`"
           :tone="quota.isAtLimit ? 'danger' : quota.nearLimit ? 'warn' : 'neutral'"
         />
+        <CountBadge v-if="quota.unmonitored > 0" :value="`${quota.unmonitored} not monitored`" tone="warn" />
         <router-link
           v-if="quota.nearLimit && !quota.isAtLimit"
           :to="{ name: 'editions' }"
@@ -190,7 +192,7 @@ onUnmounted(() => {
         <UiButton
           variant="primary"
           :disabled="quota.isAtLimit"
-          :title="quota.isAtLimit ? `Your edition is limited to ${quota.limit} endpoints` : ''"
+          :title="quota.isAtLimit ? `Your edition is limited to ${quota.limit} endpoints, label-discovered ones included` : ''"
           @click="showCreateForm = !showCreateForm; if (!showCreateForm) resetForm()"
         >
           {{ showCreateForm ? 'Cancel' : 'New Endpoint' }}
@@ -392,8 +394,9 @@ onUnmounted(() => {
         </template>
         <template #cell-source="{ row }">{{ sourceOf(row) }}</template>
         <template #cell-status="{ row }">
+          <LimitChip v-if="row.limited" />
           <span
-            v-if="row.stale"
+            v-else-if="row.stale"
             class="rounded-full bg-mnt-sev-unknown px-2 py-0.5 text-xs font-medium text-mnt-sev-unknown"
             :title="endpointStaleBadge(row).title"
           >{{ endpointStaleBadge(row).text }}</span>

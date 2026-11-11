@@ -58,13 +58,15 @@ func TestProcessEvent_DieCarriesImageAndExitCode(t *testing.T) {
 }
 
 func TestProcessEvent_IgnoresUnknownAction(t *testing.T) {
-	msg := events.Message{
-		Type:   events.ContainerEventType,
-		Action: "exec_create",
-		Actor:  events.Actor{ID: "x", Attributes: map[string]string{}},
-		Time:   1,
+	for _, action := range []string{"exec_create", "kill"} {
+		msg := events.Message{
+			Type:   events.ContainerEventType,
+			Action: events.Action(action),
+			Actor:  events.Actor{ID: "x", Attributes: map[string]string{}},
+			Time:   1,
+		}
+		assert.Nil(t, processEvent(msg), action)
 	}
-	assert.Nil(t, processEvent(msg))
 }
 
 type subscription struct {

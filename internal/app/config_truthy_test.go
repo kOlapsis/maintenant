@@ -1,11 +1,11 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
 // SPDX-License-Identifier: Apache-2.0
 
-package telemetry
+package app
 
 import "testing"
 
-func TestParseDisableTelemetry_Truthy(t *testing.T) {
+func TestParseTruthy_Truthy(t *testing.T) {
 	truthy := []string{
 		"1", "t", "T", "true", "True", "TRUE",
 		"y", "Y", "yes", "Yes", "YES",
@@ -14,19 +14,19 @@ func TestParseDisableTelemetry_Truthy(t *testing.T) {
 	}
 	for _, in := range truthy {
 		t.Run(in, func(t *testing.T) {
-			first := parseDisableTelemetry(in)
-			second := parseDisableTelemetry(in)
+			first := parseTruthy(in)
+			second := parseTruthy(in)
 			if !first {
-				t.Fatalf("parseDisableTelemetry(%q) = false, want true", in)
+				t.Fatalf("parseTruthy(%q) = false, want true", in)
 			}
 			if first != second {
-				t.Fatalf("parseDisableTelemetry(%q) is non-idempotent (%v vs %v)", in, first, second)
+				t.Fatalf("parseTruthy(%q) is non-idempotent (%v vs %v)", in, first, second)
 			}
 		})
 	}
 }
 
-func TestParseDisableTelemetry_Falsy(t *testing.T) {
+func TestParseTruthy_Falsy(t *testing.T) {
 	falsy := []string{
 		"", " ", "\t", "\n",
 		"0", "f", "false", "False", "FALSE",
@@ -37,8 +37,8 @@ func TestParseDisableTelemetry_Falsy(t *testing.T) {
 	}
 	for _, in := range falsy {
 		t.Run(in, func(t *testing.T) {
-			if parseDisableTelemetry(in) {
-				t.Fatalf("parseDisableTelemetry(%q) = true, want false", in)
+			if parseTruthy(in) {
+				t.Fatalf("parseTruthy(%q) = true, want false", in)
 			}
 		})
 	}

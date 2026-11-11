@@ -42,11 +42,6 @@ func NewReplicaHealthChecker(logger *slog.Logger) *ReplicaHealthChecker {
 	}
 }
 
-// SetAlertDelay overrides the default alert delay for testing.
-func (rhc *ReplicaHealthChecker) SetAlertDelay(d time.Duration) {
-	rhc.alertDelay = d
-}
-
 // SetEventCallback sets the SSE event callback.
 func (rhc *ReplicaHealthChecker) SetEventCallback(cb EventCallback) {
 	rhc.callback = cb

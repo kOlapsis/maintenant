@@ -32,7 +32,7 @@ func NewEndpointStore(d *DB) *EndpointStore {
 const endpointColumns = `id, agent_id, container_name, label_key, external_id, endpoint_type, target,
 	status, alert_state, consecutive_failures, consecutive_successes,
 	last_check_at, last_response_time_ms, last_http_status, last_error,
-	config_json, active, first_seen_at, last_seen_at, source, name`
+	config_json, active, first_seen_at, last_seen_at, source, name, grandfathered, limited`
 
 // UpsertEndpoint upserts a label-discovered endpoint. Its id is derived
 // deterministically from (agent_id, container_name, label_key) so the agent and
@@ -135,7 +135,7 @@ func (s *EndpointStore) ListEndpoints(ctx context.Context, opts endpoint.ListEnd
 
 	var endpoints []*endpoint.Endpoint
 	for rows.Next() {
-		e, err := s.scanEndpointRow(rows)
+		e, err := s.scanEndpoint(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -157,7 +157,7 @@ func (s *EndpointStore) ListEndpointsByExternalID(ctx context.Context, agentID, 
 
 	var endpoints []*endpoint.Endpoint
 	for rows.Next() {
-		e, err := s.scanEndpointRow(rows)
+		e, err := s.scanEndpoint(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -166,19 +166,9 @@ func (s *EndpointStore) ListEndpointsByExternalID(ctx context.Context, agentID, 
 	return endpoints, rows.Err()
 }
 
-func (s *EndpointStore) CountStandaloneEndpoints(ctx context.Context) (int, error) {
-	var count int
-	err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM endpoints WHERE active=1 AND source='standalone'`).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("count standalone endpoints: %w", err)
-	}
-	return count, nil
-}
-
 func (s *EndpointStore) DeactivateEndpoint(ctx context.Context, id string) error {
 	_, err := s.writer.Exec(ctx,
-		`UPDATE endpoints SET active=0 WHERE id=?`, id)
+		`UPDATE endpoints SET active=0, last_seen_at=? WHERE id=?`, time.Now().Unix(), id)
 	if err != nil {
 		return fmt.Errorf("deactivate endpoint %s: %w", id, err)
 	}
@@ -227,55 +217,24 @@ func (s *EndpointStore) InsertCheckResult(ctx context.Context, result *endpoint.
 }
 
 func (s *EndpointStore) ListCheckResults(ctx context.Context, endpointID string, opts endpoint.ListChecksOpts) ([]*endpoint.CheckResult, int, error) {
-	countQuery := `SELECT COUNT(*) FROM check_results WHERE endpoint_id=?`
-	countArgs := []interface{}{endpointID}
-
-	query := `SELECT cr.id, cr.endpoint_id, cr.success, cr.response_time_ms, cr.http_status, cr.error_message, cr.timestamp, e.agent_id
+	countSQL := `SELECT COUNT(*) FROM check_results WHERE endpoint_id=?`
+	selectSQL := `SELECT cr.id, cr.endpoint_id, cr.success, cr.response_time_ms, cr.http_status, cr.error_message, cr.timestamp, e.agent_id
 		FROM check_results cr JOIN endpoints e ON e.id = cr.endpoint_id WHERE cr.endpoint_id=?`
-	args := []interface{}{endpointID}
-
+	args := []any{endpointID}
 	if opts.Since != nil {
-		query += ` AND cr.timestamp>=?`
+		countSQL += ` AND timestamp>=?`
+		selectSQL += ` AND cr.timestamp>=?`
 		args = append(args, opts.Since.Unix())
-		countQuery += ` AND timestamp>=?`
-		countArgs = append(countArgs, opts.Since.Unix())
 	}
-
-	var total int
-	if err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count check results: %w", err)
-	}
-
-	query += ` ORDER BY cr.timestamp DESC`
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 500 {
-		limit = 500
-	}
-	query += fmt.Sprintf(` LIMIT %d`, limit)
-	if opts.Offset > 0 {
-		query += fmt.Sprintf(` OFFSET %d`, opts.Offset) // #nosec G202 -- integer formatting of an int option.
-	}
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list check results: %w", err)
-	}
-	defer func(rows *sql.Rows) {
-		_ = rows.Close()
-	}(rows)
-
-	var results []*endpoint.CheckResult
-	for rows.Next() {
-		r, err := scanCheckResultRow(rows)
-		if err != nil {
-			return nil, 0, err
-		}
-		results = append(results, r)
-	}
-	return results, total, rows.Err()
+	return listPage(ctx, s.db, pageQuery{
+		what:         "check results",
+		countSQL:     countSQL,
+		selectSQL:    selectSQL + ` ORDER BY cr.timestamp DESC`,
+		args:         args,
+		limit:        opts.Limit,
+		offset:       opts.Offset,
+		defaultLimit: 50,
+	}, scanCheckResultRow)
 }
 
 func (s *EndpointStore) GetCheckResultsInWindow(ctx context.Context, endpointID string, from, to time.Time) (int, int, error) {
@@ -410,6 +369,7 @@ func (s *EndpointStore) scanEndpoint(row rowScanner) (*endpoint.Endpoint, error)
 	var active int
 	var firstSeen, lastSeen int64
 	var source, name string
+	var grandfathered, limited int
 
 	err := row.Scan(
 		&e.ID, &e.AgentID, &e.ContainerName, &e.LabelKey, &e.ExternalID,
@@ -418,7 +378,7 @@ func (s *EndpointStore) scanEndpoint(row rowScanner) (*endpoint.Endpoint, error)
 		&e.ConsecutiveFailures, &e.ConsecutiveSuccesses,
 		&lastCheckAt, &lastResponseTimeMs, &lastHTTPStatus, &lastError,
 		&configJSON, &active, &firstSeen, &lastSeen,
-		&source, &name,
+		&source, &name, &grandfathered, &limited,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -432,6 +392,8 @@ func (s *EndpointStore) scanEndpoint(row rowScanner) (*endpoint.Endpoint, error)
 	e.LastSeenAt = time.Unix(lastSeen, 0)
 	e.Source = endpoint.EndpointSource(source)
 	e.Name = name
+	e.Grandfathered = grandfathered != 0
+	e.Limited = limited != 0
 
 	if lastCheckAt.Valid {
 		t := time.Unix(lastCheckAt.Int64, 0)
@@ -456,10 +418,6 @@ func (s *EndpointStore) scanEndpoint(row rowScanner) (*endpoint.Endpoint, error)
 	}
 
 	return &e, nil
-}
-
-func (s *EndpointStore) scanEndpointRow(rows *sql.Rows) (*endpoint.Endpoint, error) {
-	return s.scanEndpoint(rows)
 }
 
 func scanCheckResultRow(row rowScanner) (*endpoint.CheckResult, error) {
@@ -535,6 +493,44 @@ func (s *EndpointStore) CountConfigured(ctx context.Context) (int, error) {
 		`SELECT COUNT(*) FROM endpoints WHERE active = 1`,
 	).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count configured endpoints: %w", err)
+	}
+	return count, nil
+}
+
+// SetEndpointLimited marks an endpoint as monitored or left out by the edition cap.
+func (s *EndpointStore) SetEndpointLimited(ctx context.Context, id string, limited bool) error {
+	query := `UPDATE endpoints SET limited=0 WHERE id=?`
+	if limited {
+		query = `UPDATE endpoints SET limited=1, status='unknown', alert_state='normal',
+			consecutive_failures=0, consecutive_successes=0 WHERE id=?`
+	}
+	if _, err := s.writer.Exec(ctx, query, id); err != nil {
+		return fmt.Errorf("set endpoint %s limited: %w", id, err)
+	}
+	return nil
+}
+
+// CountActiveEndpoints counts active endpoints of source, every source when empty.
+func (s *EndpointStore) CountActiveEndpoints(ctx context.Context, source string) (int, error) {
+	query := `SELECT COUNT(*) FROM endpoints WHERE active=1`
+	var args []any
+	if source != "" {
+		query += ` AND source=?`
+		args = append(args, source)
+	}
+	var count int
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count active endpoints: %w", err)
+	}
+	return count, nil
+}
+
+// CountLimitedEndpoints counts active endpoints left out by the edition cap.
+func (s *EndpointStore) CountLimitedEndpoints(ctx context.Context) (int, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM endpoints WHERE active=1 AND limited=1`).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count limited endpoints: %w", err)
 	}
 	return count, nil
 }

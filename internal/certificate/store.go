@@ -17,9 +17,12 @@ type CertificateStore interface {
 	GetMonitorByHostPortAgent(ctx context.Context, agentID *string, hostname string, port int, serverName string) (*CertMonitor, error)
 	GetMonitorByEndpointID(ctx context.Context, endpointID string) (*CertMonitor, error)
 	ListMonitors(ctx context.Context, opts ListCertificatesOpts) ([]*CertMonitor, error)
-	CountStandaloneMonitors(ctx context.Context) (int, error)
 	UpdateMonitor(ctx context.Context, m *CertMonitor) error
 	DeleteMonitor(ctx context.Context, id string) error
+	DeactivateMonitor(ctx context.Context, id string) error
+	SetMonitorLimited(ctx context.Context, id string, limited bool) error
+	CountActiveMonitors(ctx context.Context, sources ...CertSource) (int, error)
+	CountLimitedMonitors(ctx context.Context) (int, error)
 
 	// Check results
 	InsertCheckResult(ctx context.Context, result *CertCheckResult) (string, error)
@@ -38,4 +41,5 @@ type CertificateStore interface {
 
 	// Retention
 	DeleteCheckResultsBefore(ctx context.Context, before time.Time, batchSize int) (int64, error)
+	DeleteInactiveMonitorsBefore(ctx context.Context, before time.Time) (int64, error)
 }

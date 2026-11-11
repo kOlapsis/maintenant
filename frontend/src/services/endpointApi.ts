@@ -44,6 +44,7 @@ export interface Endpoint {
   source: EndpointSource
   name?: string
   agent_id?: string | null
+  limited: boolean
 }
 
 export interface CheckResult {

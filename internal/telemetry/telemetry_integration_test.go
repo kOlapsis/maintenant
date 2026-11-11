@@ -89,7 +89,7 @@ func TestTelemetryIntegration_DefaultBoot_SendsRecord(t *testing.T) {
 	}
 
 	svc := New(cfg, deps, logger)
-	if !svc.IsActive() {
+	if !isActive(svc) {
 		t.Fatalf("expected active service with writable temp datadir, logs:\n%s", buf.String())
 	}
 

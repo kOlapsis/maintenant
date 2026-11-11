@@ -3,6 +3,12 @@
 
 package extension
 
+import (
+	"cmp"
+	"slices"
+	"time"
+)
+
 // Resource names a capped resource type.
 type Resource string
 
@@ -58,4 +64,40 @@ func LiftingEdition(r Resource) Edition {
 		}
 	}
 	return Pro
+}
+
+// LimitCandidate is one element competing for a slot under a cap.
+type LimitCandidate struct {
+	ID            string
+	Grandfathered bool
+	Since         time.Time
+	Key           string
+}
+
+// Allocate returns the IDs of the candidates left without a slot under limit.
+func Allocate(cands []LimitCandidate, limit int) map[string]bool {
+	limited := map[string]bool{}
+	if limit == Unlimited {
+		return limited
+	}
+	sorted := slices.Clone(cands)
+	slices.SortFunc(sorted, func(a, b LimitCandidate) int {
+		if a.Grandfathered != b.Grandfathered {
+			if a.Grandfathered {
+				return -1
+			}
+			return 1
+		}
+		return cmp.Or(a.Since.Compare(b.Since), cmp.Compare(a.Key, b.Key), cmp.Compare(a.ID, b.ID))
+	})
+	grandfathered := 0
+	for _, c := range sorted {
+		if c.Grandfathered {
+			grandfathered++
+		}
+	}
+	for _, c := range sorted[min(max(limit, grandfathered), len(sorted)):] {
+		limited[c.ID] = true
+	}
+	return limited
 }

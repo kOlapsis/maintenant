@@ -115,86 +115,43 @@ func (r *Runtime) discoverAll(ctx context.Context) ([]*cmodel.Container, error) 
 }
 
 func (r *Runtime) mapDeployment(dep *appsv1.Deployment, now time.Time) *cmodel.Container {
-	replicas := int32(1)
-	if dep.Spec.Replicas != nil {
-		replicas = *dep.Spec.Replicas
-	}
-	state, errorDetail := deploymentState(dep)
-	cm := &cmodel.Container{
-		ExternalID:         fmt.Sprintf("%s/Deployment/%s", dep.Namespace, dep.Name),
-		Name:               dep.Name,
-		Image:              primaryImage(dep.Spec.Template.Spec.Containers),
-		State:              state,
-		OrchestrationGroup: dep.Namespace,
-		OrchestrationUnit:  dep.Name,
-		RuntimeType:        "kubernetes",
-		ControllerKind:     "Deployment",
-		Namespace:          dep.Namespace,
-		PodCount:           int(replicas),
-		ReadyCount:         int(dep.Status.ReadyReplicas),
-		ErrorDetail:        errorDetail,
-		AlertSeverity:      cmodel.SeverityWarning,
-		RestartThreshold:   3,
-		FirstSeenAt:        dep.CreationTimestamp.Time,
-		LastStateChangeAt:  now,
-	}
-	applyAnnotations(cm, dep.Annotations)
+	cm := controllerContainer("Deployment", dep.ObjectMeta, dep.Spec.Template.Spec.Containers, desiredReplicas(dep.Spec.Replicas), dep.Status.ReadyReplicas, now)
+	cm.State, cm.ErrorDetail = deploymentState(dep)
 	return cm
 }
 
 func (r *Runtime) mapStatefulSet(ss *appsv1.StatefulSet, now time.Time) *cmodel.Container {
-	replicas := int32(1)
-	if ss.Spec.Replicas != nil {
-		replicas = *ss.Spec.Replicas
-	}
-	state := cmodel.StateRunning
-	if ss.Status.ReadyReplicas == 0 && replicas > 0 {
-		state = cmodel.StateCreated
-	}
-	cm := &cmodel.Container{
-		ExternalID:         fmt.Sprintf("%s/StatefulSet/%s", ss.Namespace, ss.Name),
-		Name:               ss.Name,
-		Image:              primaryImage(ss.Spec.Template.Spec.Containers),
-		State:              state,
-		OrchestrationGroup: ss.Namespace,
-		OrchestrationUnit:  ss.Name,
-		RuntimeType:        "kubernetes",
-		ControllerKind:     "StatefulSet",
-		Namespace:          ss.Namespace,
-		PodCount:           int(replicas),
-		ReadyCount:         int(ss.Status.ReadyReplicas),
-		AlertSeverity:      cmodel.SeverityWarning,
-		RestartThreshold:   3,
-		FirstSeenAt:        ss.CreationTimestamp.Time,
-		LastStateChangeAt:  now,
-	}
-	applyAnnotations(cm, ss.Annotations)
-	return cm
+	return controllerContainer("StatefulSet", ss.ObjectMeta, ss.Spec.Template.Spec.Containers, desiredReplicas(ss.Spec.Replicas), ss.Status.ReadyReplicas, now)
 }
 
 func (r *Runtime) mapDaemonSet(ds *appsv1.DaemonSet, now time.Time) *cmodel.Container {
+	return controllerContainer("DaemonSet", ds.ObjectMeta, ds.Spec.Template.Spec.Containers, ds.Status.DesiredNumberScheduled, ds.Status.NumberReady, now)
+}
+
+// controllerContainer maps a controller to a container, created while none of its desired pods is ready.
+func controllerContainer(kind string, meta metav1.ObjectMeta, containers []corev1.Container, desired, ready int32, now time.Time) *cmodel.Container {
 	state := cmodel.StateRunning
-	if ds.Status.NumberReady == 0 && ds.Status.DesiredNumberScheduled > 0 {
+	if ready == 0 && desired > 0 {
 		state = cmodel.StateCreated
 	}
 	cm := &cmodel.Container{
-		ExternalID:         fmt.Sprintf("%s/DaemonSet/%s", ds.Namespace, ds.Name),
-		Name:               ds.Name,
-		Image:              primaryImage(ds.Spec.Template.Spec.Containers),
+		ExternalID:         workloadID(meta.Namespace, kind, meta.Name),
+		Name:               meta.Name,
+		Image:              primaryImage(containers),
 		State:              state,
-		OrchestrationGroup: ds.Namespace,
-		OrchestrationUnit:  ds.Name,
+		OrchestrationGroup: meta.Namespace,
+		OrchestrationUnit:  meta.Name,
 		RuntimeType:        "kubernetes",
-		ControllerKind:     "DaemonSet",
-		Namespace:          ds.Namespace,
-		PodCount:           int(ds.Status.DesiredNumberScheduled),
-		ReadyCount:         int(ds.Status.NumberReady),
+		ControllerKind:     kind,
+		Namespace:          meta.Namespace,
+		PodCount:           int(desired),
+		ReadyCount:         int(ready),
 		AlertSeverity:      cmodel.SeverityWarning,
 		RestartThreshold:   3,
-		FirstSeenAt:        ds.CreationTimestamp.Time,
+		FirstSeenAt:        meta.CreationTimestamp.Time,
 		LastStateChangeAt:  now,
 	}
-	applyAnnotations(cm, ds.Annotations)
+	applyAnnotations(cm, meta.Annotations)
 	return cm
 }
 
@@ -231,10 +188,7 @@ func deploymentState(dep *appsv1.Deployment) (cmodel.ContainerState, string) {
 			return cmodel.StateExited, "ProgressDeadlineExceeded: " + cond.Message
 		}
 	}
-	replicas := int32(1)
-	if dep.Spec.Replicas != nil {
-		replicas = *dep.Spec.Replicas
-	}
+	replicas := desiredReplicas(dep.Spec.Replicas)
 	if dep.Status.ReadyReplicas >= replicas && replicas > 0 {
 		return cmodel.StateRunning, ""
 	}

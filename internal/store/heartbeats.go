@@ -103,7 +103,7 @@ func (s *HeartbeatStore) ListHeartbeats(ctx context.Context, opts heartbeat.List
 
 	var results []*heartbeat.Heartbeat
 	for rows.Next() {
-		h, err := s.scanHeartbeatRow(rows)
+		h, err := s.scanHeartbeat(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -250,7 +250,7 @@ func (s *HeartbeatStore) ListOverdueHeartbeats(ctx context.Context, now time.Tim
 
 	var results []*heartbeat.Heartbeat
 	for rows.Next() {
-		h, err := s.scanHeartbeatRow(rows)
+		h, err := s.scanHeartbeat(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -291,44 +291,16 @@ func (s *HeartbeatStore) InsertPing(ctx context.Context, p *heartbeat.HeartbeatP
 }
 
 func (s *HeartbeatStore) ListPings(ctx context.Context, heartbeatID string, opts heartbeat.ListPingsOpts) ([]*heartbeat.HeartbeatPing, int, error) {
-	var total int
-	if err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM heartbeat_pings WHERE heartbeat_id=?`, heartbeatID).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count pings: %w", err)
-	}
-
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 500 {
-		limit = 500
-	}
-
-	query := `SELECT id, heartbeat_id, ping_type, exit_code, source_ip, http_method, payload, timestamp
-		FROM heartbeat_pings WHERE heartbeat_id=? ORDER BY timestamp DESC`
-	query += fmt.Sprintf(` LIMIT %d`, limit)
-	if opts.Offset > 0 {
-		query += fmt.Sprintf(` OFFSET %d`, opts.Offset) // #nosec G202 -- integer formatting of an int option.
-	}
-
-	rows, err := s.db.QueryContext(ctx, query, heartbeatID)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list pings: %w", err)
-	}
-	defer func(rows *sql.Rows) {
-		_ = rows.Close()
-	}(rows)
-
-	var results []*heartbeat.HeartbeatPing
-	for rows.Next() {
-		p, err := scanPingRow(rows)
-		if err != nil {
-			return nil, 0, err
-		}
-		results = append(results, p)
-	}
-	return results, total, rows.Err()
+	return listPage(ctx, s.db, pageQuery{
+		what:     "pings",
+		countSQL: `SELECT COUNT(*) FROM heartbeat_pings WHERE heartbeat_id=?`,
+		selectSQL: `SELECT id, heartbeat_id, ping_type, exit_code, source_ip, http_method, payload, timestamp
+		FROM heartbeat_pings WHERE heartbeat_id=? ORDER BY timestamp DESC`,
+		args:         []any{heartbeatID},
+		limit:        opts.Limit,
+		offset:       opts.Offset,
+		defaultLimit: 50,
+	}, scanPingRow)
 }
 
 // --- Executions ---
@@ -373,51 +345,27 @@ func (s *HeartbeatStore) UpdateExecution(ctx context.Context, id string, complet
 // GetCurrentExecution returns the latest in-progress execution. Execution ids
 // are time-ordered UUIDv7, so ORDER BY id DESC yields the most recent.
 func (s *HeartbeatStore) GetCurrentExecution(ctx context.Context, heartbeatID string) (*heartbeat.HeartbeatExecution, error) {
-	return scanExecutionSingle(s.db.QueryRowContext(ctx,
+	e, err := scanExecution(s.db.QueryRowContext(ctx,
 		`SELECT id, heartbeat_id, started_at, completed_at, duration_ms, exit_code, outcome, payload
 		FROM heartbeat_executions WHERE heartbeat_id=? AND outcome='in_progress'
 		ORDER BY id DESC LIMIT 1`, heartbeatID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return e, err
 }
 
 func (s *HeartbeatStore) ListExecutions(ctx context.Context, heartbeatID string, opts heartbeat.ListExecutionsOpts) ([]*heartbeat.HeartbeatExecution, int, error) {
-	var total int
-	if err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM heartbeat_executions WHERE heartbeat_id=?`, heartbeatID).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count executions: %w", err)
-	}
-
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = 20
-	}
-	if limit > 500 {
-		limit = 500
-	}
-
-	query := `SELECT id, heartbeat_id, started_at, completed_at, duration_ms, exit_code, outcome, payload
-		FROM heartbeat_executions WHERE heartbeat_id=? ORDER BY id DESC`
-	query += fmt.Sprintf(` LIMIT %d`, limit)
-	if opts.Offset > 0 {
-		query += fmt.Sprintf(` OFFSET %d`, opts.Offset) // #nosec G202 -- integer formatting of an int option.
-	}
-
-	rows, err := s.db.QueryContext(ctx, query, heartbeatID)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list executions: %w", err)
-	}
-	defer func(rows *sql.Rows) {
-		_ = rows.Close()
-	}(rows)
-
-	var results []*heartbeat.HeartbeatExecution
-	for rows.Next() {
-		e, err := scanExecutionRow(rows)
-		if err != nil {
-			return nil, 0, err
-		}
-		results = append(results, e)
-	}
-	return results, total, rows.Err()
+	return listPage(ctx, s.db, pageQuery{
+		what:     "executions",
+		countSQL: `SELECT COUNT(*) FROM heartbeat_executions WHERE heartbeat_id=?`,
+		selectSQL: `SELECT id, heartbeat_id, started_at, completed_at, duration_ms, exit_code, outcome, payload
+		FROM heartbeat_executions WHERE heartbeat_id=? ORDER BY id DESC`,
+		args:         []any{heartbeatID},
+		limit:        opts.Limit,
+		offset:       opts.Offset,
+		defaultLimit: 20,
+	}, scanExecution)
 }
 
 // --- Retention ---
@@ -495,10 +443,6 @@ func (s *HeartbeatStore) scanHeartbeat(row rowScanner) (*heartbeat.Heartbeat, er
 	return &h, nil
 }
 
-func (s *HeartbeatStore) scanHeartbeatRow(rows *sql.Rows) (*heartbeat.Heartbeat, error) {
-	return s.scanHeartbeat(rows)
-}
-
 func scanPingRow(row rowScanner) (*heartbeat.HeartbeatPing, error) {
 	var p heartbeat.HeartbeatPing
 	var exitCode sql.NullInt64
@@ -525,7 +469,7 @@ func scanPingRow(row rowScanner) (*heartbeat.HeartbeatPing, error) {
 	return &p, nil
 }
 
-func scanExecutionRow(row rowScanner) (*heartbeat.HeartbeatExecution, error) {
+func scanExecution(row rowScanner) (*heartbeat.HeartbeatExecution, error) {
 	var e heartbeat.HeartbeatExecution
 	var startedAt, completedAt, durationMs, exitCode sql.NullInt64
 	var payload sql.NullString
@@ -535,45 +479,6 @@ func scanExecutionRow(row rowScanner) (*heartbeat.HeartbeatExecution, error) {
 		&durationMs, &exitCode, &e.Outcome, &payload,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("scan execution: %w", err)
-	}
-
-	if startedAt.Valid {
-		t := time.Unix(startedAt.Int64, 0)
-		e.StartedAt = &t
-	}
-	if completedAt.Valid {
-		t := time.Unix(completedAt.Int64, 0)
-		e.CompletedAt = &t
-	}
-	if durationMs.Valid {
-		v := durationMs.Int64
-		e.DurationMs = &v
-	}
-	if exitCode.Valid {
-		v := int(exitCode.Int64)
-		e.ExitCode = &v
-	}
-	if payload.Valid {
-		e.Payload = &payload.String
-	}
-
-	return &e, nil
-}
-
-func scanExecutionSingle(row *sql.Row) (*heartbeat.HeartbeatExecution, error) {
-	var e heartbeat.HeartbeatExecution
-	var startedAt, completedAt, durationMs, exitCode sql.NullInt64
-	var payload sql.NullString
-
-	err := row.Scan(
-		&e.ID, &e.HeartbeatID, &startedAt, &completedAt,
-		&durationMs, &exitCode, &e.Outcome, &payload,
-	)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
 		return nil, fmt.Errorf("scan execution: %w", err)
 	}
 

@@ -50,9 +50,9 @@ async function loadAllMonitorOptions() {
     ])
     allMonitorsByType.value = {
       container: containers.groups.flatMap(g => g.containers).map(c => ({ type: 'container', id: c.id, name: c.name })),
-      endpoint: endpoints.endpoints.map(e => ({ type: 'endpoint', id: e.id, name: `${e.container_name} — ${e.target}` })),
+      endpoint: endpoints.endpoints.filter(e => !e.limited).map(e => ({ type: 'endpoint', id: e.id, name: `${e.container_name} — ${e.target}` })),
       heartbeat: heartbeats.heartbeats.map(h => ({ type: 'heartbeat', id: h.id, name: h.name })),
-      certificate: certs.certificates.map(c => ({ type: 'certificate', id: c.id, name: `${c.hostname}:${c.port}` })),
+      certificate: certs.certificates.filter(c => !c.limited).map(c => ({ type: 'certificate', id: c.id, name: `${c.hostname}:${c.port}` })),
     }
     if (compositionMode.value === 'match-all') {
       matchAllCount.value = (allMonitorsByType.value[matchAllType.value] ?? []).length

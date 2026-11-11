@@ -73,7 +73,7 @@ func (s *ChannelStoreImpl) ListChannels(ctx context.Context) ([]*alert.Notificat
 
 	var channels []*alert.NotificationChannel
 	for rows.Next() {
-		ch, err := scanChannelRow(rows)
+		ch, err := scanChannel(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -194,36 +194,13 @@ func (s *ChannelStoreImpl) ListDeliveriesByAlert(ctx context.Context, alertID st
 
 // --- Scan helpers ---
 
-func scanChannel(row *sql.Row) (*alert.NotificationChannel, error) {
+func scanChannel(row rowScanner) (*alert.NotificationChannel, error) {
 	ch := &alert.NotificationChannel{}
 	var headers, secret, config sql.NullString
 	var enabled int
 	var createdAt, updatedAt int64
 
 	err := row.Scan(&ch.ID, &ch.Name, &ch.Type, &ch.URL, &headers, &secret, &config, &enabled, &createdAt, &updatedAt)
-	if err != nil {
-		return nil, err
-	}
-
-	ch.Enabled = enabled == 1
-	if headers.Valid {
-		ch.Headers = headers.String
-	}
-	ch.Secret = secret.String
-	ch.Config = config.String
-	ch.HasSecret = ch.Secret != ""
-	ch.CreatedAt = time.Unix(createdAt, 0)
-	ch.UpdatedAt = time.Unix(updatedAt, 0)
-	return ch, nil
-}
-
-func scanChannelRow(rows *sql.Rows) (*alert.NotificationChannel, error) {
-	ch := &alert.NotificationChannel{}
-	var headers, secret, config sql.NullString
-	var enabled int
-	var createdAt, updatedAt int64
-
-	err := rows.Scan(&ch.ID, &ch.Name, &ch.Type, &ch.URL, &headers, &secret, &config, &enabled, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}

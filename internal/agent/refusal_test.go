@@ -92,7 +92,7 @@ func startIngest(t *testing.T, srv agentpb.IngestServer, cert *tls.Certificate) 
 
 func dialIngest(t *testing.T, url string) *Client {
 	t.Helper()
-	c, err := NewClient(context.Background(), url, false, quietLogger())
+	c, err := NewClientWithFingerprint(context.Background(), url, "", false, quietLogger())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = c.Close() })
 	return c

@@ -140,12 +140,6 @@ func (s *Service) Start(ctx context.Context) {
 	}()
 }
 
-// IsActive reports whether the SDK client is initialised. Used by tests to
-// assert opt-out and datadir-unwritable branches did not spawn the goroutine.
-func (s *Service) IsActive() bool {
-	return s != nil && s.client != nil
-}
-
 func applyDefaults(cfg Config) Config {
 	if cfg.Endpoint == "" {
 		cfg.Endpoint = defaultEndpoint

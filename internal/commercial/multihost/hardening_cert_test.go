@@ -161,8 +161,7 @@ func TestPersistentSelfSigned_WritesTheKeypairOnceAndLogsTheFingerprint(t *testi
 	_, err = tls.LoadX509KeyPair(filepath.Join(dir, "grpc-server.crt"), filepath.Join(dir, "grpc-server.key"))
 	require.NoError(t, err, "the key on disk matches the certificate on disk")
 
-	fp := multihost.Fingerprint(onDisk)
-	assert.Equal(t, sha256Hex(onDisk.Raw), fp)
+	fp := sha256Hex(onDisk.Raw)
 	assert.Contains(t, logs.String(), "fingerprint_sha256="+fp, "the startup log names the fingerprint")
 	assert.Contains(t, logs.String(), "self_signed=true")
 
@@ -249,7 +248,7 @@ func TestPersistentSelfSigned_RegeneratesUnreadableOrExpiredFiles(t *testing.T) 
 			assert.NotEqual(t, before, after, "a regenerated certificate has a new fingerprint")
 
 			onDisk := certFromPEMFile(t, filepath.Join(dir, "grpc-server.crt"))
-			assert.Equal(t, after, multihost.Fingerprint(onDisk), "the new certificate is persisted")
+			assert.Equal(t, after, sha256Hex(onDisk.Raw), "the new certificate is persisted")
 			_, err = tls.LoadX509KeyPair(filepath.Join(dir, "grpc-server.crt"), filepath.Join(dir, "grpc-server.key"))
 			require.NoError(t, err, "the new keypair on disk is loadable")
 			assert.True(t, onDisk.NotAfter.After(time.Now().Add(9*365*24*time.Hour)), "the replacement is a fresh ten-year certificate")
@@ -274,21 +273,6 @@ func TestPersistentSelfSigned_RefusesAnUnwritableDirectory(t *testing.T) {
 	require.Error(t, err, "no certificate can be kept in a directory that cannot be written")
 	assert.Nil(t, cfg)
 	assert.Contains(t, err.Error(), dir, "the error names the directory")
-}
-
-// Contract "Empreinte = SHA-256 du certificat DER, hexadécimal minuscule, 64 caractères".
-func TestFingerprint_IsTheLowercaseHexSHA256OfTheDER(t *testing.T) {
-	_, _, a := makeKeypair(t, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
-	_, _, b := makeKeypair(t, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
-
-	for _, cert := range []*x509.Certificate{a, b} {
-		fp := multihost.Fingerprint(cert)
-		assert.Equal(t, sha256Hex(cert.Raw), fp)
-		assert.Len(t, fp, 64)
-		assert.Equal(t, strings.ToLower(fp), fp)
-		assert.NotContains(t, fp, ":")
-	}
-	assert.NotEqual(t, multihost.Fingerprint(a), multihost.Fingerprint(b))
 }
 
 func multiHostFor(t *testing.T, logger *slog.Logger) extpoint.MultiHost {

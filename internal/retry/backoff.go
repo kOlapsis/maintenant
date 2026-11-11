@@ -65,8 +65,7 @@ func (b *Backoff) Next() time.Duration {
 	return time.Duration(float64(raw) * factor)
 }
 
-// Sleep waits for the next backoff delay or until ctx is cancelled.
-// Returns ctx.Err() on cancellation, nil if the delay elapsed normally.
+// Sleep waits for the next backoff delay and returns ctx.Err() if ctx is cancelled first.
 func (b *Backoff) Sleep(ctx context.Context) error {
 	select {
 	case <-ctx.Done():

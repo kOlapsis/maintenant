@@ -167,10 +167,6 @@ func buildInstallTemplatesFor(serverURL, token, fingerprint string, selfSigned b
 	}
 }
 
-func buildInstallTemplates(serverURL, token string) map[string]string {
-	return buildInstallTemplatesFor(serverURL, token, "", false)
-}
-
 func buildInstallStandalone(serverURL, token, pin string) string {
 	out := "curl -fsSL https://install.maintenant.dev | sudo bash -s -- \\\n" +
 		"  --mode agent \\\n" +

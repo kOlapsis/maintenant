@@ -66,7 +66,7 @@ func TestStart_ServesAgentsWhereMultihostIsOpen(t *testing.T) {
 	go func() { done <- a.Start(ctx) }()
 	t.Cleanup(func() {
 		cancel()
-		<-done
+		assert.NoError(t, <-done)
 	})
 
 	require.Eventually(t, func() bool {

@@ -243,6 +243,9 @@ func (h *EndpointHandler) HandleCheckNow(w http.ResponseWriter, r *http.Request)
 	case errors.Is(err, endpoint.ErrCheckInProgress):
 		WriteError(w, http.StatusConflict, "CHECK_IN_PROGRESS", "A check is already running for this endpoint")
 		return
+	case errors.Is(err, endpoint.ErrLimited):
+		refuseQuota(w, extension.ResourceEndpoints)
+		return
 	case err != nil:
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to check endpoint")
 		return

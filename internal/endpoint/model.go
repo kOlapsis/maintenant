@@ -90,6 +90,8 @@ type Endpoint struct {
 	Source               EndpointSource `json:"source"`
 	Name                 string         `json:"name,omitempty"`
 	AgentID              string         `json:"agent_id"`
+	Limited              bool           `json:"limited"`
+	Grandfathered        bool           `json:"-"`
 }
 
 // ConfigJSON returns the JSON-encoded configuration.

@@ -215,9 +215,11 @@ func (s *EscalationStore) SelectRunsByPolicy(ctx context.Context, policyID strin
 
 func (s *EscalationStore) SelectRunDeliveries(ctx context.Context, runID string) ([]*escalation.Delivery, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, run_id, level_index, channel_id, status, error,
-			attempt_started_at, sent_at
-		FROM escalation_deliveries WHERE run_id = ? ORDER BY id ASC`, runID)
+		`SELECT d.id, d.run_id, d.level_index, d.channel_id, d.status, d.error,
+			d.attempt_started_at, d.sent_at, c.name
+		FROM escalation_deliveries d
+		LEFT JOIN notification_channels c ON c.id = d.channel_id
+		WHERE d.run_id = ? ORDER BY d.id ASC`, runID)
 	if err != nil {
 		return nil, fmt.Errorf("select run deliveries: %w", err)
 	}
@@ -428,11 +430,12 @@ func (s *EscalationStore) UpdateDelivery(ctx context.Context, d *escalation.Deli
 // than the runner's orphan timeout. The runner decides whether to retry or abandon.
 func (s *EscalationStore) SelectOrphanPendingDeliveries(ctx context.Context, before time.Time) ([]*escalation.Delivery, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, run_id, level_index, channel_id, status, error,
-			attempt_started_at, sent_at
-		FROM escalation_deliveries
-		WHERE status = 'pending' AND attempt_started_at < ?
-		ORDER BY attempt_started_at ASC`,
+		`SELECT d.id, d.run_id, d.level_index, d.channel_id, d.status, d.error,
+			d.attempt_started_at, d.sent_at, c.name
+		FROM escalation_deliveries d
+		LEFT JOIN notification_channels c ON c.id = d.channel_id
+		WHERE d.status = 'pending' AND d.attempt_started_at < ?
+		ORDER BY d.attempt_started_at ASC`,
 		before.Unix(),
 	)
 	if err != nil {
@@ -565,13 +568,14 @@ func scanEscalationRuns(rows *sql.Rows) ([]*escalation.Run, error) {
 func scanEscalationDelivery(scanner rowScanner) (*escalation.Delivery, error) {
 	var d escalation.Delivery
 	var channelID sql.NullString
+	var channelName sql.NullString
 	var errStr sql.NullString
 	var sentAt sql.NullInt64
 	var attemptStartedAt int64
 
 	err := scanner.Scan(
 		&d.ID, &d.RunID, &d.LevelIndex, &channelID, &d.Status, &errStr,
-		&attemptStartedAt, &sentAt,
+		&attemptStartedAt, &sentAt, &channelName,
 	)
 	if err != nil {
 		return nil, err
@@ -581,6 +585,7 @@ func scanEscalationDelivery(scanner rowScanner) (*escalation.Delivery, error) {
 		v := channelID.String
 		d.ChannelID = &v
 	}
+	d.ChannelName = channelName.String
 	if errStr.Valid {
 		d.Error = errStr.String
 	}

@@ -25,6 +25,7 @@ import EndpointEventTimeline from './EndpointEventTimeline.vue'
 import AgentBadge from './AgentBadge.vue'
 import UptimeBar90 from './ui/UptimeBar90.vue'
 import UiButton from './ui/UiButton.vue'
+import LimitChip from './ui/LimitChip.vue'
 
 const props = defineProps<{
   endpointId: string
@@ -88,7 +89,7 @@ const checkError = ref<string | null>(null)
 
 // Only endpoints the server probes itself can be re-checked from here: an agent's
 // targets sit on its network, and it re-probes them every 30 seconds anyway.
-const canCheckNow = computed(() => isLocalAgent(endpoint.value?.agent_id))
+const canCheckNow = computed(() => isLocalAgent(endpoint.value?.agent_id) && !endpoint.value?.limited)
 
 async function checkNow() {
   if (checking.value) return
@@ -208,8 +209,9 @@ watch(() => props.endpointId, () => {
     <template v-else-if="endpoint">
       <!-- Status overview -->
       <div class="mb-6 flex flex-wrap items-center gap-3 text-sm">
+        <LimitChip v-if="endpoint.limited" />
         <span
-          v-if="isOffline"
+          v-else-if="isOffline"
           class="rounded-full px-2 py-0.5 text-xs font-medium text-mnt-sev-unknown bg-mnt-sev-unknown"
           :title="endpointStaleBadge(endpoint).title"
         >
@@ -272,7 +274,7 @@ watch(() => props.endpointId, () => {
       </div>
 
       <!-- 90-day uptime -->
-      <div v-if="uptimeDays.length > 0" class="mb-6">
+      <div v-if="uptimeDays.length > 0 && !endpoint.limited" class="mb-6">
         <h3 class="mb-2 text-xs font-bold uppercase tracking-wider" :style="{ color: 'var(--mnt-text-muted)' }">
           90-day uptime
         </h3>
@@ -280,7 +282,7 @@ watch(() => props.endpointId, () => {
       </div>
 
       <!-- Event timeline -->
-      <div class="mb-6">
+      <div v-if="!endpoint.limited" class="mb-6">
         <EndpointEventTimeline :checks="checks" :hours="24" :current-status="endpoint.status" />
       </div>
 

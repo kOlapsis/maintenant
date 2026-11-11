@@ -61,9 +61,6 @@ func LoadOrGenerateTLS(certFile, keyFile string, hosts []string, dataDir string,
 	return serverTLSConfig(cert), true, nil
 }
 
-// Fingerprint returns the lowercase hex SHA-256 of a certificate's DER bytes.
-func Fingerprint(cert *x509.Certificate) string { return fingerprintDER(cert.Raw) }
-
 func fingerprintDER(der []byte) string {
 	sum := sha256.Sum256(der)
 	return hex.EncodeToString(sum[:])

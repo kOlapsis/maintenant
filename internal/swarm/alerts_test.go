@@ -41,7 +41,7 @@ func (s *alertSink) take() []alert.Event {
 func TestReplicaHealthChecker_IgnoredServiceRaisesNothing(t *testing.T) {
 	sink := &alertSink{}
 	rhc := NewReplicaHealthChecker(quietLogger())
-	rhc.SetAlertDelay(0)
+	rhc.alertDelay = 0
 	rhc.SetAlertCallback(sink.record)
 
 	svc := underReplicated("svc1", "prod_web", ignoreLabels)
@@ -53,7 +53,7 @@ func TestReplicaHealthChecker_IgnoredServiceRaisesNothing(t *testing.T) {
 func TestReplicaHealthChecker_ServiceIgnoredWhileAlertedResolves(t *testing.T) {
 	sink := &alertSink{}
 	rhc := NewReplicaHealthChecker(quietLogger())
-	rhc.SetAlertDelay(0)
+	rhc.alertDelay = 0
 	rhc.SetAlertCallback(sink.record)
 
 	rhc.Check([]*SwarmService{underReplicated("svc1", "prod_web", nil)})
@@ -72,7 +72,7 @@ func TestReplicaHealthChecker_ServiceIgnoredWhileAlertedResolves(t *testing.T) {
 func TestReplicaHealthChecker_EachServiceHasItsOwnAlert(t *testing.T) {
 	sink := &alertSink{}
 	rhc := NewReplicaHealthChecker(quietLogger())
-	rhc.SetAlertDelay(0)
+	rhc.alertDelay = 0
 	rhc.SetAlertCallback(sink.record)
 
 	services := []*SwarmService{underReplicated("svc1", "prod_web", nil), underReplicated("svc2", "prod_api", nil)}
@@ -123,7 +123,7 @@ func serviceUpdated() runtime.RuntimeEvent {
 func replicaSetup(client *replicaClient, delay time.Duration) (*EventProcessor, *ServiceDiscovery, *ReplicaHealthChecker, *alertSink) {
 	sink := &alertSink{}
 	rhc := NewReplicaHealthChecker(quietLogger())
-	rhc.SetAlertDelay(delay)
+	rhc.alertDelay = delay
 	rhc.SetAlertCallback(sink.record)
 	disc := NewServiceDiscovery(client, quietLogger())
 	ep := NewEventProcessor(disc, quietLogger())

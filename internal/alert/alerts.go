@@ -75,30 +75,3 @@ func (d *RestartDetector) Check(ctx context.Context, c *container.Container) (in
 		AgentID:       c.AgentID,
 	}, nil
 }
-
-// HealthAlert represents a health status change alert.
-type HealthAlert struct {
-	ContainerID    string
-	ContainerName  string
-	PreviousHealth *container.HealthStatus
-	NewHealth      container.HealthStatus
-	Severity       container.AlertSeverity
-	Timestamp      time.Time
-}
-
-// CheckHealthTransition returns an alert if a container transitions from healthy to unhealthy.
-func CheckHealthTransition(c *container.Container, previousHealth *container.HealthStatus, newHealth container.HealthStatus) *HealthAlert {
-	// Only alert on healthy → unhealthy transition
-	if previousHealth == nil || *previousHealth != container.HealthHealthy || newHealth != container.HealthUnhealthy {
-		return nil
-	}
-
-	return &HealthAlert{
-		ContainerID:    c.ID,
-		ContainerName:  c.Name,
-		PreviousHealth: previousHealth,
-		NewHealth:      newHealth,
-		Severity:       c.AlertSeverity,
-		Timestamp:      time.Now(),
-	}
-}

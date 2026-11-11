@@ -38,9 +38,7 @@ func TestInsertCheckResult_SameEventTwiceKeepsOneRow(t *testing.T) {
 	require.Equal(t, 1, count)
 }
 
-// The Community cap applies to what an operator adds by hand, so the count
-// behind it ignores label-discovered endpoints, however many a host declares.
-func TestCountStandaloneEndpoints_IgnoresLabelEndpoints(t *testing.T) {
+func TestCountActiveEndpoints_FiltersBySource(t *testing.T) {
 	db := openTestDB(t)
 	s := NewEndpointStore(db)
 	ctx := context.Background()
@@ -56,9 +54,12 @@ func TestCountStandaloneEndpoints_IgnoresLabelEndpoints(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	count, err := s.CountStandaloneEndpoints(ctx)
+	count, err := s.CountActiveEndpoints(ctx, string(endpoint.SourceStandalone))
 	require.NoError(t, err)
 	require.Equal(t, 0, count)
+	count, err = s.CountActiveEndpoints(ctx, "")
+	require.NoError(t, err)
+	require.Equal(t, 12, count)
 
 	var standaloneIDs []string
 	for i := 1; i <= 3; i++ {
@@ -71,12 +72,58 @@ func TestCountStandaloneEndpoints_IgnoresLabelEndpoints(t *testing.T) {
 		standaloneIDs = append(standaloneIDs, id)
 	}
 
-	count, err = s.CountStandaloneEndpoints(ctx)
+	count, err = s.CountActiveEndpoints(ctx, string(endpoint.SourceStandalone))
 	require.NoError(t, err)
 	require.Equal(t, 3, count)
 
 	require.NoError(t, s.DeactivateEndpoint(ctx, standaloneIDs[0]))
-	count, err = s.CountStandaloneEndpoints(ctx)
+	count, err = s.CountActiveEndpoints(ctx, string(endpoint.SourceStandalone))
 	require.NoError(t, err)
 	require.Equal(t, 2, count, "a deactivated endpoint frees its slot")
+}
+
+func TestEndpointStore_LimitedEndpointLosesItsStatus(t *testing.T) {
+	db := openTestDB(t)
+	s := NewEndpointStore(db)
+	ctx := context.Background()
+
+	id := clLabelEndpoint(t, s, uid.LocalAgent, "web", "maintenant.endpoint.tcp", "127.0.0.1:7000")
+	require.NoError(t, s.UpdateCheckResult(ctx, id, endpoint.StatusUp, endpoint.AlertNormal, 0, 3, 5, nil, ""))
+
+	require.NoError(t, s.SetEndpointLimited(ctx, id, true))
+	ep, err := s.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.True(t, ep.Limited)
+	require.Equal(t, endpoint.StatusUnknown, ep.Status)
+
+	require.NoError(t, s.SetEndpointLimited(ctx, id, false))
+	ep, err = s.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.False(t, ep.Limited)
+	require.Equal(t, endpoint.StatusUnknown, ep.Status, "the status waits for the next check")
+}
+
+func TestEndpointStore_RecreatedEndpointKeepsItsRight(t *testing.T) {
+	db := openTestDB(t)
+	s := NewEndpointStore(db)
+	ctx := context.Background()
+
+	id := clLabelEndpoint(t, s, uid.LocalAgent, "web", "maintenant.endpoint.tcp", "127.0.0.1:7000")
+	_, err := db.Writer().Exec(ctx, `UPDATE endpoints SET grandfathered=1, first_seen_at=?, last_seen_at=? WHERE id=?`,
+		int64(1000), int64(1000), id)
+	require.NoError(t, err)
+
+	require.NoError(t, s.DeactivateEndpoint(ctx, id))
+	ep, err := s.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.False(t, ep.Active)
+	require.WithinDuration(t, time.Now(), ep.LastSeenAt, time.Minute, "deactivation records when the endpoint vanished")
+
+	again := clLabelEndpoint(t, s, uid.LocalAgent, "web", "maintenant.endpoint.tcp", "127.0.0.1:7001")
+	require.Equal(t, id, again)
+	ep, err = s.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.True(t, ep.Active)
+	require.True(t, ep.Grandfathered)
+	require.Equal(t, int64(1000), ep.FirstSeenAt.Unix())
 }

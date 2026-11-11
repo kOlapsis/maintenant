@@ -72,7 +72,7 @@ func TestValidate(t *testing.T) {
 
 	t.Run("extended before security", func(t *testing.T) {
 		table := cloneTable(base)
-		before := NewDate(2000, time.January, 1)
+		before := newDate(2000, time.January, 1)
 		cycles := table.Products["debian"]
 		cycles[0].ExtendedUntil = &before
 		if err := Validate(table); err == nil {
@@ -82,7 +82,7 @@ func TestValidate(t *testing.T) {
 
 	t.Run("active after security", func(t *testing.T) {
 		table := cloneTable(base)
-		after := NewDate(2099, time.January, 1)
+		after := newDate(2099, time.January, 1)
 		cycles := table.Products["debian"]
 		cycles[0].ActiveUntil = &after
 		if err := Validate(table); err == nil {
@@ -115,7 +115,7 @@ func TestDateJSON(t *testing.T) {
 }
 
 func TestDateDaysUntil(t *testing.T) {
-	date := NewDate(2026, time.August, 31)
+	date := newDate(2026, time.August, 31)
 	cases := map[string]int{
 		"2026-08-31T00:00:00Z": 0,
 		"2026-08-31T23:59:59Z": 0,
@@ -139,4 +139,8 @@ func cloneTable(src Table) Table {
 		out.Products[product] = append([]Cycle(nil), cycles...)
 	}
 	return out
+}
+
+func newDate(year int, month time.Month, day int) Date {
+	return Date{t: time.Date(year, month, day, 0, 0, 0, 0, time.UTC)}
 }

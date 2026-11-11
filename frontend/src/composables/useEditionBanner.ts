@@ -4,7 +4,7 @@ import { useEdition } from '@/composables/useEdition'
 
 export type Tier = 0 | 1 | 2 | 3
 
-const COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000
+const COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000
 
 export function tierFromCount(count: number): Tier {
   if (count < 10) return 0
@@ -15,6 +15,18 @@ export function tierFromCount(count: number): Tier {
 
 function storageKey(tier: Tier): string {
   return `mnt:banner:edition-tier-${tier}`
+}
+
+const LIMIT_KEY = 'mnt:banner:edition-limit'
+
+function dismissedRecently(keys: string[]): boolean {
+  let raw: string | null = null
+  for (const key of keys) {
+    raw = localStorage.getItem(key)
+    if (raw !== null) break
+  }
+  const ts = Number(raw)
+  return Number.isFinite(ts) && Date.now() - ts < COOLDOWN_MS
 }
 
 /**
@@ -31,11 +43,17 @@ export interface EditionBannerHandle {
   count: ComputedRef<number | null>
   visible: ComputedRef<boolean>
   dismiss: () => void
+  unmonitoredEndpoints: ComputedRef<number>
+  unmonitoredCertificates: ComputedRef<number>
+  limitVisible: ComputedRef<boolean>
+  dismissLimit: () => void
 }
 
 export function useEditionBanner(): EditionBannerHandle {
   const containers = useContainersStore()
-  const { isCommunity } = useEdition()
+  const { isCommunity, getQuota } = useEdition()
+  const endpointQuota = getQuota('endpoints')
+  const certificateQuota = getQuota('certificates')
 
   // localStorage isn't reactive — bump this to force dismissed recompute after dismiss().
   const dismissNonce = ref(0)
@@ -51,17 +69,28 @@ export function useEditionBanner(): EditionBannerHandle {
   )
 
   const dismissed = computed<boolean>(() => {
-    dismissNonce.value
+    void dismissNonce.value
     const t = tier.value
     if (t === null || t === 0) return false
-    let raw = localStorage.getItem(storageKey(t))
-    for (const key of legacyStorageKeys(t)) {
-      if (raw !== null) break
-      raw = localStorage.getItem(key)
-    }
-    const ts = Number(raw)
-    return Number.isFinite(ts) && Date.now() - ts < COOLDOWN_MS
+    return (
+      dismissedRecently([storageKey(t), ...legacyStorageKeys(t)]) || dismissedRecently([LIMIT_KEY])
+    )
   })
+
+  const unmonitoredEndpoints = computed(() => endpointQuota.value.unmonitored)
+  const unmonitoredCertificates = computed(() => certificateQuota.value.unmonitored)
+
+  const limitDismissed = computed<boolean>(() => {
+    void dismissNonce.value
+    return dismissedRecently([LIMIT_KEY])
+  })
+
+  const limitVisible = computed(
+    () =>
+      isCommunity.value &&
+      unmonitoredEndpoints.value + unmonitoredCertificates.value > 0 &&
+      !limitDismissed.value,
+  )
 
   const visible = computed(
     // Community only — not "anything that is not Pro". Personal is a paid
@@ -77,5 +106,19 @@ export function useEditionBanner(): EditionBannerHandle {
     dismissNonce.value++
   }
 
-  return { tier, count, visible, dismiss }
+  function dismissLimit(): void {
+    localStorage.setItem(LIMIT_KEY, String(Date.now()))
+    dismissNonce.value++
+  }
+
+  return {
+    tier,
+    count,
+    visible,
+    dismiss,
+    unmonitoredEndpoints,
+    unmonitoredCertificates,
+    limitVisible,
+    dismissLimit,
+  }
 }

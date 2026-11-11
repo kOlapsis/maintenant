@@ -161,6 +161,22 @@ export const useEndpointsStore = defineStore('endpoints', () => {
     }
   }
 
+  function onLimitChanged(e: MessageEvent) {
+    let data
+    try {
+      data = JSON.parse(e.data)
+    } catch {
+      return
+    }
+    const idx = endpoints.value.findIndex((ep) => ep.id === data.endpoint_id)
+    if (idx < 0) return
+    endpoints.value[idx] = {
+      ...endpoints.value[idx]!,
+      limited: data.limited,
+      ...(data.limited ? { status: 'unknown' as const } : {}),
+    }
+  }
+
   function onRemoved(e: MessageEvent) {
     let data
     try {
@@ -229,6 +245,7 @@ export const useEndpointsStore = defineStore('endpoints', () => {
   function connectSSE() {
     sseBus.on('endpoint.discovered', onDiscovered)
     sseBus.on('endpoint.status_changed', onStatusChanged)
+    sseBus.on('endpoint.limit_changed', onLimitChanged)
     sseBus.on('endpoint.removed', onRemoved)
     sseBus.on('endpoint.alert', onAlert)
     sseBus.on('endpoint.recovery', onRecovery)
@@ -240,6 +257,7 @@ export const useEndpointsStore = defineStore('endpoints', () => {
   function disconnectSSE() {
     sseBus.off('endpoint.discovered', onDiscovered)
     sseBus.off('endpoint.status_changed', onStatusChanged)
+    sseBus.off('endpoint.limit_changed', onLimitChanged)
     sseBus.off('endpoint.removed', onRemoved)
     sseBus.off('endpoint.alert', onAlert)
     sseBus.off('endpoint.recovery', onRecovery)

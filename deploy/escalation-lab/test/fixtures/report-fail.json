@@ -1,0 +1,19 @@
+{
+  "policy": "p1",
+  "channels": {"l1_webhook": "c1", "l2_email": "c2", "l3_email": "c3", "l3_webhook": "c4"},
+  "alert": {"id": "a1", "alert_type": "container_down", "severity": "critical", "entity_name": "shop-api"},
+  "run": {"id": "r1", "status": "stopped_by_ack", "last_executed_level_index": 1},
+  "deliveries": [
+    {"level_index": 0, "channel_id": "c1", "status": "sent"},
+    {"level_index": 1, "channel_id": "c2", "status": "sent"},
+    {"level_index": -1, "channel_id": "c1", "status": "sent"},
+    {"level_index": -1, "channel_id": "c2", "status": "sent"}
+  ],
+  "webhooks": {
+    "l1": [{"event": "alert.fired", "message": "Container shop-api has been exited for 31s"}, {"event": "alert.resolved", "message": "Acknowledged by ops at 2026-10-30T10:05:00Z: Container shop-api has been exited for 31s"}],
+    "l3": []
+  },
+  "mails": {"oncall@lab.test": 2, "cto@lab.test": 1},
+  "healed": true,
+  "timings": {"detection_s": 55, "level1_s": 120, "level2_s": 180, "level3_s": null, "ended_s": 200, "healed_s": 240}
+}

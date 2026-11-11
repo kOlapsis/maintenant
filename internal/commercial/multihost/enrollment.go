@@ -181,13 +181,25 @@ func (impl *ingestImpl) RegisterAgent(ctx context.Context, req *agentpb.Register
 	}, nil
 }
 
+type pushStream = grpc.BidiStreamingServer[agentpb.ClientMessage, agentpb.ServerMessage]
+
+type recvResult struct {
+	msg *agentpb.ClientMessage
+	err error
+}
+
+type pushSession struct {
+	impl        *ingestImpl
+	stream      pushStream
+	agentID     string
+	acks        *ackTracker
+	lastSeenUpd time.Time
+}
+
 // Push implements the long-lived bidirectional event stream for an enrolled agent.
 // Protocol: server sends AuthChallenge → client sends AuthResponse → server enters event loop.
-func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessage, agentpb.ServerMessage]) error {
-	logger := impl.deps.Logger
+func (impl *ingestImpl) Push(stream pushStream) error {
 	sessions := impl.deps.Sessions
-	limiter := impl.deps.Limiter
-	dispatcher := impl.deps.Dispatcher
 
 	if !impl.allowAttempt(stream.Context()) {
 		return errTooManyAttempts
@@ -205,61 +217,14 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 	}
 
 	// Phase 2: receive auth response.
-	type recvResult struct {
-		msg *agentpb.ClientMessage
-		err error
-	}
-	authTimer := time.NewTimer(authenticationTimeout)
-	defer authTimer.Stop()
-	authCh := make(chan recvResult, 1)
-	go func() {
-		msg, err := stream.Recv()
-		authCh <- recvResult{msg, err}
-	}()
-	var msg *agentpb.ClientMessage
-	select {
-	case <-authTimer.C:
-		return grpcstatus.Error(codes.DeadlineExceeded, "authentication timed out")
-	case res := <-authCh:
-		if res.err != nil {
-			return res.err
-		}
-		msg = res.msg
-	}
-	authResp, ok := msg.GetPayload().(*agentpb.ClientMessage_Auth)
-	if !ok {
-		return grpcstatus.Error(codes.InvalidArgument, "expected AuthResponse as first message")
-	}
-	resp := authResp.Auth
-	agentID, err := normalizeAgentID(resp.GetAgentId())
+	resp, err := receiveAuth(stream)
 	if err != nil {
 		return err
 	}
-
-	// Load agent and verify signature.
-	ag, err := impl.deps.AgentStore.Get(stream.Context(), agentID)
-	if errors.Is(err, agent.ErrAgentNotFound) {
-		return grpcstatus.Error(codes.NotFound, "agent not found")
-	}
+	ag, err := impl.authenticate(stream.Context(), resp, challenge.Nonce)
 	if err != nil {
-		logger.Error("Push: load agent failed", "agent_id", agentID, "err", err)
-		return grpcstatus.Error(codes.Internal, "load agent error")
+		return err
 	}
-
-	if err := Verify(resp, challenge.Nonce, ag, time.Now()); err != nil {
-		switch {
-		case errors.Is(err, ErrAgentRevoked):
-			logger.Warn("agent.auth_failed", "agent_id", ag.AgentID, "reason", "revoked")
-			return grpcstatus.Error(codes.PermissionDenied, "agent_revoked")
-		case errors.Is(err, ErrClockSkew):
-			logger.Warn("agent.auth_failed", "agent_id", ag.AgentID, "reason", "clock_skew")
-			return grpcstatus.Error(codes.DeadlineExceeded, "clock_skew")
-		default:
-			logger.Warn("agent.auth_failed", "agent_id", ag.AgentID, "reason", "bad_signature")
-			return grpcstatus.Error(codes.Unauthenticated, "invalid signature")
-		}
-	}
-	logger.Debug("agent.auth_ok", "agent_id", ag.AgentID)
 
 	// Phase 3: open session with a cancellable context.
 	// sessions.CloseStream() calls cancel() which unblocks the recv loop below.
@@ -277,21 +242,7 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 		defer sessions.CloseStream(ag.AgentID, tok, "stream_ended")
 	}
 
-	// RegisterRequest.agent_version freezes at enrollment; AuthResponse carries
-	// the running build, so refresh it on every connect.
-	if v := resp.GetAgentVersion(); v != "" && v != ag.AgentVersion {
-		if err := impl.deps.AgentStore.UpdateAgentVersion(stream.Context(), ag.AgentID, v); err != nil {
-			logger.Error("Push: UpdateAgentVersion failed", "agent_id", ag.AgentID, "err", err)
-		} else {
-			logger.Info("agent.version_updated", "agent_id", ag.AgentID, "from", ag.AgentVersion, "to", v)
-		}
-	}
-
-	// Mark live on auth so the stale watcher can't reap a freshly (re)connected stream.
-	connectedAt := time.Now()
-	if err := impl.deps.AgentStore.UpdateLastSeen(stream.Context(), ag.AgentID, connectedAt); err != nil {
-		logger.Error("Push: initial UpdateLastSeen failed", "agent_id", ag.AgentID, "err", err)
-	}
+	connectedAt := impl.markConnected(stream.Context(), ag, resp)
 
 	// Phase 4: async recv so we can select on session cancellation.
 	recvCh := make(chan recvResult, 1)
@@ -305,40 +256,100 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 		}
 	}()
 
-	lastSeenUpd := connectedAt
-	acks := newAckTracker(time.Now())
+	s := &pushSession{impl: impl, stream: stream, agentID: ag.AgentID, lastSeenUpd: connectedAt}
+	s.acks = newAckTracker(time.Now())
 	ackTicker := time.NewTicker(ackTick)
 	defer ackTicker.Stop()
 
-	// touchLiveness records that the agent is alive. Any message proves it —
-	// telemetry, a command reply, even an event we are about to rate-limit — so
-	// this runs before payload dispatch. Gating it on accepted telemetry let the
-	// stale watcher reap a session that was streaming perfectly well.
-	touchLiveness := func() {
-		if time.Since(lastSeenUpd) <= 20*time.Second {
-			return
+	return s.run(streamCtx, recvCh, sendCh, ackTicker.C)
+}
+
+func receiveAuth(stream pushStream) (*agentpb.AuthResponse, error) {
+	authTimer := time.NewTimer(authenticationTimeout)
+	defer authTimer.Stop()
+	authCh := make(chan recvResult, 1)
+	go func() {
+		msg, err := stream.Recv()
+		authCh <- recvResult{msg, err}
+	}()
+	var msg *agentpb.ClientMessage
+	select {
+	case <-authTimer.C:
+		return nil, grpcstatus.Error(codes.DeadlineExceeded, "authentication timed out")
+	case res := <-authCh:
+		if res.err != nil {
+			return nil, res.err
 		}
-		if err := impl.deps.AgentStore.UpdateLastSeen(stream.Context(), ag.AgentID, time.Now()); err != nil {
-			logger.Error("Push: UpdateLastSeen failed", "agent_id", ag.AgentID, "err", err)
-		}
-		lastSeenUpd = time.Now()
+		msg = res.msg
+	}
+	authResp, ok := msg.GetPayload().(*agentpb.ClientMessage_Auth)
+	if !ok {
+		return nil, grpcstatus.Error(codes.InvalidArgument, "expected AuthResponse as first message")
+	}
+	return authResp.Auth, nil
+}
+
+func (impl *ingestImpl) authenticate(ctx context.Context, resp *agentpb.AuthResponse, nonce []byte) (*agent.Agent, error) {
+	logger := impl.deps.Logger
+	agentID, err := normalizeAgentID(resp.GetAgentId())
+	if err != nil {
+		return nil, err
 	}
 
-	sendAck := func(seq uint64) error {
-		if err := stream.Send(&agentpb.ServerMessage{
-			Payload: &agentpb.ServerMessage_Ack{
-				Ack: &agentpb.EventAck{
-					LastEventSeq: seq,
-					ReceivedAt:   timestamppb.Now(),
-				},
-			},
-		}); err != nil {
-			return err
-		}
-		acks.sent(seq, time.Now())
-		return nil
+	// Load agent and verify signature.
+	ag, err := impl.deps.AgentStore.Get(ctx, agentID)
+	if errors.Is(err, agent.ErrAgentNotFound) {
+		return nil, grpcstatus.Error(codes.NotFound, "agent not found")
+	}
+	if err != nil {
+		logger.Error("Push: load agent failed", "agent_id", agentID, "err", err)
+		return nil, grpcstatus.Error(codes.Internal, "load agent error")
 	}
 
+	if err := Verify(resp, nonce, ag, time.Now()); err != nil {
+		return nil, impl.authFailure(ag.AgentID, err)
+	}
+	logger.Debug("agent.auth_ok", "agent_id", ag.AgentID)
+	return ag, nil
+}
+
+func (impl *ingestImpl) authFailure(agentID string, err error) error {
+	logger := impl.deps.Logger
+	switch {
+	case errors.Is(err, ErrAgentRevoked):
+		logger.Warn("agent.auth_failed", "agent_id", agentID, "reason", "revoked")
+		return grpcstatus.Error(codes.PermissionDenied, "agent_revoked")
+	case errors.Is(err, ErrClockSkew):
+		logger.Warn("agent.auth_failed", "agent_id", agentID, "reason", "clock_skew")
+		return grpcstatus.Error(codes.DeadlineExceeded, "clock_skew")
+	default:
+		logger.Warn("agent.auth_failed", "agent_id", agentID, "reason", "bad_signature")
+		return grpcstatus.Error(codes.Unauthenticated, "invalid signature")
+	}
+}
+
+func (impl *ingestImpl) markConnected(ctx context.Context, ag *agent.Agent, resp *agentpb.AuthResponse) time.Time {
+	logger := impl.deps.Logger
+
+	// RegisterRequest.agent_version freezes at enrollment; AuthResponse carries
+	// the running build, so refresh it on every connect.
+	if v := resp.GetAgentVersion(); v != "" && v != ag.AgentVersion {
+		if err := impl.deps.AgentStore.UpdateAgentVersion(ctx, ag.AgentID, v); err != nil {
+			logger.Error("Push: UpdateAgentVersion failed", "agent_id", ag.AgentID, "err", err)
+		} else {
+			logger.Info("agent.version_updated", "agent_id", ag.AgentID, "from", ag.AgentVersion, "to", v)
+		}
+	}
+
+	// Mark live on auth so the stale watcher can't reap a freshly (re)connected stream.
+	connectedAt := time.Now()
+	if err := impl.deps.AgentStore.UpdateLastSeen(ctx, ag.AgentID, connectedAt); err != nil {
+		logger.Error("Push: initial UpdateLastSeen failed", "agent_id", ag.AgentID, "err", err)
+	}
+	return connectedAt
+}
+
+func (s *pushSession) run(streamCtx context.Context, recvCh <-chan recvResult, sendCh <-chan *agentpb.ServerMessage, ticks <-chan time.Time) error {
 	for {
 		select {
 		case <-streamCtx.Done():
@@ -351,13 +362,13 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 			return grpcstatus.Error(codes.Unavailable, "session_closed")
 
 		case out := <-sendCh:
-			if err := stream.Send(out); err != nil {
+			if err := s.stream.Send(out); err != nil {
 				return err
 			}
 
-		case <-ackTicker.C:
-			if seq, ok := acks.pending(); ok {
-				if err := sendAck(seq); err != nil {
+		case <-ticks:
+			if seq, ok := s.acks.pending(); ok {
+				if err := s.sendAck(seq); err != nil {
 					return err
 				}
 			}
@@ -366,79 +377,127 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 			if res.err != nil {
 				return res.err
 			}
-			touchLiveness()
-
-			// Command replies are solicited, not telemetry: they bypass the rate
-			// limiter and the event counters, or a chatty log follow would trip
-			// the limiter and get the agent throttled.
-			if resMsg, ok := res.msg.GetPayload().(*agentpb.ClientMessage_Result); ok {
-				if sessions != nil {
-					sessions.DeliverResult(ag.AgentID, resMsg.Result)
-				}
-				continue
-			}
-			// The spool status is not telemetry: it must not be rate-limited,
-			// and there is nothing for the dispatcher to route.
-			if stMsg, ok := res.msg.GetPayload().(*agentpb.ClientMessage_Status); ok {
-				if sessions != nil {
-					sessions.RecordSpoolStatus(ag.AgentID, stMsg.Status)
-				}
-				continue
-			}
-
-			evMsg, ok := res.msg.GetPayload().(*agentpb.ClientMessage_Event)
-			if !ok {
-				continue
-			}
-			evt := evMsg.Event
-
-			if limiter != nil {
-				if allowed, retryAfter := limiter.Allow(ag.AgentID); !allowed {
-					retryMs := uint32(retryAfter.Milliseconds()) // #nosec G115 -- rate-limiter retry delay, always non-negative and sub-second
-					logger.Warn("agent.rate_limited",
-						"agent_id", ag.AgentID,
-						"retry_after_ms", retryMs,
-					)
-					acks.refuse(evt.GetSeq())
-					_ = stream.Send(&agentpb.ServerMessage{
-						Payload: &agentpb.ServerMessage_Error{
-							Error: &agentpb.StreamError{
-								Code:         "rate_limited",
-								Message:      "event rate limit exceeded",
-								RetryAfterMs: retryMs,
-							},
-						},
-					})
-					continue
-				}
-			}
-
-			acks.accept(evt.GetSeq())
-
-			if sessions != nil {
-				sessions.IncrEvents(ag.AgentID)
-			}
-
-			if dispatcher != nil {
-				if err := dispatcher.Dispatch(stream.Context(), ag.AgentID, evt); err != nil {
-					logger.Error("Push: dispatch failed", "agent_id", ag.AgentID, "err", err)
-					if errors.Is(err, agentevent.ErrInvalid) {
-						_ = stream.Send(&agentpb.ServerMessage{
-							Payload: &agentpb.ServerMessage_Error{
-								Error: &agentpb.StreamError{Code: "invalid_argument", Message: err.Error()},
-							},
-						})
-					}
-				}
-			}
-
-			if seq, ok := acks.afterEvent(time.Now()); ok {
-				if err := sendAck(seq); err != nil {
-					return err
-				}
+			if err := s.handleMessage(res.msg); err != nil {
+				return err
 			}
 		}
 	}
+}
+
+func (s *pushSession) handleMessage(msg *agentpb.ClientMessage) error {
+	sessions := s.impl.deps.Sessions
+	s.touchLiveness()
+
+	switch p := msg.GetPayload().(type) {
+	case *agentpb.ClientMessage_Result:
+		// Command replies are solicited, not telemetry: they bypass the rate
+		// limiter and the event counters, or a chatty log follow would trip
+		// the limiter and get the agent throttled.
+		if sessions != nil {
+			sessions.DeliverResult(s.agentID, p.Result)
+		}
+	case *agentpb.ClientMessage_Status:
+		// The spool status is not telemetry: it must not be rate-limited,
+		// and there is nothing for the dispatcher to route.
+		if sessions != nil {
+			sessions.RecordSpoolStatus(s.agentID, p.Status)
+		}
+	case *agentpb.ClientMessage_Event:
+		return s.handleEvent(p.Event)
+	}
+	return nil
+}
+
+func (s *pushSession) handleEvent(evt *agentpb.AgentEvent) error {
+	if s.rateLimited(evt) {
+		return nil
+	}
+
+	s.acks.accept(evt.GetSeq())
+
+	if sessions := s.impl.deps.Sessions; sessions != nil {
+		sessions.IncrEvents(s.agentID)
+	}
+
+	s.dispatch(evt)
+
+	if seq, ok := s.acks.afterEvent(time.Now()); ok {
+		return s.sendAck(seq)
+	}
+	return nil
+}
+
+func (s *pushSession) rateLimited(evt *agentpb.AgentEvent) bool {
+	limiter := s.impl.deps.Limiter
+	if limiter == nil {
+		return false
+	}
+	allowed, retryAfter := limiter.Allow(s.agentID)
+	if allowed {
+		return false
+	}
+	retryMs := uint32(retryAfter.Milliseconds()) // #nosec G115 -- rate-limiter retry delay, always non-negative and sub-second
+	s.impl.deps.Logger.Warn("agent.rate_limited",
+		"agent_id", s.agentID,
+		"retry_after_ms", retryMs,
+	)
+	s.acks.refuse(evt.GetSeq())
+	_ = s.stream.Send(&agentpb.ServerMessage{
+		Payload: &agentpb.ServerMessage_Error{
+			Error: &agentpb.StreamError{
+				Code:         "rate_limited",
+				Message:      "event rate limit exceeded",
+				RetryAfterMs: retryMs,
+			},
+		},
+	})
+	return true
+}
+
+func (s *pushSession) dispatch(evt *agentpb.AgentEvent) {
+	dispatcher := s.impl.deps.Dispatcher
+	if dispatcher == nil {
+		return
+	}
+	if err := dispatcher.Dispatch(s.stream.Context(), s.agentID, evt); err != nil {
+		s.impl.deps.Logger.Error("Push: dispatch failed", "agent_id", s.agentID, "err", err)
+		if errors.Is(err, agentevent.ErrInvalid) {
+			_ = s.stream.Send(&agentpb.ServerMessage{
+				Payload: &agentpb.ServerMessage_Error{
+					Error: &agentpb.StreamError{Code: "invalid_argument", Message: err.Error()},
+				},
+			})
+		}
+	}
+}
+
+// touchLiveness records that the agent is alive. Any message proves it:
+// telemetry, a command reply, even an event we are about to rate-limit, so
+// this runs before payload dispatch. Gating it on accepted telemetry let the
+// stale watcher reap a session that was streaming perfectly well.
+func (s *pushSession) touchLiveness() {
+	if time.Since(s.lastSeenUpd) <= 20*time.Second {
+		return
+	}
+	if err := s.impl.deps.AgentStore.UpdateLastSeen(s.stream.Context(), s.agentID, time.Now()); err != nil {
+		s.impl.deps.Logger.Error("Push: UpdateLastSeen failed", "agent_id", s.agentID, "err", err)
+	}
+	s.lastSeenUpd = time.Now()
+}
+
+func (s *pushSession) sendAck(seq uint64) error {
+	if err := s.stream.Send(&agentpb.ServerMessage{
+		Payload: &agentpb.ServerMessage_Ack{
+			Ack: &agentpb.EventAck{
+				LastEventSeq: seq,
+				ReceivedAt:   timestamppb.Now(),
+			},
+		},
+	}); err != nil {
+		return err
+	}
+	s.acks.sent(seq, time.Now())
+	return nil
 }
 
 func protoRuntimeToString(rt agentpb.Runtime) string {

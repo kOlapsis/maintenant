@@ -99,7 +99,7 @@ func registerReadTools(server *gomcp.Server, svc *Services) {
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_endpoints",
-		Description: "List active HTTP and TCP endpoint monitors, optionally for one agent (agent_id from list_agents). Each row has its id, target, status (up, down, degraded or unknown), alert_state, last response time, HTTP status and error. Pass the id to get_endpoint_history for past checks.",
+		Description: "List active HTTP and TCP endpoint monitors, optionally for one agent (agent_id from list_agents). Each row has its id, target, status (up, down, degraded or unknown), alert_state, last response time, HTTP status and error. limited is true when the Community limit leaves the endpoint unmonitored: it is never checked. Pass the id to get_endpoint_history for past checks.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listEndpointsHandler(svc))
 
@@ -117,7 +117,7 @@ func registerReadTools(server *gomcp.Server, svc *Services) {
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_certificates",
-		Description: "List TLS certificate monitors sorted by hostname and port, optionally for one agent (agent_id from list_agents). Each row has hostname, port, status (valid, expiring, expired, error or unknown), warning_thresholds in days, last and next check time and last_error; issuer and expiry date are not included.",
+		Description: "List TLS certificate monitors sorted by hostname and port, optionally for one agent (agent_id from list_agents). Each row has hostname, port, status (valid, expiring, expired, error or unknown), warning_thresholds in days, last and next check time and last_error. limited is true when the Community limit leaves the certificate unmonitored: it is never checked. Issuer and expiry date are not included.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listCertificatesHandler(svc))
 

@@ -193,7 +193,7 @@ func TestFindBestUpdate_VariantSuffix(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotTag, gotType := FindBestUpdate(tt.currentTag, tt.allTags)
+			gotTag, gotType := findBestUpdate(tt.currentTag, tt.allTags, TrackMajor)
 			assert.Equal(t, tt.wantTag, gotTag)
 			assert.Equal(t, tt.wantType, gotType)
 		})

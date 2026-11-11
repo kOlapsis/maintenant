@@ -68,14 +68,6 @@ func CertificateStatus(cert *certificate.CertMonitor) string {
 	}
 }
 
-// WorstStatus returns the most severe status between two values.
-func WorstStatus(a, b string) string {
-	if status.Severity(a) >= status.Severity(b) {
-		return a
-	}
-	return b
-}
-
 // wireStatusProvider sets up the monitor status provider for the status page.
 func (a *App) wireStatusProvider() {
 	a.statusSvc.SetMonitorStatusProvider(func(ctx context.Context, monitorType string, monitorID string) string {
@@ -88,7 +80,7 @@ func (a *App) wireStatusProvider() {
 			return ContainerStatus(c)
 		case "endpoint":
 			ep, err := a.endpointSvc.GetEndpoint(ctx, monitorID)
-			if err != nil || ep == nil {
+			if err != nil || ep == nil || ep.Limited {
 				return status.StatusOperational
 			}
 			return EndpointStatus(ep)
@@ -100,7 +92,7 @@ func (a *App) wireStatusProvider() {
 			return HeartbeatStatus(hb)
 		case "certificate":
 			cert, err := a.certSvc.GetMonitor(ctx, monitorID)
-			if err != nil || cert == nil {
+			if err != nil || cert == nil || cert.Limited {
 				return status.StatusOperational
 			}
 			return CertificateStatus(cert)
@@ -133,6 +125,9 @@ func (a *App) wireMonitorPopulationProvider() {
 			}
 			refs := make([]status.MonitorRef, 0, len(endpoints))
 			for _, ep := range endpoints {
+				if ep.Limited {
+					continue
+				}
 				refs = append(refs, status.MonitorRef{Type: "endpoint", ID: ep.ID, Name: ep.Target})
 			}
 			return refs
@@ -153,6 +148,9 @@ func (a *App) wireMonitorPopulationProvider() {
 			}
 			refs := make([]status.MonitorRef, 0, len(certs))
 			for _, c := range certs {
+				if c.Limited {
+					continue
+				}
 				refs = append(refs, status.MonitorRef{Type: "certificate", ID: c.ID, Name: fmt.Sprintf("%s:%d", c.Hostname, c.Port)})
 			}
 			return refs

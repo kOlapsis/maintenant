@@ -81,10 +81,16 @@ func editionQuotas(ctx context.Context, svc *Services) map[string]any {
 			return len(agents), err
 		})
 	}
+	limited := func(name string, r extension.Resource, usage func(context.Context) (int, int, error)) {
+		used, unmonitored, err := usage(ctx)
+		if err != nil {
+			svc.logger().Error("failed to count resource for quota", "resource", string(r), "error", err)
+		}
+		quotas[name] = map[string]any{"used": used, "limit": extension.Limit(r), "unmonitored": unmonitored}
+	}
+
 	if svc.Endpoints != nil {
-		count("endpoints", extension.ResourceEndpoints, func() (int, error) {
-			return svc.Endpoints.CountStandaloneEndpoints(ctx)
-		})
+		limited("endpoints", extension.ResourceEndpoints, svc.Endpoints.LimitUsage)
 	}
 	if svc.Heartbeats != nil {
 		count("heartbeats", extension.ResourceHeartbeats, func() (int, error) {
@@ -92,9 +98,7 @@ func editionQuotas(ctx context.Context, svc *Services) map[string]any {
 		})
 	}
 	if svc.Certificates != nil {
-		count("certificates", extension.ResourceCertificates, func() (int, error) {
-			return svc.Certificates.CountStandaloneMonitors(ctx)
-		})
+		limited("certificates", extension.ResourceCertificates, svc.Certificates.LimitUsage)
 	}
 
 	return quotas

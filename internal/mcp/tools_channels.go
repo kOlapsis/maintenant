@@ -142,14 +142,6 @@ func channelValidator(svc *Services, chType string) (alert.ChannelValidator, boo
 	return svc.ChannelValidators.Validator(chType)
 }
 
-func normalizeConfig(config string) string {
-	config = strings.TrimSpace(config)
-	if config == "null" {
-		return ""
-	}
-	return config
-}
-
 func (s *Services) broadcast(eventType string, data any) {
 	if s.Broadcast != nil {
 		s.Broadcast(eventType, data)
@@ -246,7 +238,7 @@ func createChannelHandler(svc *Services) gomcp.ToolHandlerFor[createChannelInput
 		if _, err := alert.ParseHeaders(input.Headers); err != nil {
 			return errResult("field=headers: " + err.Error())
 		}
-		config := normalizeConfig(input.Config)
+		config := alert.NormalizeConfig(input.Config)
 		if err := validateChannelCredentials(svc, input.Type, input.Secret, config); err != nil {
 			return errResult(err.Error())
 		}
@@ -294,56 +286,29 @@ func updateChannelHandler(svc *Services) gomcp.ToolHandlerFor[updateChannelInput
 			return errResult("channel not found")
 		}
 
-		// Switching a channel off never needs the edition that opens its type:
-		// a downgraded instance must still be able to silence it.
-		extends := input.Name != nil || input.Type != nil || input.URL != nil ||
-			input.Headers != nil || input.Secret != nil || input.Config != nil ||
-			(input.Enabled != nil && *input.Enabled)
-		if extends {
+		patch := alert.ChannelPatch{
+			Name: input.Name, Type: input.Type, URL: input.URL, Headers: input.Headers,
+			Secret: input.Secret, Config: input.Config, Enabled: input.Enabled,
+		}
+		if patch.Extends() {
 			if r, v, err := refuseChannelType(ch.Type); r != nil {
 				return r, v, err
 			}
-			if input.Type != nil {
-				if r, v, err := refuseChannelType(*input.Type); r != nil {
+			if patch.Type != nil {
+				if r, v, err := refuseChannelType(*patch.Type); r != nil {
 					return r, v, err
 				}
 			}
 		}
-
-		if input.Name != nil {
-			ch.Name = *input.Name
+		if err := patch.Apply(ch); err != nil {
+			return errResult(err.Error())
 		}
-		if input.Type != nil {
-			ch.Type = *input.Type
-		}
-		if input.URL != nil {
-			ch.URL = *input.URL
-		}
-		if input.Headers != nil {
-			if _, err := alert.ParseHeaders(*input.Headers); err != nil {
-				return errResult("field=headers: " + err.Error())
-			}
-			ch.Headers = *input.Headers
-		}
-		if input.Secret != nil {
-			if *input.Secret == "" {
-				return errResult("field=secret: cannot be cleared; delete the channel instead")
-			}
-			ch.Secret = *input.Secret
-		}
-		if input.Config != nil {
-			ch.Config = normalizeConfig(*input.Config)
-		}
-		if input.Enabled != nil {
-			ch.Enabled = *input.Enabled
-		}
-
-		if input.Secret != nil || input.Config != nil {
+		if patch.TouchesCredentials() {
 			if err := validateChannelCredentials(svc, ch.Type, ch.Secret, ch.Config); err != nil {
 				return errResult(err.Error())
 			}
 		}
-		if input.URL != nil || input.Type != nil {
+		if patch.TouchesDestination() {
 			if err := validateChannelDestination(ctx, svc, ch.Type, ch.URL); err != nil {
 				return errResult("field=url: " + err.Error())
 			}

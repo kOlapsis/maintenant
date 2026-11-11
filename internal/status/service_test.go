@@ -365,7 +365,7 @@ func TestService_ComputeGlobalStatus_NoComponents(t *testing.T) {
 	assert.Equal(t, GlobalAllOperational, msg)
 }
 
-// --- statusSeverity / Severity ---
+// --- statusSeverity ---
 
 func TestStatusSeverity_Values(t *testing.T) {
 	cases := []struct {
@@ -382,7 +382,6 @@ func TestStatusSeverity_Values(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.status, func(t *testing.T) {
 			assert.Equal(t, tc.expected, statusSeverity(tc.status))
-			assert.Equal(t, tc.expected, Severity(tc.status), "exported Severity must match")
 		})
 	}
 }
