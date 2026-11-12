@@ -1,0 +1,4 @@
+---
+# om3's own defaults, which these roles leave in place: changing them here changes no node.
+opensvc_hb_interval_s: 5
+opensvc_hb_timeout_s: 15

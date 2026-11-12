@@ -23,11 +23,13 @@
 # relies on only exist from rc44 on.
 # rc47 replaces rc53 on 2026-10-27: OpenSVC found a DRBD regression in rc53
 # and asked to step back.
+# rc62 replaces rc47 on 2026-11-11: the prod repository no longer carries
+# anything older than rc55.
 #
 # apt is pinned to opensvc_package_version, so an upgrade cannot move the bench
 # off this release without someone editing this file (FR-059).
-opensvc_version: "v3.0.0-rc47"
-opensvc_package_version: "3.0.0~rc47.0.g8740aaf62+deb12"
+opensvc_version: "v3.0.0-rc62"
+opensvc_package_version: "3.0.0~rc62.0.ge29c763a7+deb12"
 opensvc_apt_branch: "prod"
 
 # DRBD 9, from the vendor packages. Protocol C, after-sb-* set to disconnect,

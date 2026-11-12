@@ -52,10 +52,15 @@
     update_cache: true
     allow_downgrade: true
 
+# drbd-utils can load the in-tree 8.4 module before dkms has built the 9 one.
 - name: Load the DRBD module
-  ansible.builtin.command:
-    argv: [modprobe, drbd]
-    creates: /sys/module/drbd
+  ansible.builtin.shell: |
+    if [ -e /sys/module/drbd ] && ! grep -q '^{{ drbd_version | regex_escape }}\.' /sys/module/drbd/version; then
+      modprobe -r drbd
+    fi
+    [ -e /sys/module/drbd ] || { modprobe drbd && echo loaded; }
+  register: drbd_modprobe
+  changed_when: "'loaded' in drbd_modprobe.stdout"
 
 - name: Read the release of the loaded module
   ansible.builtin.slurp:

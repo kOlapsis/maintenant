@@ -14,6 +14,8 @@ resource {{ drbd_resource }} {
 		after-sb-1pri disconnect;
 		after-sb-2pri disconnect;
 		rr-conflict disconnect;
+		ping-int {{ drbd_ping_int_s }};
+		ping-timeout {{ drbd_ping_timeout_ds }};
 	}
 
 	disk {

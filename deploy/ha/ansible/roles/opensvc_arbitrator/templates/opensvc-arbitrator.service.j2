@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+[Unit]
+Description=OpenSVC arbitrator vote
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=/usr/bin/python3 {{ opensvc_arbitrator_script }} {{ opensvc_arbitrator_config }}
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

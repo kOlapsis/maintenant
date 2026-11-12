@@ -17,6 +17,9 @@
 #   ha_fencing_method: ipmi
 #   ha_fencing_command: 'ipmitool -H "$ha_fencing_target-bmc" -U "$IPMI_USER" -P "$IPMI_PASSWORD" chassis power off'
 #   ha_fencing_check_command: 'ipmitool -H "$ha_fencing_target-bmc" -U "$IPMI_USER" -P "$IPMI_PASSWORD" chassis power status'
+#
+# Power off leaves the peer down. For a power cycle (the peer boots again and
+# resyncs), see "Power off or power cycle" in deploy/ha/README.md.
 ha_fencing_method: "" # ipmi | pdu | provider_api
 ha_fencing_command: ""
 ha_fencing_check_command: ""

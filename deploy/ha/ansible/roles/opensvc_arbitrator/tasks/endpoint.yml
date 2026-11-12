@@ -1,39 +1,49 @@
 ---
-- name: Install the HTTP server that carries the vote
-  ansible.builtin.apt:
-    name: nginx-light
-    state: present
-    update_cache: true
-    cache_valid_time: 3600
-
-- name: Drop the distribution default site
+- name: Remove the nginx site that served the vote before
   ansible.builtin.file:
-    path: /etc/nginx/sites-enabled/default
+    path: "{{ item }}"
     state: absent
+  loop:
+    - /etc/nginx/sites-enabled/arbitrator
+    - /etc/nginx/sites-available/arbitrator
   notify: Reload nginx
 
-- name: Write the arbitrator site
-  ansible.builtin.template:
-    src: arbitrator.nginx.conf.j2
-    dest: /etc/nginx/sites-available/arbitrator
-    mode: "0644"
-  notify: Reload nginx
-
-- name: Enable the arbitrator site
+- name: Create the directory of the arbitrator
   ansible.builtin.file:
-    src: /etc/nginx/sites-available/arbitrator
-    dest: /etc/nginx/sites-enabled/arbitrator
-    state: link
-  notify: Reload nginx
+    path: "{{ opensvc_arbitrator_script | dirname }}"
+    state: directory
+    mode: "0755"
 
-- name: Start nginx
+- name: Install the arbitrator
+  ansible.builtin.copy:
+    src: arbitrator.py
+    dest: "{{ opensvc_arbitrator_script }}"
+    mode: "0755"
+  notify: Restart the arbitrator
+
+- name: Write the nodes the arbitrator recognises
+  ansible.builtin.template:
+    src: arbitrator.json.j2
+    dest: "{{ opensvc_arbitrator_config }}"
+    mode: "0644"
+  notify: Restart the arbitrator
+
+- name: Write the arbitrator unit
+  ansible.builtin.template:
+    src: opensvc-arbitrator.service.j2
+    dest: /etc/systemd/system/opensvc-arbitrator.service
+    mode: "0644"
+  notify: Restart the arbitrator
+
+- name: Free the port and apply the new arbitrator
+  ansible.builtin.meta: flush_handlers
+
+- name: Start the arbitrator
   ansible.builtin.systemd_service:
-    name: nginx
+    name: opensvc-arbitrator
     enabled: true
     state: started
-
-- name: Apply the site before checking it
-  ansible.builtin.meta: flush_handlers
+    daemon_reload: true
 
 - name: Check the arbitrator answers on its own machine
   ansible.builtin.uri:

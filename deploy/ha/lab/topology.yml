@@ -78,7 +78,8 @@ machines:
     addresses:
       net-wan: 10.10.9.13
     vcpu: 1
-    memory_mb: 512
+    # The DRBD module is built here by dkms: 512 MiB gets cc1 killed on drbd_receiver.c.
+    memory_mb: 1024
 
   - name: probe
     # The measurement machine. It carries the three probes (availability, writes, observer)

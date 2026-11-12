@@ -3,3 +3,9 @@
   ansible.builtin.systemd_service:
     name: nginx
     state: reloaded
+
+- name: Restart the arbitrator
+  ansible.builtin.systemd_service:
+    name: opensvc-arbitrator
+    state: restarted
+    daemon_reload: true

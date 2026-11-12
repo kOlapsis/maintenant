@@ -5,6 +5,14 @@
     fail_msg: "sqlite/drbd replicates between exactly two nodes, the inventory declares {{ drbd_nodes | length }}"
   run_once: true
 
+- name: Refuse a peer loss DRBD would notice after om3
+  ansible.builtin.assert:
+    that: drbd_ping_int_s | float + drbd_ping_timeout_ds | float / 10 < opensvc_hb_timeout_s | float - opensvc_hb_interval_s | float
+    fail_msg: >-
+      DRBD detects a cut after up to {{ drbd_ping_int_s | float + drbd_ping_timeout_ds | float / 10 }} s, om3 as early as
+      {{ opensvc_hb_timeout_s | float - opensvc_hb_interval_s | float }} s: the arbitrator would vote before the cut side is Outdated
+  run_once: true
+
 - name: Refuse a node without a disk to replicate
   ansible.builtin.assert:
     that: drbd_backing_device | length > 0

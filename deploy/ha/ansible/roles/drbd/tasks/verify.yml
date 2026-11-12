@@ -24,6 +24,7 @@
       - after-sb-1pri disconnect
       - after-sb-2pri disconnect
       - rr-conflict disconnect
+      - "ping-int {{ drbd_ping_int_s }}"
 
 - name: Read the quorum this node holds
   ansible.builtin.command:

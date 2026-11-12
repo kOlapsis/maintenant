@@ -15,6 +15,9 @@ drbd_keyring_url: https://packages.linbit.com/public/linbit-keyring.deb
 drbd_keyring: /etc/apt/trusted.gpg.d/linbit-keyring.gpg
 
 drbd_port: 7789
+# DRBD must see a cut, and outdate the cut side, before om3 asks the arbitrator for a vote.
+drbd_ping_int_s: 3
+drbd_ping_timeout_ds: 5
 drbd_backing_device: "{{ ha_drbd_backing_device | default('') }}"
 
 drbd_nodes: "{{ groups['opensvc_cluster'] }}"

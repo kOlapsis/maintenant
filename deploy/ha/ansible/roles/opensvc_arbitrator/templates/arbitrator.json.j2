@@ -1,0 +1,5 @@
+{% set nodes = {} %}
+{% for node in groups['opensvc_cluster'] %}
+{% set _ = nodes.update({hostvars[node].ansible_host | default(node): node}) %}
+{% endfor %}
+{{ {'port': opensvc_arbitrator_port | int, 'path': opensvc_arbitrator_path, 'resource': drbd_resource, 'nodes': nodes} | to_nice_json }}

@@ -1,7 +1,7 @@
 ---
 # Overridden by group_vars/all/versions.yml, which is where the freeze lives.
-opensvc_version: "v3.0.0-rc47"
-opensvc_package_version: "3.0.0~rc47.0.g8740aaf62+deb12"
+opensvc_version: "v3.0.0-rc62"
+opensvc_package_version: "3.0.0~rc62.0.ge29c763a7+deb12"
 opensvc_apt_branch: prod
 
 # versions.yml carries the node image, and the package is built per codename.

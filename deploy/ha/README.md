@@ -4,7 +4,7 @@ This directory holds everything needed to build a two-node highly available Main
 deployment, and to prove it works: the Ansible roles, the OpenSVC service templates, the local test bench and the versioned run reports.
 
 The same roles deploy the bench and the reference production. `site-lab.yml` and
-`site-prod.yml` differ only by their inventory and by the fencing variable — nothing else.
+`site-prod.yml` differ only by their inventory and by the fencing variable, nothing else.
 No throwaway script is ever required to deploy.
 
 ## Layout
@@ -13,7 +13,7 @@ No throwaway script is ever required to deploy.
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `ansible/`                          | roles, `ansible.cfg`, inventories (`lab`, `prod`), shared versions                                                                  |
 | `ansible/roles/opensvc/`            | om3 on the frozen release, and the cluster the nodes form                                                                           |
-| `ansible/roles/opensvc_arbitrator/` | the third-site witness, and the quorum settings the nodes hold                                                                      |
+| `ansible/roles/opensvc_arbitrator/` | the third-site witness, which withholds its vote from a DRBD copy behind a connected primary, and the quorum settings the nodes hold |
 | `ansible/roles/fencing/`            | the callout a survivor runs to shoot its unreachable peer                                                                           |
 | `ansible/roles/maintenant/`         | the static binary, the state root, the settings and, in server mode, the gRPC pair, one table for both the env file and the service |
 | `ansible/roles/maintenant_check/`   | the application test the service runs: 0 alive, 1 degraded, 2 dead                                                                  |
@@ -35,7 +35,7 @@ No throwaway script is ever required to deploy.
 
 - Design and build order: [`specs/030-ha-opensvc/plan.md`](../../specs/030-ha-opensvc/plan.md)
 - Requirements: [`specs/030-ha-opensvc/spec.md`](../../specs/030-ha-opensvc/spec.md)
-- Contracts: [`specs/030-ha-opensvc/contracts/`](../../specs/030-ha-opensvc/contracts/) —
+- Contracts: [`specs/030-ha-opensvc/contracts/`](../../specs/030-ha-opensvc/contracts/):
   the `lab` CLI, the run report format, the OpenSVC service, the binary settings
 - Operator guide: `docs/guides/high-availability.md` (to be written, FR-054)
 
@@ -80,7 +80,7 @@ Modes are `ip-only` (the default: service address failover, no replicated backen
 measurement is attached to a release, so a silent upgrade would quietly invalidate the
 evidence. apt is pinned to the exact package version for the same reason.
 
-The bench runs om3 **v3.0.0-rc53 from the prod branch, on Debian 12**, the newest release that branch ships with `opensvc-server` for bookworm. As of 2026-10-26 it still ships only `opensvc-client` for trixie, so Debian 13 cannot host a cluster node. The uat branch is not used: evidence built on a pre-validation channel is worth less than evidence built on the channel OpenSVC promotes.
+The bench runs om3 **v3.0.0-rc62 from the prod branch, on Debian 12**, the newest release that branch ships with `opensvc-server` for bookworm. It ran rc47 from 2026-10-27 at OpenSVC's request, until the prod repository dropped every release older than rc55 (2026-11-11). As of 2026-10-26 it still ships only `opensvc-client` for trixie, so Debian 13 cannot host a cluster node. The uat branch is not used: evidence built on a pre-validation channel is worth less than evidence built on the channel OpenSVC promotes.
 
 The campaign ran on rc30 until 2026-10-18. rc53 replaces it because the deployment now relies on two things rc30 does not have: `om <path> create --wait`, which returns once every daemon knows the object, and `om cluster enroll`, which adds a node from inside the cluster. rc53 also changes what the roles wait for: a created object is no longer frozen but flagged *stopped on purpose*, and only a start asked by the user lowers that flag, so the role ends the deployment with `om <path> start --wait`. Every report before 2026-10-26 was taken on rc30.
 
@@ -93,11 +93,61 @@ Removing a node is the reverse: drain it (`om node drain --node <node> --wait`),
 ## The arbitrator
 
 om3 ships `cluster.quorum` **off**. With it off, a split cluster logs "cluster is split,
-ignore" and both sides start the service, which is the one outcome the bench exists to rule out. The `opensvc_arbitrator` role turns quorum on and declares the witness in `cluster.conf`, sets `node.split_action=crash` on each node, then waits until every daemon reports quorum on, the witness up and the split action set, and fails the run otherwise.
+ignore" and both sides start the service, which is the one outcome the bench exists to rule out. The `opensvc_arbitrator` role turns quorum on and declares the witness in `cluster.conf`, sets `node.split_action=reboot` on each node, then waits until every daemon reports quorum on, the witness up and the split action set, and fails the run otherwise.
 
 `cluster.quorum` has to go through `om cluster config`. om3 also accepts it in `node.conf` and reads it back from there, but the split decision only reads `cluster.conf`; the arbitrators are likewise reloaded only when the cluster configuration changes. A value read back from a file therefore proves nothing: the role and `lab status` read the daemon's own view.
 
-The witness is a plain HTTP endpoint on the third machine, served by nginx on port 1216, and om3 votes by issuing a GET on it. The port is written out in full and always will be: up to rc30 the keyword reference said a portless TCP arbitrator uri implied port 1214 while the CHANGELOG said 1215. Since then the reference says it is the port of the cluster listener, `listener.port`, 1215 by default. An implicit port would still tie the vote to a setting of another component (FR-021).
+The witness is an HTTP endpoint on the third machine, port 1216, path `/arbitrator`. The port is written out in full and always will be: up to rc30 the keyword reference said a portless TCP arbitrator uri implied port 1214 while the CHANGELOG said 1215. Since then the reference says it is the port of the cluster listener, `listener.port`, 1215 by default. An implicit port would still tie the vote to a setting of another component (FR-021).
+
+### How om3 counts the vote
+
+om3 rc47 asks for the vote with a GET on `arbitrator#0.uri`. `checkURL` (`daemon/nmon/arbitrator.go`, line 148) returns the error of `client.Do` and never looks at the HTTP status: any response is a vote, a 403 or a 500 included. Only a transport error withholds it: connection refused, connection closed before any response (the client sees EOF), a TLS failure, or the check timeout. That timeout is `arbitratorCheckDuration`, a third of the daemon's ready duration of 5 s, about 1.67 s.
+
+A node fetches the vote live when it forgets a peer, in `onForgetPeer` (`daemon/nmon/main_cmd.go`, line 362, votes read at line 404). That happens `hb.timeout` (15 s by default) after the last heartbeat it received, heartbeats being sent every `hb.interval` (5 s by default), so between 10 and 15 s after the link is cut. Both nodes ask, each on its own timer. Each counts its live peers, itself included, plus the arbitrator votes, out of the cluster nodes plus the arbitrators. With two nodes and one arbitrator, a node alone needs the vote to reach 2 of 3; without it, it runs `node.split_action`, `crash` here. The same check also runs every 60 s, for status display only.
+
+### Where the witness stands
+
+The om3 keyword reference of `arbitrator.uri` places the arbitrators on the side of one segment: "In case of a real split, all arbitrators are expected to be unreachable from the lost segment. At least one of them is expected to be reachable from the surviving segment", and "Usually, this can be interpreted as: same site, not same rack and power lines." With that layout, a vote that answers whoever reaches it is enough: the segment that cannot reach the arbitrator loses.
+
+This deployment puts the witness on a third site instead. With two nodes, a witness on site A means the loss of site A takes the witness with it, and the node on site B cannot reach quorum: failover is automatic in one direction only. A third-site witness lets the survivor of either site win the vote. The price is the inter-site partition (scenario 5): both segments still reach the witness, so a witness that grants every GET gives quorum to both. In `sqlite/drbd` the passive node then takes over and fences the active node, the only one with an `UpToDate` copy. The `Outdated` refusal of the fencing callout (below) stops that shot, and the witness itself now refuses the vote in that case.
+
+### The selective vote
+
+The `opensvc_arbitrator` role runs a small Python 3 HTTP server (standard library only, `files/arbitrator.py`) as the systemd unit `opensvc-arbitrator`, in place of the nginx site the role used to install. For each GET on the vote path it identifies the requester by its source address, mapped to its inventory name from the `ansible_host` of each node of `opensvc_cluster`. If `drbdsetup status --json <resource>` answers on the third machine, which is the diskless DRBD vote in `sqlite/drbd`, it refuses the requester if and only if:
+
+- the requester's `peer-disk-state`, as the third machine sees it, is not `UpToDate`, and
+- another peer is `connection-state: Connected`, `peer-role: Primary` and `peer-disk-state: UpToDate`.
+
+Every other case is granted with a 200, as before: an unknown source address, no DRBD on the machine (`ip-only`, `postgres/streaming`), a requester absent from the resource, or a `drbdsetup` call that fails or exceeds 0.5 s. The rule only acts in the case it can decide. Refusing means closing the connection without writing any response, so that om3 gets EOF and counts no vote; a 403 would count as one in rc47. Each request leaves one line in the journal: source address, node, decision, reason.
+
+Applied to scenario 5, the primary is `UpToDate` and gets the vote; the cut secondary is `Outdated` while the primary is still connected to the third machine, gets none, lacks quorum and reboots. While the partition lasts it comes back, is refused again and reboots again, which is harmless: its disk is `Outdated`, so neither DRBD, the arbitrator nor `maintenant-fence --guard` lets it start the service. Once the partition heals it rejoins and resyncs on its own. `crash`, the other self-fencing action, leaves the node hung after the panic (`kernel.panic=0` on Debian) until someone power cycles it. When the primary is really lost, the third machine no longer sees a connected primary and the survivor gets the vote, whatever its disk state.
+
+### Timing
+
+The rule reads DRBD's view at the moment of the GET, so DRBD must have noticed the cut, and outdated the cut side, before om3 asks. On an idle connection DRBD notices a silent peer after at most `ping-int` + `ping-timeout`, 10 s + 0.5 s with the defaults: about the same time as om3's earliest detection. Run `20261027-180813-sqlite-drbd`, played with the `Outdated` refusal disabled, shows how thin that margin is:
+
+| Time (UTC) | Event |
+|---|---|
+| 18:08:19.67 | partition injected |
+| 18:08:30.107 | DRBD on site-b detects the cut |
+| 18:08:30.122 | site-b goes `Outdated` |
+| 18:08:30.137 | `arb` logs `site-b: pdsk( UpToDate -> Outdated )` |
+| 18:08:33.714 | om3 on site-b: `cluster is split, we have quorum: 1+1` |
+
+The third machine knew who was `Outdated` 3.6 s before om3 asked, by luck of the heartbeat phase. The `drbd` role therefore sets `ping-int` to 3 s (`drbd_ping_int_s`, with `ping-timeout` kept at its default of 0.5 s, `drbd_ping_timeout_ds`) and refuses to deploy unless `ping-int + ping-timeout` stays below `hb.timeout - hb.interval`. These roles do not set the om3 heartbeat; `group_vars/all/opensvc.yml` declares its defaults, 15 s and 5 s, for that check.
+
+### Limits
+
+- In `ip-only` and `postgres/streaming` the third machine has no DRBD and every vote is granted: an inter-site partition still gives quorum to both segments. A rule reading the PostgreSQL replication state is the next step.
+- A node is recognised by the address it reaches the witness from, which must be its `ansible_host`, and its DRBD peer name (its hostname) must equal its inventory name, as on the bench. Otherwise its vote is always granted.
+- If om3 asked before DRBD noticed the cut, both copies would still read `UpToDate` and both nodes would get the vote. The timing check above is what rules that out.
+- A node resyncing (`Inconsistent`) while the primary is connected gets no vote, in the periodic check too: its status shows the arbitrator down until the resync ends, and the role's reachability check fails if a deployment runs during a resync.
+
+### Proposed upstream
+
+- Count only a 2xx response as a vote, and close `resp.Body`, which `checkURL` leaves open.
+- Tell the periodic check from a split vote, and send the node name with the request, so that an arbitrator can decide without mapping addresses.
+- Have the takeover that follows the loss of a peer consult the DRBD driver's start blocker, as the switch does in `imon/wait_destination.go`. Both appear between rc47 and rc53: in rc47 the switch goes through the driver's `PreMove`, and the takeover consults neither.
 
 ## Fencing
 
@@ -105,14 +155,36 @@ Before a survivor starts a service its peer was running, it shoots that peer. Th
 
 The mechanism itself is two inventory variables and nothing else, which is what lets the
 same role serve the bench and a real deployment: `ha_fencing_command` shoots,
-`ha_fencing_check_command` proves the mechanism answers. On the bench the nodes reach the libvirt host over SSH with a key restricted to a single forced command, and that command destroys the peer's domain; elsewhere the same two variables carry IPMI, a PDU or a provider API. Both are required — a deployment with no fencing is refused, not warned about.
+`ha_fencing_check_command` proves the mechanism answers. On the bench the nodes reach the libvirt host over SSH with a key restricted to a single forced command, and that command destroys the peer's domain; elsewhere the same two variables carry IPMI, a PDU or a provider API. Both are required: a deployment with no fencing is refused, not warned about.
 
 Two things never happen quietly. A fence that cannot prove the peer went down exits
 non-zero. om3 only logs that and starts the service anyway, so the callout also leaves `/var/lib/maintenant-fence/failed-<node>` behind, and `maintenant-fence --guard`, the blocking pre-start of `ip#0`, refuses to start the service while such a file exists (FR-024). A later successful fence of the same node removes it; otherwise the operator makes sure the node is down, removes the file and starts the service. And the role exercises the mechanism at deploy time with the check command: a cluster should not discover during an incident that it was never able to fence.
 
-In `sqlite/drbd`, a node whose DRBD copy is `Outdated` neither fences nor starts, and leaves no mark. The peer that outdated it is alive and kept the DRBD quorum through the diskless vote, so it keeps the service. This is the inter-site partition (scenario 5): both nodes still reach the witness, so om3 grants the vote to both sides, and without this refusal the passive node would shoot the only node holding the data.
+In `sqlite/drbd`, a node whose DRBD copy is `Outdated` neither fences nor starts, and leaves no mark. The peer that outdated it is alive and kept the DRBD quorum through the diskless vote, so it keeps the service. This is the inter-site partition (scenario 5): both nodes still reach the witness, and if the witness granted the vote to both sides, the passive node would shoot the only node holding the data. The selective vote (see The arbitrator) normally withholds it first; this refusal stays as a second barrier.
 
 `DEFAULT.stonith=true` is the other half, and it lives on the service rather than the node: a failover service without it never calls the callout at all. The service templates carry it.
+
+### Power off or power cycle
+
+The bench fences by power off: `virsh destroy` leaves the peer down until someone starts it, and every measure in `reports/` was taken that way. A production deployment can choose a power cycle instead, as most fence agents do by default: the fenced node boots again, rejoins the cluster and resyncs from the survivor without anyone going to the machine.
+
+A power cycle is still a power off first. `ha_fencing_command` must exit 0 only once the peer is confirmed off, and a failed power on must not fail the fence, since the peer did go down. `ipmitool chassis power cycle` alone does not prove that: it returns as soon as the BMC accepts the request. Write the three steps out:
+
+```yaml
+ha_fencing_command: >-
+  ipmi() { ipmitool -H "$ha_fencing_target-bmc" -U "$IPMI_USER" -P "$IPMI_PASSWORD" "$@"; };
+  ipmi chassis power off || exit 1;
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    ipmi chassis power status | grep -q 'is off' && { ipmi chassis power on || :; exit 0; };
+    sleep 1;
+  done;
+  exit 1
+```
+
+Two consequences to accept before choosing it:
+
+- The fenced node is back within a minute, every time. It must not start the service on its own and its copy must resync without overwriting an acknowledged write. om3 does not start a failover service already running elsewhere and `--guard` refuses a start after a failed fence, but this return has not been played on the bench yet.
+- During an inter-site partition where both nodes reach the witness, the rebooted node comes back still cut from its peer, holds the quorum through the witness, and can fence the survivor in turn. In `sqlite/drbd` the `Outdated` refusal above stops this loop. In `postgres/streaming` and `ip-only` nothing does yet, so power off stays the safer choice for these modes.
 
 ## Support data
 
