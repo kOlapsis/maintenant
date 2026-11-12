@@ -8,6 +8,24 @@
     - /etc/nginx/sites-available/arbitrator
   notify: Reload nginx
 
+- name: Install the client the arbitrator reads PostgreSQL with
+  ansible.builtin.apt:
+    name: postgresql-client
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: opensvc_arbitrator_backend == 'postgres'
+
+- name: Write the credentials the arbitrator reads PostgreSQL with
+  ansible.builtin.copy:
+    dest: "{{ opensvc_arbitrator_pgpass }}"
+    content: "*:*:*:{{ postgres_ha_arbitrator_user }}:{{ postgres_ha_arbitrator_password }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: opensvc_arbitrator_backend == 'postgres'
+
 - name: Create the directory of the arbitrator
   ansible.builtin.file:
     path: "{{ opensvc_arbitrator_script | dirname }}"

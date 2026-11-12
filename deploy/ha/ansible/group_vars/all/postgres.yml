@@ -1,0 +1,7 @@
+---
+# Shared with the arbitrator, which reads the replication state of both nodes from the third machine.
+postgres_ha_port: 5432
+postgres_ha_arbitrator_user: maintenant_arbitrator
+postgres_ha_arbitrator_password_file: >-
+  {{ maintenant_build_dir | default(lookup('env', 'HOME') ~ '/.cache/maintenant-lab/maintenant-build') }}/postgres/maintenant_arbitrator.password
+postgres_ha_arbitrator_password: "{{ lookup('ansible.builtin.password', postgres_ha_arbitrator_password_file ~ ' length=40 chars=ascii_letters,digits') }}"

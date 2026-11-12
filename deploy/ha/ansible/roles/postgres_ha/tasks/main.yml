@@ -11,6 +11,14 @@
     fail_msg: "postgres_ha_standby_missing must be block or continue, got {{ postgres_ha_standby_missing }}"
   run_once: true
 
+- name: Refuse a lost primary the standby would notice after om3
+  ansible.builtin.assert:
+    that: postgres_ha_wal_receiver_timeout_s | float < opensvc_hb_timeout_s | float - opensvc_hb_interval_s | float
+    fail_msg: >-
+      a cut standby stops streaming after up to {{ postgres_ha_wal_receiver_timeout_s }} s, om3 asks for the vote as early as
+      {{ opensvc_hb_timeout_s | float - opensvc_hb_interval_s | float }} s: the arbitrator would still see it streaming
+  run_once: true
+
 - name: Mount the data disk
   ansible.builtin.include_tasks: volume.yml
   when: postgres_ha_data_device | length > 0

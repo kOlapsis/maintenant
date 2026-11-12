@@ -6,6 +6,9 @@ opensvc_arbitrator_port: 1216
 opensvc_arbitrator_path: /arbitrator
 opensvc_arbitrator_script: /usr/local/lib/opensvc-arbitrator/arbitrator.py
 opensvc_arbitrator_config: /etc/opensvc-arbitrator.json
+opensvc_arbitrator_pgpass: /etc/opensvc-arbitrator.pgpass
+opensvc_arbitrator_backend: >-
+  {{ {'sqlite/drbd': 'drbd', 'postgres/streaming': 'postgres'}.get(ha_mode | default('ip-only'), 'none') }}
 opensvc_arbitrator_weight: 1
 
 opensvc_arbitrator_host: >-

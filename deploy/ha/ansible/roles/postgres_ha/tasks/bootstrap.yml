@@ -138,3 +138,23 @@
          | map('from_json') | selectattr('role', 'equalto', 'primary')
          | map(attribute='node') | list }}
   run_once: true
+
+- name: Create the read-only role the arbitrator reads the replication state with
+  ansible.builtin.command:
+    argv: [runuser, -u, postgres, --, psql, -X, -q, -v, ON_ERROR_STOP=1, -d, postgres]
+    stdin: |
+      SET synchronous_commit = local;
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ postgres_ha_arbitrator_user }}') THEN
+          CREATE ROLE {{ postgres_ha_arbitrator_user }};
+        END IF;
+      END
+      $$;
+      ALTER ROLE {{ postgres_ha_arbitrator_user }} WITH LOGIN PASSWORD '{{ postgres_ha_arbitrator_password }}';
+      ALTER ROLE {{ postgres_ha_arbitrator_user }} SET default_transaction_read_only = on;
+      GRANT pg_monitor TO {{ postgres_ha_arbitrator_user }};
+  changed_when: true
+  timeout: 60
+  no_log: true
+  when: (postgres_ha_node_state.stdout | from_json).role == 'primary'

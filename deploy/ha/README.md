@@ -13,7 +13,7 @@ No throwaway script is ever required to deploy.
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `ansible/`                          | roles, `ansible.cfg`, inventories (`lab`, `prod`), shared versions                                                                  |
 | `ansible/roles/opensvc/`            | om3 on the frozen release, and the cluster the nodes form                                                                           |
-| `ansible/roles/opensvc_arbitrator/` | the third-site witness, which withholds its vote from a DRBD copy behind a connected primary, and the quorum settings the nodes hold |
+| `ansible/roles/opensvc_arbitrator/` | the third-site witness, which withholds its vote from a DRBD copy or a PostgreSQL standby behind a reachable primary, and the quorum settings the nodes hold |
 | `ansible/roles/fencing/`            | the callout a survivor runs to shoot its unreachable peer                                                                           |
 | `ansible/roles/maintenant/`         | the static binary, the state root, the settings and, in server mode, the gRPC pair, one table for both the env file and the service |
 | `ansible/roles/maintenant_check/`   | the application test the service runs: 0 alive, 1 degraded, 2 dead                                                                  |
@@ -103,24 +103,48 @@ The witness is an HTTP endpoint on the third machine, port 1216, path `/arbitrat
 
 om3 rc47 asks for the vote with a GET on `arbitrator#0.uri`. `checkURL` (`daemon/nmon/arbitrator.go`, line 148) returns the error of `client.Do` and never looks at the HTTP status: any response is a vote, a 403 or a 500 included. Only a transport error withholds it: connection refused, connection closed before any response (the client sees EOF), a TLS failure, or the check timeout. That timeout is `arbitratorCheckDuration`, a third of the daemon's ready duration of 5 s, about 1.67 s.
 
-A node fetches the vote live when it forgets a peer, in `onForgetPeer` (`daemon/nmon/main_cmd.go`, line 362, votes read at line 404). That happens `hb.timeout` (15 s by default) after the last heartbeat it received, heartbeats being sent every `hb.interval` (5 s by default), so between 10 and 15 s after the link is cut. Both nodes ask, each on its own timer. Each counts its live peers, itself included, plus the arbitrator votes, out of the cluster nodes plus the arbitrators. With two nodes and one arbitrator, a node alone needs the vote to reach 2 of 3; without it, it runs `node.split_action`, `crash` here. The same check also runs every 60 s, for status display only.
+A node fetches the vote live when it forgets a peer, in `onForgetPeer` (`daemon/nmon/main_cmd.go`, line 362, votes read at line 404). That happens `hb.timeout` (15 s by default) after the last heartbeat it received, heartbeats being sent every `hb.interval` (5 s by default), so between 10 and 15 s after the link is cut. Both nodes ask, each on its own timer. Each counts its live peers, itself included, plus the arbitrator votes, out of the cluster nodes plus the arbitrators. With two nodes and one arbitrator, a node alone needs the vote to reach 2 of 3; without it, it runs `node.split_action`, `reboot` here. The same check also runs every 60 s, for status display only.
 
 ### Where the witness stands
 
 The om3 keyword reference of `arbitrator.uri` places the arbitrators on the side of one segment: "In case of a real split, all arbitrators are expected to be unreachable from the lost segment. At least one of them is expected to be reachable from the surviving segment", and "Usually, this can be interpreted as: same site, not same rack and power lines." With that layout, a vote that answers whoever reaches it is enough: the segment that cannot reach the arbitrator loses.
 
-This deployment puts the witness on a third site instead. With two nodes, a witness on site A means the loss of site A takes the witness with it, and the node on site B cannot reach quorum: failover is automatic in one direction only. A third-site witness lets the survivor of either site win the vote. The price is the inter-site partition (scenario 5): both segments still reach the witness, so a witness that grants every GET gives quorum to both. In `sqlite/drbd` the passive node then takes over and fences the active node, the only one with an `UpToDate` copy. The `Outdated` refusal of the fencing callout (below) stops that shot, and the witness itself now refuses the vote in that case.
+This deployment puts the witness on a third site instead. With two nodes, a witness on site A means the loss of site A takes the witness with it, and the node on site B cannot reach quorum: failover is automatic in one direction only. A third-site witness lets the survivor of either site win the vote. The price is the inter-site partition (scenario 5): both segments still reach the witness, so a witness that grants every GET gives quorum to both. In `sqlite/drbd` the passive node then takes over and fences the active node, the only one with an `UpToDate` copy. The `Outdated` refusal of the fencing callout (below) stops that shot, and the witness itself now refuses the vote in that case. In `postgres/streaming` the standby would likewise promote and fence the primary; the witness refuses that vote too.
 
 ### The selective vote
 
-The `opensvc_arbitrator` role runs a small Python 3 HTTP server (standard library only, `files/arbitrator.py`) as the systemd unit `opensvc-arbitrator`, in place of the nginx site the role used to install. For each GET on the vote path it identifies the requester by its source address, mapped to its inventory name from the `ansible_host` of each node of `opensvc_cluster`. If `drbdsetup status --json <resource>` answers on the third machine, which is the diskless DRBD vote in `sqlite/drbd`, it refuses the requester if and only if:
+The `opensvc_arbitrator` role runs a small Python 3 HTTP server (standard library only, `files/arbitrator.py`) as the systemd unit `opensvc-arbitrator`, in place of the nginx site the role used to install. For each GET on the vote path it identifies the requester by its source address, mapped to its inventory name from the `ansible_host` of each node of `opensvc_cluster`, then applies the rule of the deployment mode. The role writes that rule into `/etc/opensvc-arbitrator.json` as `backend`, from `ha_mode`: the DRBD rule in `sqlite/drbd`, the PostgreSQL rule in `postgres/streaming`, and none in the other modes, where every vote is granted.
+
+Refusing means closing the connection without writing any response, so that om3 gets EOF and counts no vote; a 403 would count as one in rc47. Every case a rule does not decide is granted with a 200, an unknown source address included: a rule only refuses when it can show that the requester is the side without the data while the side with the data is alive. Each request leaves one line in the journal: source address, node, decision, reason.
+
+#### DRBD, in `sqlite/drbd`
+
+The arbitrator reads `drbdsetup status --json <resource>` on the third machine, which is the diskless DRBD vote. It refuses the requester if and only if:
 
 - the requester's `peer-disk-state`, as the third machine sees it, is not `UpToDate`, and
 - another peer is `connection-state: Connected`, `peer-role: Primary` and `peer-disk-state: UpToDate`.
 
-Every other case is granted with a 200, as before: an unknown source address, no DRBD on the machine (`ip-only`, `postgres/streaming`), a requester absent from the resource, or a `drbdsetup` call that fails or exceeds 0.5 s. The rule only acts in the case it can decide. Refusing means closing the connection without writing any response, so that om3 gets EOF and counts no vote; a 403 would count as one in rc47. Each request leaves one line in the journal: source address, node, decision, reason.
+A requester absent from the resource, or a `drbdsetup` call that fails or exceeds 0.5 s, is granted.
 
 Applied to scenario 5, the primary is `UpToDate` and gets the vote; the cut secondary is `Outdated` while the primary is still connected to the third machine, gets none, lacks quorum and reboots. While the partition lasts it comes back, is refused again and reboots again, which is harmless: its disk is `Outdated`, so neither DRBD, the arbitrator nor `maintenant-fence --guard` lets it start the service. Once the partition heals it rejoins and resyncs on its own. `crash`, the other self-fencing action, leaves the node hung after the panic (`kernel.panic=0` on Debian) until someone power cycles it. When the primary is really lost, the third machine no longer sees a connected primary and the survivor gets the vote, whatever its disk state.
+
+#### PostgreSQL, in `postgres/streaming`
+
+The third machine holds no copy of the data, so the arbitrator asks the nodes. For each GET it runs one query on every cluster node, all at once, with `psql` from `postgresql-client` installed on the third machine:
+
+```sql
+SELECT pg_is_in_recovery(), coalesce((SELECT status FROM pg_stat_wal_receiver), '')
+```
+
+While another node P answers and is not in recovery (a primary), the requester R gets the vote only if it proves it holds the data or follows it: R answers and is the primary, or R answers, is in recovery and its WAL receiver is `streaming`. A standby whose `pg_stat_wal_receiver` has no row or a status such as `waiting` or `starting` is refused, and so is an R whose PostgreSQL does not answer: a standby rebooted by a partition can ask for the vote before its PostgreSQL accepts connections, and granting it then would let it fence the primary and promote a copy that stopped following it.
+
+When no node answers as a primary, every requester is granted. An output that is not exactly `t|<status>` or `f|<status>` counts as no answer. `psql` runs with `-X -A -t -w` (no `psqlrc`, unaligned, tuples only, never a password prompt), and an output that does not match whole counts as no answer.
+
+When the primary is really lost (scenario 10), it does not answer in time and the standby gets the vote. Refusing it there would be the worse error: with `split_action=reboot` the survivor would reboot itself and leave the cluster without a primary. Applied to scenario 5, the standby cut from its primary stops streaming while the primary still answers the third machine as not in recovery: the standby gets no vote, lacks quorum and reboots, and the primary gets the vote and keeps the service. Its PostgreSQL starts again at boot, `maintenant-pg-guard` letting a standby start, in recovery and unable to stream across the partition, so it is refused each time it comes back, until the partition heals.
+
+The query runs as `maintenant_arbitrator`, a read-only role the `postgres_ha` role creates on the primary at the end of its bootstrap, on every run: `LOGIN`, member of `pg_monitor`, and `default_transaction_read_only = on`. `pg_monitor` matters: without `pg_read_all_stats`, which it includes, PostgreSQL shows every column of `pg_stat_wal_receiver` but `pid` as NULL, and a streaming standby would read as not streaming. Physical replication carries the role to the standby. Its password is generated on the control machine like the replication password, in its own file, `postgres/maintenant_arbitrator.password` under the build directory. `pg_hba.conf` on both nodes admits it from the third machine's `ansible_host` only, on the `postgres` database, with `scram-sha-256`. On the third machine it lives in `/etc/opensvc-arbitrator.pgpass`, mode 0600, owned by root, which the unit runs as.
+
+om3 waits about 1.67 s for the answer (see above) and counts no vote past it, so the decision must come back well before. libpq cannot bound it: it raises any `connect_timeout` below 2 s to 2 s, and a node that drops packets, as a partition or a destroyed machine does, never refuses the connection. The arbitrator therefore passes `connect_timeout=1` only as a backstop and bounds each `psql` itself, with a subprocess timeout of 0.5 s after which `psql` is killed and the node counts as not answering. The nodes are queried in parallel, one thread each, so a decision takes about 0.5 s at worst whatever the number of silent nodes. Queried one after the other, a silent primary and a silent requester would already take 1 s; left to libpq's floor, 4 s.
 
 ### Timing
 
@@ -136,11 +160,15 @@ The rule reads DRBD's view at the moment of the GET, so DRBD must have noticed t
 
 The third machine knew who was `Outdated` 3.6 s before om3 asked, by luck of the heartbeat phase. The `drbd` role therefore sets `ping-int` to 3 s (`drbd_ping_int_s`, with `ping-timeout` kept at its default of 0.5 s, `drbd_ping_timeout_ds`) and refuses to deploy unless `ping-int + ping-timeout` stays below `hb.timeout - hb.interval`. These roles do not set the om3 heartbeat; `group_vars/all/opensvc.yml` declares its defaults, 15 s and 5 s, for that check.
 
+The PostgreSQL rule has the same constraint: it reads `pg_stat_wal_receiver` at the moment of the GET, so the cut standby must have stopped streaming before om3 asks. A primary that goes silent closes nothing, and the WAL receiver only gives up after `wal_receiver_timeout` without hearing from it, 60 s by default. The `postgres_ha` role sets it to 5 s (`postgres_ha_wal_receiver_timeout_s`) and refuses to deploy unless it stays below `hb.timeout - hb.interval`, 10 s with om3's defaults. Once the receiver has given up, the view shows no streaming receiver until a new one gets through to the primary, which it cannot do across the partition.
+
 ### Limits
 
-- In `ip-only` and `postgres/streaming` the third machine has no DRBD and every vote is granted: an inter-site partition still gives quorum to both segments. A rule reading the PostgreSQL replication state is the next step.
-- A node is recognised by the address it reaches the witness from, which must be its `ansible_host`, and its DRBD peer name (its hostname) must equal its inventory name, as on the bench. Otherwise its vote is always granted.
-- If om3 asked before DRBD noticed the cut, both copies would still read `UpToDate` and both nodes would get the vote. The timing check above is what rules that out.
+- In `ip-only` the third machine reads no replication state and every vote is granted: an inter-site partition still gives quorum to both segments.
+- A node is recognised by the address it reaches the witness from, which must be its `ansible_host`, and its DRBD peer name (its hostname) must equal its inventory name, as on the bench. Otherwise its vote is always granted. In `postgres/streaming` the arbitrator reaches each node's PostgreSQL on that same address, which `listen_addresses` includes.
+- If om3 asked before DRBD noticed the cut, both copies would still read `UpToDate` and both nodes would get the vote. The timing check above is what rules that out. The same holds for a standby still `streaming` in `postgres/streaming`.
+- In `postgres/streaming` a node whose PostgreSQL is down for maintenance while the primary runs is refused by the periodic check too, so its om3 status shows the arbitrator down until PostgreSQL is back.
+- A standby in recovery and not streaming while the primary answers, for instance one reconnecting after a restart of the primary, gets no vote, in the periodic check too: its status shows the arbitrator down until it streams again.
 - A node resyncing (`Inconsistent`) while the primary is connected gets no vote, in the periodic check too: its status shows the arbitrator down until the resync ends, and the role's reachability check fails if a deployment runs during a resync.
 
 ### Proposed upstream
@@ -184,7 +212,7 @@ ha_fencing_command: >-
 Two consequences to accept before choosing it:
 
 - The fenced node is back within a minute, every time. It must not start the service on its own and its copy must resync without overwriting an acknowledged write. om3 does not start a failover service already running elsewhere and `--guard` refuses a start after a failed fence, but this return has not been played on the bench yet.
-- During an inter-site partition where both nodes reach the witness, the rebooted node comes back still cut from its peer, holds the quorum through the witness, and can fence the survivor in turn. In `sqlite/drbd` the `Outdated` refusal above stops this loop. In `postgres/streaming` and `ip-only` nothing does yet, so power off stays the safer choice for these modes.
+- During an inter-site partition where both nodes reach the witness, the rebooted node comes back still cut from its peer, holds the quorum through the witness, and can fence the survivor in turn. In `sqlite/drbd` the `Outdated` refusal above stops this loop. In `postgres/streaming` the selective vote refuses the returning standby while the primary still answers the witness, but this return has not been played on the bench. In `ip-only` nothing does yet, so power off stays the safer choice there.
 
 ## Support data
 

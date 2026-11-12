@@ -7,7 +7,6 @@ postgres_ha_repo_key_url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
 postgres_ha_keyring: /etc/apt/keyrings/pgdg.asc
 
 postgres_ha_cluster: main
-postgres_ha_port: 5432
 postgres_ha_unit: "postgresql@{{ postgres_ha_version }}-{{ postgres_ha_cluster }}.service"
 postgres_ha_home: /var/lib/postgresql
 postgres_ha_datadir: "{{ postgres_ha_home }}/{{ postgres_ha_version }}/{{ postgres_ha_cluster }}"
@@ -43,6 +42,8 @@ postgres_ha_standby_missing_grace_seconds: 10
 # disk waiting.
 postgres_ha_max_slot_wal_keep_size: 2GB
 
+postgres_ha_wal_receiver_timeout_s: 5
+
 postgres_ha_watch_interval_seconds: 5
 postgres_ha_ready_timeout_seconds: 60
 postgres_ha_promote_timeout_seconds: 60
@@ -63,6 +64,7 @@ postgres_ha_initial_primary: >-
 postgres_ha_node_address: "{{ ansible_host | default(inventory_hostname) }}"
 postgres_ha_peer: "{{ groups['opensvc_cluster'] | reject('equalto', inventory_hostname) | first }}"
 postgres_ha_peer_address: "{{ hostvars[postgres_ha_peer].ansible_host | default(postgres_ha_peer) }}"
+postgres_ha_arbitrator_address: "{{ hostvars[groups['arbitrator'] | first].ansible_host | default(groups['arbitrator'] | first) }}"
 postgres_ha_self_name: "{{ inventory_hostname | regex_replace('[^A-Za-z0-9]', '_') }}"
 postgres_ha_peer_name: "{{ postgres_ha_peer | regex_replace('[^A-Za-z0-9]', '_') }}"
 
