@@ -1,0 +1,8 @@
+---
+- name: Serve the relay
+  ansible.builtin.include_tasks: relay.yml
+  when: inventory_hostname in groups['arbitrator']
+
+- name: Send the heartbeats through the relay
+  ansible.builtin.include_tasks: heartbeat.yml
+  when: inventory_hostname in groups['opensvc_cluster']

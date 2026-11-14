@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  author: Kolapsis
+  role_name: opensvc_relay
+  description: The om3 relay on the third machine, and the relay heartbeat the nodes send through it
+  license: LicenseRef-Maintenant-Commercial
+  min_ansible_version: "2.15"
+dependencies: []

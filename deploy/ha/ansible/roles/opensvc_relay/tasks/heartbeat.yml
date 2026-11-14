@@ -1,0 +1,73 @@
+---
+- name: Refuse a relay interval that would stretch the heartbeat timeout
+  ansible.builtin.assert:
+    that: 4 * opensvc_relay_hb_interval_s | float + 1 <= opensvc_hb_timeout_s | float
+    fail_msg: >-
+      om3 raises the timeout of a relay heartbeat to 4 x interval + 1 s: an
+      interval of {{ opensvc_relay_hb_interval_s }} s would make it outlast
+      hb.timeout ({{ opensvc_hb_timeout_s }} s) and delay the detection of a lost site.
+  run_once: true
+
+- name: Resolve the relay to the name its certificate carries
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^\S+\s+(\S+\s+)*{{ opensvc_relay_hostname }}(\s|$)'
+    line: "{{ opensvc_relay_address | trim }} {{ opensvc_relay_hostname }}"
+
+- name: Read the authority that signs the certificate of the relay
+  ansible.builtin.command: om system/sec/ca key decode --name certificate_chain
+  delegate_to: "{{ opensvc_relay_inventory_host }}"
+  register: opensvc_relay_ca
+  changed_when: false
+  run_once: true
+
+- name: Trust the authority of the relay
+  ansible.builtin.include_tasks: datastore.yml
+  vars:
+    opensvc_relay_store: "{{ opensvc_relay_ca_sec }}"
+    opensvc_relay_store_key: certificate_chain
+    opensvc_relay_store_value: "{{ opensvc_relay_ca.stdout }}\n"
+  when: inventory_hostname == groups['opensvc_cluster'] | first
+
+- name: Store the password of the relay
+  ansible.builtin.include_tasks: datastore.yml
+  vars:
+    opensvc_relay_store: "{{ opensvc_relay_password_sec }}"
+    opensvc_relay_store_key: password
+    opensvc_relay_store_value: "{{ opensvc_relay_password }}"
+  when: inventory_hostname == groups['opensvc_cluster'] | first
+
+- name: Read the relay settings the cluster holds
+  ansible.builtin.command: "om cluster config get --kw {{ item.key }}"
+  register: opensvc_relay_cluster_current
+  changed_when: false
+  failed_when: false
+  loop: "{{ opensvc_relay_cluster_settings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  run_once: true
+
+- name: Set the relay settings of the cluster
+  ansible.builtin.command: >-
+    om cluster config update
+    {% for k, v in opensvc_relay_cluster_settings.items() %} --set '{{ k }}={{ v }}'{% endfor %}
+  when: >-
+    opensvc_relay_cluster_current.results | map(attribute='stdout') | map('trim') | list
+    != opensvc_relay_cluster_settings.values() | map('string') | list
+  changed_when: true
+  run_once: true
+
+- name: Wait for this node to see each peer through the relay
+  ansible.builtin.command:
+    argv: [om, daemon, hb, list, -o, json]
+  register: opensvc_relay_streams
+  changed_when: false
+  retries: 24
+  delay: 5
+  until: >-
+    (opensvc_relay_streams.stdout | from_json)['items']
+    | selectattr('node', 'equalto', ansible_facts.hostname)
+    | selectattr('type', 'equalto', 'relay') | selectattr('id', 'search', '[.]rx$')
+    | selectattr('is_beating') | map(attribute='peer') | sort | list
+    == groups['opensvc_cluster'] | reject('equalto', inventory_hostname)
+       | map('extract', hostvars, ['ansible_facts', 'hostname']) | sort | list

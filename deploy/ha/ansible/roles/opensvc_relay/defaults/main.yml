@@ -1,0 +1,25 @@
+---
+opensvc_relay_inventory_host: "{{ groups['arbitrator'] | first }}"
+opensvc_relay_hostname: "{{ hostvars[opensvc_relay_inventory_host].ansible_facts.hostname }}"
+opensvc_relay_address: >-
+  {{ hostvars[opensvc_relay_inventory_host].ansible_host | default(opensvc_relay_inventory_host) }}
+opensvc_relay_port: 1215
+opensvc_relay_url: "https://{{ opensvc_relay_hostname }}:{{ opensvc_relay_port }}"
+
+opensvc_relay_username: relay
+opensvc_relay_user: "system/usr/{{ opensvc_relay_username }}"
+opensvc_relay_password_sec: system/sec/relay
+opensvc_relay_ca_sec: system/sec/relay-ca
+opensvc_relay_password_file: >-
+  {{ maintenant_build_dir | default(lookup('env', 'HOME') ~ '/.cache/maintenant-lab/maintenant-build') }}/opensvc/relay.password
+opensvc_relay_password: "{{ lookup('ansible.builtin.password', opensvc_relay_password_file ~ ' length=40 chars=ascii_letters,digits') }}"
+
+opensvc_relay_hb_interval_s: 3
+
+opensvc_relay_cluster_settings:
+  cluster.ca: "system/sec/ca {{ opensvc_relay_ca_sec }}"
+  hb#2.type: relay
+  hb#2.relay: "{{ opensvc_relay_url }}"
+  hb#2.username: "{{ opensvc_relay_username }}"
+  hb#2.password: "from {{ opensvc_relay_password_sec }} key password"
+  hb#2.interval: "{{ opensvc_relay_hb_interval_s }}s"

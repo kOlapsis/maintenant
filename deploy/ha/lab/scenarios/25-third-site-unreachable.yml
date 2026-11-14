@@ -1,0 +1,56 @@
+---
+# Scenario 25, valid in every mode. Numbers 1 to 12 belong to the bench plan;
+# the allocation of the others is fixed in README.md.
+id: 25
+slug: third-site-unreachable
+name: Third site unreachable
+source: all modes
+repetitions: 1
+injection:
+  'on': arbitrator
+  command: iptables -A INPUT -s "$LAB_ACTIVE_ADDRESS" -j DROP && iptables -A OUTPUT -d "$LAB_ACTIVE_ADDRESS"
+    -j DROP && iptables -A INPUT -s "$LAB_PASSIVE_ADDRESS" -j DROP && iptables -A OUTPUT -d "$LAB_PASSIVE_ADDRESS"
+    -j DROP
+repair:
+  'on': arbitrator
+  command: |
+    for a in "$LAB_ACTIVE_ADDRESS" "$LAB_PASSIVE_ADDRESS"; do
+      iptables -D INPUT -s "$a" -j DROP
+      iptables -D OUTPUT -d "$a" -j DROP
+    done
+    exit 0
+settle_s: 60
+verify:
+  'on': host
+  command: |
+    $LAB_SSH_ACTIVE ip -o addr show | grep -q " inet $LAB_SERVICE_ADDRESS/" &&
+      curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
+measures:
+- failover_count
+- rto_ms
+- writes
+- nodes_written
+modes:
+  ip-only:
+    applicable: true
+    expected: 'The nodes still hear each other on the direct heartbeat, so om3 sees no split and
+      asks for no vote. om mon shows the relay heartbeat stale and the arbitrator down. No failover,
+      no reboot, rto_ms is 0. Data is local to each node in this mode, so writes are not compared.'
+  postgres/streaming:
+    applicable: true
+    expected: 'The nodes still hear each other on the direct heartbeat, so om3 sees no split and
+      asks for no vote. om mon shows the relay heartbeat stale and the arbitrator down. No failover,
+      no reboot, rto_ms is 0; replication between the sites never stops, so the standby keeps
+      streaming synchronously and no acknowledged write is lost.'
+  sqlite/drbd:
+    applicable: true
+    expected: 'The nodes still hear each other on the direct heartbeat, so om3 sees no split and
+      asks for no vote. om mon shows the relay heartbeat stale and the arbitrator down. No failover,
+      no reboot, rto_ms is 0. DRBD loses only its diskless vote: the two copies stay Connected
+      and UpToDate, the primary keeps quorum with its peer, and no acknowledged write is lost.'
+  postgres/drbd:
+    applicable: true
+    expected: 'The nodes still hear each other on the direct heartbeat, so om3 sees no split and
+      asks for no vote. om mon shows the relay heartbeat stale and the arbitrator down. No failover,
+      no reboot, rto_ms is 0. DRBD loses only its diskless vote: the two copies stay Connected
+      and UpToDate, the primary keeps quorum with its peer, and no acknowledged write is lost.'

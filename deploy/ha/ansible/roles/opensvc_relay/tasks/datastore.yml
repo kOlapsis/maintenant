@@ -1,0 +1,29 @@
+---
+- name: Read the keys of {{ opensvc_relay_store }}
+  ansible.builtin.command: "om {{ opensvc_relay_store }} key list"
+  register: opensvc_relay_store_keys
+  changed_when: false
+  failed_when: false
+
+- name: Create {{ opensvc_relay_store }}
+  ansible.builtin.command: "om {{ opensvc_relay_store }} create {{ opensvc_relay_store_create_args | default('') }}"
+  when: opensvc_relay_store_keys.rc != 0
+  changed_when: true
+
+- name: Read the stored key {{ opensvc_relay_store ~ ":" ~ opensvc_relay_store_key }}
+  ansible.builtin.command: "om {{ opensvc_relay_store }} key decode --name {{ opensvc_relay_store_key }}"
+  register: opensvc_relay_store_current
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Write the key {{ opensvc_relay_store ~ ":" ~ opensvc_relay_store_key }}
+  ansible.builtin.command:
+    argv: [om, "{{ opensvc_relay_store }}", key, change, --name, "{{ opensvc_relay_store_key }}", --from, "-"]
+    stdin: "{{ opensvc_relay_store_value }}"
+    stdin_add_newline: false
+  when: >-
+    opensvc_relay_store_current.rc != 0
+    or opensvc_relay_store_current.stdout | trim != opensvc_relay_store_value | trim
+  changed_when: true
+  no_log: true

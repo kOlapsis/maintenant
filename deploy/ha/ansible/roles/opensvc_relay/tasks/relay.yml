@@ -1,0 +1,13 @@
+---
+- name: Install om3 on the frozen release
+  ansible.builtin.include_role:
+    name: opensvc
+    tasks_from: install.yml
+
+- name: Create the user the nodes log in to the relay as
+  ansible.builtin.include_tasks: datastore.yml
+  vars:
+    opensvc_relay_store: "{{ opensvc_relay_user }}"
+    opensvc_relay_store_create_args: --kw grant=heartbeat
+    opensvc_relay_store_key: password
+    opensvc_relay_store_value: "{{ opensvc_relay_password }}"

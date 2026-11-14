@@ -311,6 +311,16 @@ unit_status() {
 	fi
 }
 
+reach_state() {
+	if [ "$1" -eq "$2" ]; then
+		printf 'up\n'
+	elif [ "$1" -gt 0 ]; then
+		printf 'partial\n'
+	else
+		printf 'unreachable\n'
+	fi
+}
+
 collect_status() {
 	address=$(service_address)
 	nodes="[]"
@@ -319,25 +329,26 @@ collect_status() {
 		nodes=$(printf '%s\n' "$nodes" | jq --argjson n "$one" '. + [$n]')
 	done
 
-	# The arbitrator runs no om: it is up when every node reaches the uri it votes on.
+	# The arbitrator is up when every node reaches the uri it votes on, the relay when every node hears its peers through it.
 	arb_state="absent"
+	relay_state="absent"
 	if [ -n "$(group_hosts arbitrator)" ]; then
 		reached=0
+		relayed=0
 		total=0
 		for name in $(group_hosts opensvc_cluster); do
 			total=$((total + 1))
+			if ssh_to "$name" "$OM daemon hb list -o json" 2>/dev/null |
+				jq -e --arg n "$name" '[.items[] | select(.node == $n and .type == "relay" and (.id | endswith(".rx")))] | length > 0 and all(.is_beating)' >/dev/null 2>&1; then
+				relayed=$((relayed + 1))
+			fi
 			uri=$(ssh_to "$name" "$OM cluster config get --kw 'arbitrator#0.uri'" 2>/dev/null) || continue
 			if [ -n "$uri" ] && ssh_to "$name" "curl -fsS -m 3 -o /dev/null '$uri'" >/dev/null 2>&1; then
 				reached=$((reached + 1))
 			fi
 		done
-		if [ "$reached" -eq "$total" ]; then
-			arb_state="up"
-		elif [ "$reached" -gt 0 ]; then
-			arb_state="partial"
-		else
-			arb_state="unreachable"
-		fi
+		arb_state=$(reach_state "$reached" "$total")
+		relay_state=$(reach_state "$relayed" "$total")
 	fi
 
 	probe_host=$(group_hosts measurement | head -n 1)
@@ -362,6 +373,7 @@ collect_status() {
 		--arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
 		--arg address "$address" \
 		--arg arb "$arb_state" \
+		--arg relay "$relay_state" \
 		--arg availability "$availability" \
 		--arg writes "$writes" \
 		--arg observer "$observer" \
@@ -395,6 +407,7 @@ collect_status() {
 			service: {address: $address, holders: [$nodes[] | select(.holds_address) | .name]},
 			nodes: $nodes,
 			arbitrator: $arb,
+			relay: $relay,
 			probes: {availability: $availability, writes: $writes, observer: $observer},
 			storage: $storage,
 			verdict: (
@@ -405,6 +418,7 @@ collect_status() {
 				elif ([$nodes[] | select(.reachable | not)] | length) > 0 then "degraded"
 				elif ([$nodes[] | select(.opensvc != "up")] | length) > 0 then "degraded"
 				elif $arb != "up" then "degraded"
+				elif $relay != "up" then "degraded"
 				elif $availability != "running" or $writes != "running" or $observer != "running" then "degraded"
 				elif postgres_nominal | not then "degraded"
 				elif drbd_nominal | not then "degraded"
@@ -424,6 +438,7 @@ render_status() {
 		"mode       \(.mode)",
 		"service    \(.service.address) on \(if (.service.holders | length) == 0 then "nobody" else (.service.holders | join(" and ")) end)",
 		"arbitrator \(.arbitrator)",
+		"relay      \(.relay)",
 		"probes     availability=\(.probes.availability) writes=\(.probes.writes) observer=\(.probes.observer)",
 		"",
 		"NODE         REACHABLE  OPENSVC      ADDRESS  BACKEND",

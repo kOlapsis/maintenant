@@ -1,0 +1,69 @@
+---
+# Scenario 24, valid in every mode. Numbers 1 to 12 belong to the bench plan;
+# the allocation of the others is fixed in README.md.
+id: 24
+slug: relay-down-partition
+name: Relay down, then inter-site partition
+source: all modes
+repetitions: 1
+injection:
+  'on': host
+  command: |
+    $LAB_SSH_ARBITRATOR "sudo -n systemctl stop opensvc-server" &&
+      $LAB_SSH_ACTIVE "sudo -n iptables -A INPUT -s $LAB_PASSIVE_ADDRESS -j DROP && sudo -n iptables -A OUTPUT -d $LAB_PASSIVE_ADDRESS -j DROP"
+repair:
+  'on': host
+  command: |
+    $LAB_SSH_ARBITRATOR "sudo -n systemctl start opensvc-server" || exit 1
+    $LAB_SSH_ACTIVE "sudo -n iptables -D INPUT -s $LAB_PASSIVE_ADDRESS -j DROP; sudo -n iptables -D OUTPUT -d $LAB_PASSIVE_ADDRESS -j DROP" 2>/dev/null
+    for d in "$LAB_ACTIVE_DOMAIN" "$LAB_PASSIVE_DOMAIN"; do
+      virsh list --name | grep -qx "$d" || virsh start "$d" || exit 1
+    done
+settle_s: 60
+verify:
+  'on': host
+  command: |
+    holders=0
+    for s in "$LAB_SSH_ACTIVE" "$LAB_SSH_PASSIVE"; do
+      $s ip -o addr show 2>/dev/null | grep -q " inet $LAB_SERVICE_ADDRESS/" && holders=$((holders + 1))
+    done
+    [ "$holders" -eq 1 ] && curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
+measures:
+- nodes_written
+- writes
+- rto_ms
+- divergence
+modes:
+  ip-only:
+    applicable: true
+    expected: 'With the relay down, the cut leaves no heartbeat path and om3 splits. The arbitrator
+      reads no replication state in this mode and grants both votes, so both sides keep quorum
+      and neither reboots. The passive side, whose peer was running the service, fences the
+      active one through the host and then takes the service: the service moves although both
+      nodes were alive. The active side flags no fencing, its peer running nothing, so there
+      is no fencing race. Exactly one side holds the service at a time and nodes_written is
+      never 2. Data is local to each node in this mode, so writes are not compared.'
+  postgres/streaming:
+    applicable: true
+    expected: 'With the relay down, the cut leaves no heartbeat path and om3 splits. The selective
+      arbitrator grants the vote to the primary, which keeps the service, and refuses the standby,
+      which stopped streaming: the standby lacks quorum and reboots (split_action=reboot), and
+      is refused again each time it comes back until the partition heals. Exactly one side keeps
+      the service. After repair, verification shows a single side wrote: nodes_written is never
+      2, and no data diverged (SC-004).'
+  sqlite/drbd:
+    applicable: true
+    expected: 'With the relay down, the cut leaves no heartbeat path and om3 splits. The selective
+      arbitrator grants the vote to the UpToDate primary, which keeps the service, and refuses
+      the Outdated secondary: the secondary lacks quorum and reboots (split_action=reboot), and
+      is refused again each time it comes back until the partition heals. Exactly one side keeps
+      the service. After repair, verification shows a single side wrote: nodes_written is never
+      2, and no data diverged (SC-004).'
+  postgres/drbd:
+    applicable: true
+    expected: 'With the relay down, the cut leaves no heartbeat path and om3 splits. The selective
+      arbitrator grants the vote to the UpToDate primary, which keeps the service, and refuses
+      the Outdated secondary: the secondary lacks quorum and reboots (split_action=reboot), and
+      is refused again each time it comes back until the partition heals. Exactly one side keeps
+      the service. After repair, verification shows a single side wrote: nodes_written is never
+      2, and no data diverged (SC-004).'

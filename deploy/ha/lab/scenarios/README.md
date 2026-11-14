@@ -59,6 +59,8 @@ is fixed here so that later phases cannot collide:
 | 21 | Volume resynchronisation when the node returns | `sqlite/drbd` |
 | 22 | Storage split-brain and its manual resolution | `sqlite/drbd` |
 | 23 | Freeze of the active node | all |
+| 24 | Relay down, then inter-site partition | all |
+| 25 | Third site unreachable | all |
 
 One provisional name used while planning, `11-degraded-network`, is dropped: number 11 is the
 plan's degraded WAN scenario, which already covers it. The two others, `13-degraded-storage`
@@ -114,11 +116,15 @@ The freeze the heartbeat does detect, a whole node that stops without crashing, 
 
 | | |
 |---|---|
-| **Injection** | `iptables -A` on the interconnect network, cutting the two sites from each other while both still reach the arbitrator. |
+| **Injection** | `iptables -A` on the interconnect network, cutting the two sites from each other while both still reach the third machine. |
 | **Repair** | Flush the rule; the cluster reconverges. |
-| **Expected, `postgres/streaming`, `sqlite/drbd`, `postgres/drbd`** | The arbitrator decides. Exactly one side keeps or takes the service; the other stands down. After repair, verification shows a single side wrote: `nodes_written` is never 2, and no data diverged (SC-004). |
-| **Expected, `ip-only`** | The arbitrator decides. Exactly one side keeps or takes the service; the other stands down. `nodes_written` is never 2. Data is local to each node in this mode, so writes are not compared. |
-| **Measures** | `nodes_written`, `writes`, `rto_ms`, post-repair divergence check. |
+| **Expected, all modes** | The heartbeats keep flowing through the relay on the third machine, so om3 sees no split: no vote is asked, no node reboots, nothing is fenced and the service stays on the active node. `nodes_written` is never 2. |
+| **Expected, `sqlite/drbd`, `postgres/drbd`** | The active copy keeps DRBD quorum through the diskless vote on the third machine and keeps taking writes; the passive copy goes `Outdated` and resyncs after repair. No data diverged (SC-004). |
+| **Expected, `postgres/streaming`** | The standby loses its stream. With `postgres_ha_standby_missing=block` the writes wait until the partition heals, none acknowledged is lost, and the standby catches up after repair. No data diverged (SC-004). |
+| **Expected, `ip-only`** | Data is local to each node in this mode, so writes are not compared. |
+| **Measures** | `failover_count` (expected: zero), `nodes_written`, `writes`, `rto_ms`, post-repair divergence check. |
+
+The same cut with the relay down is scenario 24: there om3 splits and the selective arbitrator decides.
 
 ### 6. Loss of the service address
 
@@ -184,7 +190,7 @@ This is the failure mode most HA setups miss. It is one of the three that decide
 
 | | |
 |---|---|
-| **Injection** | Partition of the interconnect **and** the arbitrator made unreachable. Played in two variants: unreachable from one side, then unreachable from both. |
+| **Injection** | Partition of the interconnect **and** the third machine made unreachable, the arbitrator and the relay with it. Played in two variants: unreachable from one side, then unreachable from both. |
 | **Repair** | Restore the interconnect and the arbitrator, then run the post-mortem check before anything else. |
 | **Expected, all modes** | With the arbitrator reachable from one side only: that side keeps or takes the service, and the isolated side crashes without having started anything (`split_action`). With the arbitrator unreachable from both sides: both crash. That is a total outage, and it is the correct outcome — an outage is recoverable, a divergence is not. |
 | **Post-mortem** | Verify the crashed node wrote nothing. In `postgres/streaming`, its WAL past the fork, read before its rebuild, holds no commit dated after the promotion; in `ip-only`, the application never ran on both nodes at once; in the DRBD modes, the state of both volumes is compared after repair. `nodes_written == 2` fails the run outright, whatever else happened (SC-004). |
@@ -212,6 +218,8 @@ Their numbers, names and scope are fixed here.
 | 21 | Volume resynchronisation on node return | `sqlite/drbd` | The returning node resynchronises from the survivor without overwriting an acknowledged write, and does not restart the service on its own. |
 | 22 | Storage split-brain and its manual resolution | `sqlite/drbd` | Automatic resolution is forbidden: it throws writes away. The bench must show the refusal to promote, name the side to keep, and document the manual procedure. |
 | 23 | Freeze of the active node | all | The whole node stops without crashing. The survivor must fence it before starting anything (FR-024). |
+| 24 | Relay down, then inter-site partition | all | The double fault the selective arbitrator is kept for: with no relay, an inter-site cut splits the cluster and the vote decides. |
+| 25 | Third site unreachable | all | Losing the arbitrator and the relay alone changes nothing: no split, no failover. |
 
 ---
 
@@ -226,6 +234,25 @@ Their numbers, names and scope are fixed here.
 | **Expected, all modes** | Heartbeat expiry detects the freeze. A frozen node neither answers nor dies, so the survivor cannot take the service while the node still holds it. **The frozen node is fenced before anything starts anywhere else**, then the service starts on the survivor. If the fencing fails, nothing starts elsewhere and the operator is alerted: a failed fencing blocks, it never lets through (FR-024). The outage is about the heartbeat timeout, plus the fencing, plus the start; no acknowledged write is lost. |
 | **Expected, `postgres/streaming`** | `app#pg` promotes the standby only after the fencing, in asynchronous replication as in scenario 2. The returning node is rebuilt as a standby, never restarted as a primary. |
 | **Measures** | `rto_ms`, `writes`, `nodes_written`, `alerts_induced`, `fencing_outcome` (fails when the injected node was not fenced, or when the service started elsewhere before its fencing), `primary_count`, `former_primary_rebuild`. |
+
+### 24. Relay down, then inter-site partition
+
+| | |
+|---|---|
+| **Injection** | Stop `opensvc-server` on the third machine, which stops the relay and leaves the selective arbitrator running, then cut the two sites from each other as in scenario 5. |
+| **Repair** | Start the relay again, flush the rule, and start any node that is not running. |
+| **Expected, `postgres/streaming`, `sqlite/drbd`, `postgres/drbd`** | With no relay, the cut leaves no heartbeat path and om3 splits. The selective arbitrator grants the vote to the side holding the data (the `UpToDate` DRBD primary, or the PostgreSQL primary) and refuses the other, which lacks quorum and reboots (`split_action=reboot`), then is refused again each time it comes back until the partition heals. Exactly one side keeps the service; after repair, `nodes_written` is never 2 and no data diverged (SC-004). |
+| **Expected, `ip-only`** | The arbitrator reads no replication state and grants both votes: both sides keep quorum and neither reboots. The passive side, whose peer was running the service, fences the active one through the host and takes the service, which moves although both nodes were alive. The active side flags no fencing, since its peer runs nothing, so there is no fencing race. Exactly one side holds the service at a time and `nodes_written` is never 2. |
+| **Measures** | `nodes_written`, `writes`, `rto_ms`, post-repair divergence check. |
+
+### 25. Third site unreachable
+
+| | |
+|---|---|
+| **Injection** | `iptables` on the third machine, dropping everything from and to both nodes: the arbitrator, the relay and the diskless DRBD vote become unreachable together. |
+| **Repair** | Delete the rules. |
+| **Expected, all modes** | The nodes still hear each other on the direct heartbeat, so om3 sees no split and asks for no vote. `om mon` shows the relay heartbeat stale and the arbitrator down, and `lab status` reports the bench degraded. No failover, no reboot, `rto_ms` is 0, and no acknowledged write is lost. In the DRBD modes the two copies stay `Connected` and `UpToDate` and the primary keeps quorum with its peer; in `postgres/streaming` the standby keeps streaming synchronously. |
+| **Measures** | `failover_count` (expected: zero), `rto_ms`, `writes`, `nodes_written`. |
 
 ---
 

@@ -2,15 +2,17 @@
 # The bench deployment. site-prod.yml plays the same roles against another
 # inventory (FR-052).
 
-- name: Serve the arbitrator
+- name: Serve the arbitrator and the relay
   hosts: arbitrator
   roles:
     - opensvc_arbitrator
+    - opensvc_relay
 
 - name: Form the cluster
   hosts: opensvc_cluster
   roles:
     - opensvc
+    - opensvc_relay
     - opensvc_arbitrator
     - fencing
 
