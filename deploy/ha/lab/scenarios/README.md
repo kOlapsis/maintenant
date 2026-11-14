@@ -24,8 +24,9 @@ authoritative for intent.
   measurement set anyway (see `contracts/run-report.md`); the column names what matters here.
   The measures about the nodes come from the lines their scripts write to the journal: the
   application's start, stop and dead check under the tag `maintenant-svc`, the fencing callout
-  under `maintenant-fence`, the PostgreSQL scripts under `maintenant-pg`, and the watchdog
-  kills and restarts of the cluster agent under `systemd`. Declaring `fencing_outcome` means
+  under `maintenant-fence`, the PostgreSQL scripts under `maintenant-pg`, the watchdog
+  kills and restarts of the cluster agent under `systemd`, and the DRBD state changes under
+  `kernel` (only the lines that start with `drbd maintenant` are kept). Declaring `fencing_outcome` means
   the injected node must be fenced: the measure fails when it is not, and when the service
   starts elsewhere before that fencing.
 - A scenario that tests a bounded local restart names it with `local_restart`: `resource` is
@@ -342,6 +343,31 @@ Secondary. The scenarios read the volume with `drbdsetup status --json maintenan
 every disk is `UpToDate` with every connection `Connected`. Scenarios 21 and 22 act on the
 volume only, so they also apply to `postgres/drbd` if that mode is played.
 
+In this mode the measures about the nodes read the volume, not PostgreSQL. `local_restarts`,
+`failover_count`, `detection_delay_s`, `fencing_outcome`, `agent_watchdog_restart` and
+`crash_confirmed` mean what they mean in the other modes; a DRBD promotion also counts as
+taking the service. `sync_standby` and `loss_window` are *not applicable*. The others are read
+from the kernel lines `role( Secondary -> Primary )` and `role( Primary -> Secondary )` of each
+node, ordered by time, and from `lab status --json` after the repair:
+
+- `primary_count` is the number of nodes whose volume is `Primary` after the repair, and
+  `two_primaries` the number of times two nodes were `Primary` at once during the repetition.
+  The node that held the service at the injection starts as `Primary`; a node stops being one
+  when it demotes, when another node logs its successful fencing, or, failing that, when it
+  boots again. `allow-two-primaries no` should make it 0; the measure counts it anyway.
+- `nodes_written` is 2 when two nodes were `Primary` at once, or when either kernel logged
+  `Split-Brain detected`; 1 otherwise.
+- `divergence` is 1 when either kernel logged `Split-Brain detected` during the repetition,
+  0 otherwise. It is a yes or no, not an amount: the `out-of-sync` figure DRBD reports counts
+  the blocks either side changed since the split, not the writes the discarded side loses,
+  and it is back to 0 once the split brain is resolved. Its summary over a scenario is the
+  number of repetitions that diverged.
+- `former_primary_rebuild` is about the node that is `Secondary` after the repair. It is
+  rebuilt when its disk is `UpToDate` then. `duration_s` runs from its first
+  `repl( ... -> SyncTarget )` to its last `repl( SyncTarget -> Established )`, and is empty when
+  no resynchronisation was needed. It fails when that node promoted its volume after it lost
+  the role (demotion or reboot) and before that resynchronisation ended.
+
 ### 20. SQLite journal recovery after crash
 
 | | |
@@ -358,7 +384,7 @@ volume only, so they also apply to `postgres/drbd` if that mode is played.
 | **Injection** | `virsh destroy` on the active node, as in scenario 2. The survivor keeps taking writes while the node is down. |
 | **Repair** | Start the VM, then wait until its disk is `UpToDate` and every connection `Connected`; the repair fails if the returning node promotes its volume. |
 | **Expected** | The returning node connects as Secondary and resynchronises from the survivor, which is the sync source: the older copy never overwrites an acknowledged write. It never promotes its volume and never starts the service; the service stays on the survivor (FR-012). |
-| **Measures** | `rto_ms`, `writes`, `agents`, `nodes_written`. |
+| **Measures** | `rto_ms`, `writes`, `agents`, `nodes_written`, `primary_count`, `former_primary_rebuild`. |
 
 ### 22. Storage split-brain and its manual resolution
 
@@ -367,7 +393,7 @@ volume only, so they also apply to `postgres/drbd` if that mode is played.
 | **Injection** | On the passive node, with the service frozen: leave the DRBD mesh, disable quorum, force the volume primary, mount it and write a marker file, then demote it and restore the configuration with `drbdadm adjust`, which reconnects. Both copies have now been written while apart. |
 | **Repair** | Wait until `lab status` reports the split brain, check it names the active node as the side to keep, check the split brain is still there 30 s later, then apply `deploy/ha/split-brain.md`: discard the passive copy with `drbdadm connect --discard-my-data`, reconnect the kept side, wait for the resynchronisation and unfreeze the service. |
 | **Expected** | DRBD detects the split brain on reconnection and drops the connection on both sides (`StandAlone`); both copies stay intact and nothing resolves it automatically (FR-025). The service never moves. `lab status` reports verdict `split` and names the side to keep. After the manual resolution the kept database does not hold the marker, the service is still on the active node, and `writes.lost == 0`. |
-| **Measures** | `writes`, `nodes_written`, `alerts_induced`. |
+| **Measures** | `writes`, `alerts_induced`. `nodes_written` is left out: the injection writes on both copies on purpose, so it would always be 2. |
 
 The injection defeats quorum on purpose: the scenario shows what happens once the safeties
 have been bypassed, not that they can be.

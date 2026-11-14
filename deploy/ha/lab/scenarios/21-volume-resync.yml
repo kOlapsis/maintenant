@@ -41,6 +41,8 @@ measures:
 - writes
 - agents
 - nodes_written
+- primary_count
+- former_primary_rebuild
 modes:
   ip-only:
     applicable: false

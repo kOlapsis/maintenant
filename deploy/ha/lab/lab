@@ -63,9 +63,10 @@ AGENTS_RECONNECT_MAX_S=90
 PROBE_MEASURES='["rto_ms", "writes", "telemetry_gap_s", "telemetry_samples_lost", "alerts_induced", "agents"]'
 NODE_MEASURES='["local_restarts", "failover_count", "detection_delay_s", "fencing_outcome", "agent_watchdog_restart", "primary_count", "former_primary_rebuild", "sync_standby", "loss_window", "crash_confirmed", "nodes_written", "divergence"]'
 POSTGRES_MEASURES='["primary_count", "former_primary_rebuild", "sync_standby", "loss_window", "divergence"]'
+STREAMING_MEASURES='["sync_standby", "loss_window"]'
 SHARED_DATA_MEASURES='["writes", "telemetry_gap_s", "telemetry_samples_lost", "alerts_induced", "agents"]'
-# Must match maintenant_check_log_identifier, the fencing callout and log_event of postgres_ha; systemd logs the watchdog kills.
-NODE_EVENT_TAGS="maintenant-svc maintenant-fence maintenant-pg systemd"
+# Must match maintenant_check_log_identifier, the fencing callout and log_event of postgres_ha; systemd logs the watchdog kills, kernel the DRBD state changes.
+NODE_EVENT_TAGS="maintenant-svc maintenant-fence maintenant-pg systemd kernel"
 
 # The bench logs in as an ordinary account: every om command, and every
 # scenario command, is run through sudo on the machine it acts on.
@@ -717,7 +718,9 @@ def num($m): if declared($m) and (($node[$m]? | type) == "number") then $node[$m
 		| (if .count != 1 then "primary_count: \(.count) primaries after the repair" else empty end),
 		  (if .two_primaries > 0 then "primary_count: \(.two_primaries) two_primaries events" else empty end)),
 	(obj("former_primary_rebuild")
-		| (if .rebuilt then empty else "former_primary_rebuild: \(.node) was not rebuilt as a standby during the repetition" end),
+		| (if .rebuilt then empty
+		   elif $mode == "sqlite/drbd" then "former_primary_rebuild: \(.node) is not an UpToDate Secondary after the repair"
+		   else "former_primary_rebuild: \(.node) was not rebuilt as a standby during the repetition" end),
 		  (if .primary_started_before_rebuild then "former_primary_rebuild: \(.node) ran as a primary again before it was rebuilt" else empty end)),
 	(obj("loss_window") | select(.conduct == "block" and .opened)
 		| "loss_window: the loss window opened (\(.reasons | join(", "))) although sync_standby is block"),
@@ -725,7 +728,8 @@ def num($m): if declared($m) and (($node[$m]? | type) == "number") then $node[$m
 		| (if (.crashed | length) == 0 then "crash_confirmed: no node crashed" else empty end),
 		  (if (.started_before_crash | length) > 0 then "crash_confirmed: \(.started_before_crash | join(", ")) started the service before crashing" else empty end)),
 	(num("nodes_written") | select(. >= 2) | "nodes_written: \(.) nodes wrote at the same time"),
-	(num("divergence") | select(. > 0) | "divergence: \(.) commits of the former primary past the fork, at least one after the promotion, thrown away by its rebuild")
+	(num("divergence") | select(. > 0 and $mode == "sqlite/drbd") | "divergence: DRBD detected a split brain, the writes of one side are to be discarded"),
+	(num("divergence") | select(. > 0 and $mode != "sqlite/drbd") | "divergence: \(.) commits of the former primary past the fork, at least one after the promotion, thrown away by its rebuild")
 ]
 JQEOF
 	jq -nc \
@@ -747,6 +751,7 @@ JQEOF
 not_applicable_measures() {
 	case "$1" in
 	ip-only) jq -nc --argjson s "$SHARED_DATA_MEASURES" --argjson p "$POSTGRES_MEASURES" '$s + $p' ;;
+	sqlite/drbd) printf '%s\n' "$STREAMING_MEASURES" ;;
 	*) printf '[]\n' ;;
 	esac
 }
@@ -754,7 +759,7 @@ not_applicable_measures() {
 # Prints, as a JSON array, the measures the bench takes in a mode.
 wired_measures() {
 	case "$1" in
-	ip-only | postgres/streaming) jq -nc --argjson p "$PROBE_MEASURES" --argjson n "$NODE_MEASURES" '$p + $n' ;;
+	ip-only | postgres/streaming | sqlite/drbd) jq -nc --argjson p "$PROBE_MEASURES" --argjson n "$NODE_MEASURES" '$p + $n' ;;
 	*) printf '%s\n' "$PROBE_MEASURES" ;;
 	esac
 }
@@ -784,6 +789,7 @@ node_events() {
 		fi
 		if [ "$ne_readable" = true ]; then
 			jq -sc 'map(select(.MESSAGE | type == "string")
+				| select(.SYSLOG_IDENTIFIER != "kernel" or (.MESSAGE | startswith("drbd maintenant")))
 				| {ts: (.__REALTIME_TIMESTAMP | tonumber), tag: .SYSLOG_IDENTIFIER, boot: ._BOOT_ID, msg: .MESSAGE})' \
 				"$TMP/node-journal.json" >"$TMP/node-journal-events.json" 2>/dev/null || ne_readable=false
 		fi
@@ -817,183 +823,6 @@ node_measures() {
 	nm_settings=$(cat "$RUN_SETTINGS_FILE" 2>/dev/null) || nm_settings=""
 	[ -n "$nm_settings" ] || nm_settings=null
 
-	cat >"$TMP/node-measures.jq" <<'JQEOF'
-def us_s: ((. / 1000) | round) / 1000;
-def iso_us: capture("^(?<s>[0-9-]+T[0-9:]+)(\\.(?<f>[0-9]+))?Z$")
-	| ((.s + "Z") | fromdateiso8601) * 1000000 + (((.f // "") + "000000")[0:6] | tonumber);
-def parsed: (.msg | [scan("([a-z_]+)=(\"[^\"]*\"|[^ ]+)")]
-		| map({key: .[0], value: (.[1] | ltrimstr("\"") | rtrimstr("\""))}) | from_entries) as $kv
-	| {node, ts, tag, boot, msg, event: $kv.event, kv: $kv};
-def svc($e): .tag == "maintenant-svc" and .event == $e;
-def pg($e): .tag == "maintenant-pg" and .event == $e;
-def fence($e): .tag == "maintenant-fence" and .event == $e;
-def takes_service: svc("started") or pg("promoting") or pg("promoted") or pg("primary_started");
-
-$nodes_file[0] as $nodes
-| ($nodes | to_entries | map(select(.value.readable | not) | .key)) as $unreadable
-| ($nodes | to_entries | map(select(.value.boot_before == "" or .value.boot_after == "") | .key)) as $unbooted
-| ($nodes | to_entries | map(select(.value.boot_before != "" and .value.boot_after != ""
-	and .value.boot_before != .value.boot_after) | .key)) as $crashed
-| ([$nodes | to_entries[] | .key as $n | .value.events[] | . + {node: $n} | parsed
-	| select(.ts >= $t0 and .ts <= $end)] | sort_by(.ts)) as $ev
-| (if ($unreadable | length) > 0 then "the journal of \($unreadable | join(", ")) could not be read" else null end) as $journal_error
-| (if ($unbooted | length) > 0 then "the boot id of \($unbooted | join(", ")) could not be read" else null end) as $boot_error
-
-| def local_restarts:
-	if $restart == null then {error: "the scenario names no local_restart to check"}
-	else ($restart.resource // "app") as $res
-	| ($settings.local_restarts[$res]? // null) as $limit
-	| ($restart.failover // false) as $expected
-	| if ($expected | not) and $limit == null then {error: "the restart limit of \($res) could not be read from the settings"}
-	  else {value: {
-		resource: $res, node: $holder, limit: $limit, failover_expected: $expected,
-		count: ([$ev[] | select(.node == $holder)
-			| select(if $res == "postgres" then pg("primary_started") or pg("primary_start_failed")
-				else svc("started") or svc("start_failed") end)] | length),
-		failover: any($ev[]; .node != $holder and (svc("started") or pg("promoted")))
-	  }} end
-	end;
-
-def failover_count:
-	{value: (reduce ($ev[] | select(svc("started") or svc("start_failed"))) as $s ({at: $holder, n: 0};
-		if $s.node != .at then {at: $s.node, n: (.n + 1)} else . end) | .n)};
-
-def detection_delay_s:
-	([$ev[] | select(.node == $holder and svc("check_dead"))] | first) as $d
-	| if $d == null then {error: "no check_dead logged on \($holder) during the repetition"}
-	  else {value: (($d.ts - $t0) | us_s)} end;
-
-def fencing_outcome:
-	([$ev[] | select(.node != $holder and takes_service)] | first) as $s
-	| {value: {
-		holder: $holder,
-		fenced: ([$ev[] | select(fence("fenced")) | .kv.target] | unique),
-		failed: ([$ev[] | select(fence("fence_failed")) | .kv.target] | unique),
-		started_elsewhere: ($s != null),
-		started_elsewhere_before_fence: ($s != null
-			and ([$ev[] | select(fence("fenced") and .kv.target == $holder and .ts <= $s.ts)] | length) == 0)
-	}};
-
-def agent_watchdog_restart:
-	[$ev[] | select(.node == $holder and .tag == "systemd")] as $sd
-	| ([$sd[] | select(.msg | startswith("opensvc-server.service: Watchdog timeout"))] | first) as $w
-	| {value: (if $w == null then 0
-		else [$sd[] | select(.ts >= $w.ts and (.msg | startswith("opensvc-server.service: Scheduled restart job")))] | length end)};
-
-def primary_count:
-	if $post == null then {error: "the status after the repair could not be read"}
-	else ([$post.nodes[] | select(.postgres.role? == "primary") | .name]) as $p
-	| {value: {count: ($p | length), nodes: $p, two_primaries: ([$ev[] | select(pg("two_primaries"))] | length)}}
-	end;
-
-def former_primary_rebuild:
-	if $post == null then {error: "the status after the repair could not be read"}
-	else ([$post.nodes[] | select(.postgres.role? == "standby") | .name]) as $sb
-	| if ($sb | length) != 1 then {error: "\($sb | length) standbys after the repair, expected 1"}
-	  else $sb[0] as $n
-	  | ($nodes[$n].boot_before // "") as $boot0
-	  | if $boot0 == "" then {error: "the boot id of \($n) could not be read"}
-	    else [$ev[] | select(.node == $n and .tag == "maintenant-pg")] as $ne
-	    | ([$ne[] | select(.event == "rebuilt")] | last) as $done
-	    | ([$ne[] | select(.event == "primary_stopped" or .event == "fenced")] | first) as $lost
-	    | ([$ne[] | select(.event == "rebuild_started" and ($done == null or .ts <= $done.ts))] | first) as $began
-	    | {value: {
-		node: $n,
-		rebuilt: ($done != null),
-		method: $done.kv.method,
-		duration_s: (if $done == null or $began == null then null else (($done.ts - $began.ts) | us_s) end),
-		primary_started_before_rebuild: any($ne[];
-			(.event == "primary_started" or .event == "primary_confirmed" or .event == "promoted")
-			and ($done == null or .ts < $done.ts)
-			and (.boot != $boot0 or ($lost != null and .ts > $lost.ts)))
-	    }} end
-	  end
-	end;
-
-def sync_standby:
-	if ($settings.sync_standby? // null) == null then {error: "settings.sync_standby could not be read"}
-	else {value: $settings.sync_standby} end;
-
-def loss_window:
-	([$ev[] | select(pg("sync_dropped"))]) as $open
-	| ($open | first) as $o
-	| (if $o == null then null else ([$ev[] | select(pg("sync_restored") and .ts >= $o.ts)] | first) end) as $c
-	| {value: {
-		conduct: ($settings.sync_standby? // null),
-		opened: ($o != null),
-		closed: ($c != null),
-		duration_s: (if $c == null then null else (($c.ts - $o.ts) | us_s) end),
-		reasons: ([$open[].kv.reason] | unique)
-	}};
-
-def crash_confirmed:
-	if $boot_error != null then {error: $boot_error}
-	elif ([$crashed[] | select($nodes[.].previous_boot_readable | not)] | length) > 0 then
-		{error: "the journal of \([$crashed[] | select($nodes[.].previous_boot_readable | not)] | join(", ")) from before the crash is gone"}
-	else {value: {
-		crashed: $crashed,
-		started_before_crash: ([$crashed[] as $n | $ev[] | select(.node == $n and .boot == $nodes[$n].boot_before and takes_service) | $n] | unique),
-		confirmed: (($crashed | length) > 0
-			and ([$crashed[] as $n | $ev[] | select(.node == $n and .boot == $nodes[$n].boot_before and takes_service)] | length) == 0)
-	}} end;
-
-def app_overlap:
-	if $boot_error != null then {error: $boot_error}
-	elif ([$crashed[] | select($nodes[.].btime_us == null)] | length) > 0 then
-		{error: "the boot time of \([$crashed[] | select($nodes[.].btime_us == null)] | join(", ")) could not be read"}
-	else
-		([$ev[] | select(svc("started")) | {ts, node, up: true}]
-		 + [$ev[] | select(svc("stopped") or svc("start_failed")) | {ts, node, up: false}]
-		 + [$ev[] | select(fence("fenced")) | {ts, node: .kv.target, up: false}]
-		 + [$crashed[] | {ts: $nodes[.].btime_us, node: ., up: false}])
-		| sort_by(.ts)
-		| {value: (reduce .[] as $e ({run: {($holder): true}, max: 1};
-			.run[$e.node] = $e.up | .max = ([.max, ([.run[] | select(.)] | length)] | max)) | .max)}
-	end;
-
-def forks:
-	[$ev[] | select(pg("promoted")) as $p
-		| ([$ev[] | select(.node == $p.node and pg("promoting") and .ts <= $p.ts)] | last // $p) as $began
-		| ($nodes | keys[] | select(. != $p.node)) as $f
-		| {promoted: $p.node, at: $began.ts, former: $f,
-		   report: ([$ev[] | select(.node == $f and pg("post_fork_commits") and .ts > $p.ts)] | first)}];
-
-def after_promotion:
-	forks as $forks
-	| ([$forks[] | select(.report == null) | "\(.former) logged no post_fork_commits after the promotion of \(.promoted)"]
-	   + [$forks[] | select(.report != null and (.report.kv.count | tonumber? // null) == null)
-		| "the WAL of \(.former) past the fork could not be read"]) as $missing
-	| if ($missing | length) > 0 then {error: ($missing | join("; "))}
-	  else {value: ([$forks[] | (.report.kv.count | tonumber) as $count | .report.kv.last_commit as $last
-		| if $count > 0 and $last != "none" and ($last | iso_us) > .at then $count else 0 end] | add // 0)}
-	  end;
-
-def nodes_written:
-	if $mode == "ip-only" then app_overlap
-	else after_promotion | if .value == null then . else {value: (if .value > 0 then 2 else 1 end)} end
-	end;
-
-def measure($m):
-	if $mode == "ip-only" and ($postgres_set | index($m)) != null then {value: "not_applicable"}
-	elif $m == "sync_standby" then sync_standby
-	elif $m == "primary_count" then primary_count
-	elif $journal_error != null then {error: $journal_error}
-	elif $m == "local_restarts" then local_restarts
-	elif $m == "failover_count" then failover_count
-	elif $m == "detection_delay_s" then detection_delay_s
-	elif $m == "fencing_outcome" then fencing_outcome
-	elif $m == "agent_watchdog_restart" then agent_watchdog_restart
-	elif $m == "former_primary_rebuild" then former_primary_rebuild
-	elif $m == "loss_window" then loss_window
-	elif $m == "crash_confirmed" then crash_confirmed
-	elif $m == "nodes_written" then nodes_written
-	elif $m == "divergence" then after_promotion
-	else {error: "the bench has no rule for \($m)"} end;
-
-[$declared[] as $m | measure($m) | {m: $m} + .] as $results
-| ([$results[] | {key: .m, value: (.value // null)}] | from_entries)
-  + {errors: ([$results[] | select(.error != null) | {key: .m, value: .error}] | from_entries)}
-JQEOF
 	jq -nc \
 		--argjson declared "$nm_declared" \
 		--arg mode "$nm_mode" \
@@ -1004,8 +833,8 @@ JQEOF
 		--argjson post "$nm_post" \
 		--argjson restart "$nm_restart" \
 		--argjson settings "$nm_settings" \
-		--argjson postgres_set "$POSTGRES_MEASURES" \
-		-f "$TMP/node-measures.jq"
+		--argjson not_applicable "$(not_applicable_measures "$nm_mode")" \
+		-f "$LAB_DIR/node-measures.jq"
 }
 
 # Aggregates one scenario's repetitions into its measures and verdict.
