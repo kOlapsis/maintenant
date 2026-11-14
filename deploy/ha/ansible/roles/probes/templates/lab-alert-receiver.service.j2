@@ -1,0 +1,15 @@
+[Unit]
+Description=Bench receiver of the cluster alerts
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ probes_user }}
+ExecStart=/usr/bin/python3 {{ probes_bin_dir }}/lab-alert-receiver {{ probes_alert_port }} {{ probes_state_dir }}/alerts.ndjson
+Restart=always
+RestartSec=1
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

@@ -19,7 +19,7 @@ repair:
       iptables -D OUTPUT -d "$a" -j DROP
     done
     exit 0
-settle_s: 60
+settle_s: 90
 verify:
   'on': host
   command: |
@@ -30,6 +30,13 @@ measures:
 - rto_ms
 - writes
 - nodes_written
+cluster_alerts:
+- event: arbitrator_down
+- event: heartbeat_stale
+  hb: 'hb#2.rx'
+- event: arbitrator_up
+- event: heartbeat_alive
+  hb: 'hb#2.rx'
 modes:
   ip-only:
     applicable: true

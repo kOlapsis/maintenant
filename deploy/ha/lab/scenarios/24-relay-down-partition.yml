@@ -33,6 +33,9 @@ measures:
 - writes
 - rto_ms
 - divergence
+cluster_alerts:
+- event: heartbeat_stale
+  hb: 'hb#2.rx'
 modes:
   ip-only:
     applicable: true
@@ -45,6 +48,9 @@ modes:
       never 2. Data is local to each node in this mode, so writes are not compared.'
   postgres/streaming:
     applicable: true
+    cluster_alerts:
+    - event: split_action
+      action: reboot
     expected: 'With the relay down, the cut leaves no heartbeat path and om3 splits. The selective
       arbitrator grants the vote to the primary, which keeps the service, and refuses the standby,
       which stopped streaming: the standby lacks quorum and reboots (split_action=reboot), and
@@ -53,6 +59,9 @@ modes:
       2, and no data diverged (SC-004).'
   sqlite/drbd:
     applicable: true
+    cluster_alerts:
+    - event: split_action
+      action: reboot
     expected: 'With the relay down, the cut leaves no heartbeat path and om3 splits. The selective
       arbitrator grants the vote to the UpToDate primary, which keeps the service, and refuses
       the Outdated secondary: the secondary lacks quorum and reboots (split_action=reboot), and
@@ -61,6 +70,9 @@ modes:
       2, and no data diverged (SC-004).'
   postgres/drbd:
     applicable: true
+    cluster_alerts:
+    - event: split_action
+      action: reboot
     expected: 'With the relay down, the cut leaves no heartbeat path and om3 splits. The selective
       arbitrator grants the vote to the UpToDate primary, which keeps the service, and refuses
       the Outdated secondary: the secondary lacks quorum and reboots (split_action=reboot), and

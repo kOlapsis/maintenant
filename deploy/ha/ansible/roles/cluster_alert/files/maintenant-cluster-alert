@@ -1,0 +1,132 @@
+#!/bin/sh
+# Alert the operator when this node loses or gets back an arbitrator, a heartbeat or a peer.
+#
+#   maintenant-cluster-alert           om3 hook: reconciles in the background, a few seconds later
+#   maintenant-cluster-alert --check   reconciles now: the alerts follow what om3 reports
+#   maintenant-cluster-alert --split   om3 hook on NodeSplitAction: alerts before the node reboots
+
+set -u
+
+# om3 runs a hook with EVENT as its only variable.
+: "${PATH:=/usr/sbin:/usr/bin:/sbin:/bin}" "${HOME:=/root}"
+export PATH HOME
+
+conf=${CLUSTER_ALERT_CONF:-/etc/default/maintenant-cluster-alert}
+state_dir=/var/lib/maintenant-cluster
+webhook=
+cluster=
+settle_s=3
+hb_warmup_s=30
+curl_timeout=5
+# shellcheck disable=SC1090
+[ -r "$conf" ] && . "$conf"
+
+host=$(uname -n | tr '[:upper:]' '[:lower:]')
+now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+send() {
+	line=$(printf '%s' "$1" | jq -r '
+		[del(.at, .text) | to_entries[] | "\(.key)=\(.value | tostring | if test("[\\s\"=]") then tojson else . end)"] | join(" ")')
+	event=${line%% *}
+	event=${event#event=}
+	case $event in
+	split_action) priority=crit ;;
+	*_up | *_alive) priority=notice ;;
+	*) priority=warning ;;
+	esac
+	logger -t maintenant-cluster -p "user.$priority" -- "$line"
+	[ -n "$webhook" ] || return 0
+	printf '%s\n' "$1" | curl -fsS -m "$curl_timeout" -o /dev/null -H 'Content-Type: application/json' --data-binary @- "$webhook" 2>/dev/null && return 0
+	rc=$?
+	logger -t maintenant-cluster -p user.warning -- "event=webhook_failed alert=$event rc=$rc"
+}
+
+observe() {
+	status=$(om cluster status -o json 2>/dev/null) || return 0
+	started=$(printf '%s' "$status" | jq -r --arg h "$host" '.cluster.node[$h].daemon.started_at // empty' 2>/dev/null)
+	[ -z "$started" ] || started=$(date -d "$started" +%s 2>/dev/null) || started=""
+	warm=false
+	[ -z "$started" ] || [ $(($(date +%s) - started)) -lt "$hb_warmup_s" ] || warm=true
+	event=$(printf '%s' "${EVENT:-}" | jq -c . 2>/dev/null) || event=""
+	printf '%s' "$status" | jq -r --arg cluster "$cluster" --arg host "$host" --arg at "$(now)" \
+		--argjson event "${event:-null}" --argjson warm "$warm" '
+		def alert($fields; $text): {event: $fields.event, cluster: $cluster, node: $host, at: $at} + $fields + {text: "\($host): \($text)"};
+		.cluster.node[$host] as $n
+		| (($n.status.arbitrators // {}) | to_entries[] | .key as $a | .value.status as $s
+			| (if $event.kind? == "ArbitratorError" and $event.data.name? == $a then $event.data.error // "" else "" end) as $err
+			| if $s == "down" then
+				["arbitrator-\($a)", "down", alert({event: "arbitrator_down", arbitrator: $a, error: $err};
+					"arbitrator \($a) is unreachable\(if $err == "" then "" else ": \($err)" end)")]
+			  elif $s == "up" then
+				["arbitrator-\($a)", "up", alert({event: "arbitrator_up", arbitrator: $a}; "arbitrator \($a) answers again")]
+			  else empty end),
+		  (select($warm)
+			| [$n.daemon.heartbeat.streams[]? | select(.id | endswith(".rx")) | .id as $id
+				| (.peers // {}) | to_entries[] | {hb: $id, peer: .key, beating: (.value.is_beating == true)}] as $rx
+			| ($rx[] | if .beating then
+					["hb-\(.hb)-\(.peer)", "up", alert({event: "heartbeat_alive", peer: .peer, hb: .hb}; "heartbeat \(.hb) with \(.peer) beats again")]
+				else
+					["hb-\(.hb)-\(.peer)", "down", alert({event: "heartbeat_stale", peer: .peer, hb: .hb}; "heartbeat \(.hb) with \(.peer) is stale")]
+				end),
+			  ($rx | group_by(.peer)[] | .[0].peer as $p | if any(.[]; .beating) then
+					["node-\($p)", "up", alert({event: "node_alive", peer: $p}; "\($p) beats again")]
+				else
+					["node-\($p)", "down", alert({event: "node_stale", peer: $p}; "no heartbeat from \($p) any more")]
+				end))
+		| "\(.[0] | gsub("[^A-Za-z0-9._#-]"; "_")) \(.[1]) \(.[2] | tojson)"
+	' 2>/dev/null
+}
+
+reconcile() {
+	observed=$(observe)
+	while read -r key state alert; do
+		case $state in
+		down)
+			[ ! -e "$state_dir/$key" ] || continue
+			printf '%s\n' "$alert" >"$state_dir/$key"
+			send "$alert"
+			;;
+		up)
+			[ -e "$state_dir/$key" ] || continue
+			rm -f "$state_dir/$key"
+			send "$alert"
+			;;
+		esac
+	done <<EOF
+$observed
+EOF
+}
+
+locked_reconcile() {
+	mkdir -p "$state_dir"
+	(
+		flock 9 || exit 0
+		reconcile
+	) 9>"$state_dir/.lock"
+}
+
+split() {
+	alert=$(printf '%s' "${EVENT:-}" | jq -c --arg cluster "$cluster" --arg host "$host" --arg at "$(now)" '
+		select(.kind == "NodeSplitAction") | .data as $d
+		| {event: "split_action", cluster: $cluster, node: $host, at: $at, action: $d.action, pro_voters: $d.pro_voters, voting: $d.voting,
+			text: "\($host): cluster split without quorum, \($d.pro_voters) of \($d.voting) votes, split action \($d.action)"}
+	' 2>/dev/null) || return 0
+	[ -n "$alert" ] || return 0
+	# om3 reboots the node 1.7 s after the event, without syncing anything.
+	curl_timeout=1.5
+	send "$alert"
+}
+
+case "${1:-}" in
+'') (
+	sleep "$settle_s"
+	locked_reconcile
+) </dev/null >/dev/null 2>&1 & ;;
+--check) locked_reconcile ;;
+--split) split ;;
+*)
+	echo "usage: $0 [--check | --split]" >&2
+	exit 2
+	;;
+esac
+exit 0

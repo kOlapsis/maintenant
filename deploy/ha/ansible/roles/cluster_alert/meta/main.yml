@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  author: Kolapsis
+  role_name: cluster_alert
+  description: The om3 node hook that alerts the operator when the cluster loses its arbitrator, a heartbeat or a peer
+  license: LicenseRef-Maintenant-Commercial
+  min_ansible_version: "2.15"
+dependencies: []

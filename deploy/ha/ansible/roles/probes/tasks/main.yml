@@ -99,3 +99,7 @@
   delay: 2
   register: probes_acked
   until: probes_acked.rc == 0
+
+- name: Receive the cluster alerts
+  ansible.builtin.include_tasks: alerts.yml
+  when: ha_alert_webhook | default('') | length > 0

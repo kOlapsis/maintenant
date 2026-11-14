@@ -42,3 +42,17 @@ scenario() {
 			and (.modes["ip-only"].applicable | not) and (.modes["postgres/streaming"].applicable | not)' >/dev/null
 	done
 }
+
+@test "every expected cluster alert names an event the alert script sends" {
+	known=$(grep -o 'event: "[a-z_]*"' "$BATS_TEST_DIRNAME/../../ansible/roles/cluster_alert/files/maintenant-cluster-alert" |
+		cut -d'"' -f2 | jq -Rsc 'split("\n") | map(select(length > 0))')
+	for file in "$SCENARIOS"/[0-9][0-9]-*.yml; do
+		scenario "$file" | jq -e --argjson known "$known" '
+			[(.cluster_alerts // []), (.modes[].cluster_alerts // [])] | add
+			| all(.[]; type == "object" and (.event | IN($known[])))
+		' >/dev/null || {
+			echo "unknown cluster alert in $file" >&2
+			return 1
+		}
+	done
+}

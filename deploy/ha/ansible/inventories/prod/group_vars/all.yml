@@ -30,3 +30,9 @@ ha_postgres_data_device: ""
 
 # sqlite/drbd: the dedicated disk DRBD replicates. Its content is never kept.
 ha_drbd_backing_device: ""
+
+# Where the cluster nodes POST their alerts (see "Cluster alerts" in
+# deploy/ha/README.md). Empty, they only reach the journal of each node.
+#
+#   ha_alert_webhook: https://alerts.example.net/hooks/maintenant-cluster
+ha_alert_webhook: ""

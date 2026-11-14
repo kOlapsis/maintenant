@@ -1,0 +1,91 @@
+---
+- name: Install what the alert script runs
+  ansible.builtin.apt:
+    name: [curl, jq]
+    state: present
+
+- name: Install the alert script
+  ansible.builtin.copy:
+    src: maintenant-cluster-alert
+    dest: "{{ cluster_alert_script }}"
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Write where the alerts go
+  ansible.builtin.copy:
+    dest: "{{ cluster_alert_conf }}"
+    mode: "0644"
+    content: |
+      cluster={{ cluster_alert_cluster | quote }}
+      webhook={{ cluster_alert_webhook | quote }}
+
+- name: Install the periodic reconcile of the alerts
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/maintenant-cluster-alert.{{ item.unit }}"
+    mode: "0644"
+    content: "{{ item.content }}"
+  loop:
+    - unit: service
+      content: |
+        [Unit]
+        Description=Alert on what changed in the arbitrators and heartbeats om3 reports
+
+        [Service]
+        Type=oneshot
+        ExecStart={{ cluster_alert_script }} --check
+    - unit: timer
+      content: |
+        [Unit]
+        Description=Reconcile the cluster alerts with what om3 reports
+
+        [Timer]
+        OnBootSec={{ cluster_alert_check_interval }}
+        OnUnitActiveSec={{ cluster_alert_check_interval }}
+        AccuracySec=1s
+
+        [Install]
+        WantedBy=timers.target
+  loop_control:
+    label: "{{ item.unit }}"
+
+- name: Start the periodic reconcile
+  ansible.builtin.systemd_service:
+    name: maintenant-cluster-alert.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Read the alert hooks this node holds
+  ansible.builtin.command: "om node config get --kw {{ item.key }}"
+  register: cluster_alert_current
+  changed_when: false
+  failed_when: false
+  loop: "{{ cluster_alert_node_settings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Declare the alert hooks
+  ansible.builtin.command: >-
+    om node config update
+    {% for k, v in cluster_alert_node_settings.items() %} --set {{ (k ~ '=' ~ v) | quote }}{% endfor %}
+  when: >-
+    cluster_alert_current.results | map(attribute='stdout') | map('trim') | list
+    != cluster_alert_node_settings.values() | map('string') | list
+  changed_when: true
+
+- name: Read the alert hooks back
+  ansible.builtin.command: "om node config get --kw {{ item.key }}"
+  register: cluster_alert_after
+  changed_when: false
+  loop: "{{ cluster_alert_node_settings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Refuse a node whose alert hooks did not take
+  ansible.builtin.assert:
+    that: (item.stdout | trim) == (item.item.value | string)
+    fail_msg: "{{ item.item.key }} is \"{{ item.stdout | trim }}\" on {{ inventory_hostname }}, expected \"{{ item.item.value }}\"."
+  loop: "{{ cluster_alert_after.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"

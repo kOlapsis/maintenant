@@ -15,6 +15,7 @@
     - opensvc_relay
     - opensvc_arbitrator
     - fencing
+    - cluster_alert
 
 # The arbitrator carries the third, diskless DRBD vote.
 - name: Replicate the volume

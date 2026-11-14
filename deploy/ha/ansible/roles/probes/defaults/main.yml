@@ -22,3 +22,5 @@ probes_heartbeat_grace_seconds: 86400
 
 probes_source_dir: "{{ playbook_dir }}/../lab/probes"
 probes_build_dir: "{{ lookup('env', 'HOME') }}/.cache/maintenant-lab/probes-build"
+
+probes_alert_port: "{{ ha_alert_webhook | default('') | urlsplit('port') }}"

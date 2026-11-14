@@ -2,3 +2,9 @@
 - name: Reload systemd
   ansible.builtin.systemd_service:
     daemon_reload: true
+
+- name: Restart the alert receiver
+  ansible.builtin.systemd_service:
+    name: lab-alert-receiver.service
+    state: restarted
+    daemon_reload: true

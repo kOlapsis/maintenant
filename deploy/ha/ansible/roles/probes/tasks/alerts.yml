@@ -1,0 +1,30 @@
+---
+- name: Install the alert receiver
+  ansible.builtin.copy:
+    src: lab-alert-receiver.py
+    dest: "{{ probes_bin_dir }}/lab-alert-receiver"
+    mode: "0755"
+    owner: root
+    group: root
+  notify: Restart the alert receiver
+
+- name: Install the alert receiver unit
+  ansible.builtin.template:
+    src: lab-alert-receiver.service.j2
+    dest: /etc/systemd/system/lab-alert-receiver.service
+    mode: "0644"
+  notify: Restart the alert receiver
+
+- name: Apply the receiver before checking it
+  ansible.builtin.meta: flush_handlers
+
+- name: Start the alert receiver
+  ansible.builtin.systemd_service:
+    name: lab-alert-receiver.service
+    enabled: true
+    state: started
+
+- name: Check the alert receiver answers
+  ansible.builtin.wait_for:
+    port: "{{ probes_alert_port }}"
+    timeout: 30

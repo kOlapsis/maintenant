@@ -16,6 +16,7 @@ No throwaway script is ever required to deploy.
 | `ansible/roles/opensvc_arbitrator/` | the third-site witness, which withholds its vote from a DRBD copy or a PostgreSQL standby behind a reachable primary, and the quorum settings the nodes hold |
 | `ansible/roles/opensvc_relay/`      | the om3 relay on the third machine, and the relay heartbeat the nodes send through it                                               |
 | `ansible/roles/fencing/`            | the callout a survivor runs to shoot its unreachable peer                                                                           |
+| `ansible/roles/cluster_alert/`      | the om3 node hooks and the timer that alert the operator when a node loses or gets back the arbitrator, a heartbeat or its peer    |
 | `ansible/roles/maintenant/`         | the static binary, the state root, the settings and, in server mode, the gRPC pair, one table for both the env file and the service |
 | `ansible/roles/maintenant_check/`   | the application test the service runs: 0 alive, 1 degraded, 2 dead                                                                  |
 | `ansible/roles/postgres_ha/`        | `postgres/streaming`: PostgreSQL primary and synchronous standby, promotion, anti-return lock, rebuild of the former primary        |
@@ -251,6 +252,49 @@ Two consequences to accept before choosing it:
 - The fenced node is back within a minute, every time. It must not start the service on its own and its copy must resync without overwriting an acknowledged write. om3 does not start a failover service already running elsewhere and `--guard` refuses a start after a failed fence, but this return has not been played on the bench yet.
 - During an inter-site partition with the relay down, where both nodes reach the witness, the rebooted node comes back still cut from its peer, holds the quorum through the witness, and can fence the survivor in turn. In `sqlite/drbd` the `Outdated` refusal above stops this loop. In `postgres/streaming` the selective vote refuses the returning standby while the primary still answers the witness, but this return has not been played on the bench. In `ip-only` nothing does yet, so power off stays the safer choice there.
 
+## Cluster alerts
+
+The cluster can lose its arbitrator or one of its heartbeats while the service keeps running, and nothing then fails until a second fault turns that loss into an outage. The `cluster_alert` role tells the operator as soon as it happens (FR-026). Each node sends its own alerts:
+
+| Alert | Sent when |
+|---|---|
+| `arbitrator_down` | om3 on this node reports the arbitrator `down` |
+| `arbitrator_up` | it reports it `up` again, after an `arbitrator_down` |
+| `heartbeat_stale` | a receive stream (`hb#N.rx`) no longer beats for a peer |
+| `heartbeat_alive` | it beats again, after a `heartbeat_stale` |
+| `node_stale` | no receive stream beats for a peer any more |
+| `node_alive` | one beats again, after a `node_stale` |
+| `split_action` | om3 publishes `NodeSplitAction`: this node lost the vote and is about to run its split action |
+
+The send streams (`hb#N.tx`) are left out: a lost path shows on the receive side of both nodes.
+
+**The alerts follow om3's state, not its events.** An om3 node hook runs one command at a time, and an event that arrives while the previous command still runs is dropped, not queued (`daemon/hook/main.go:212-220`, "command is too slow => skip exec"). The receive and send streams of a heartbeat flip in the same millisecond, and the split comes in the middle of such a burst. On the first bench run, one alert per event lost `heartbeat_alive` of `hb#2.rx` in scenario 25 and both `heartbeat_stale` of `hb#2.rx` and `split_action` in scenario 24, however fast the command returned. So the events only trigger a reconcile. `maintenant-cluster-alert` reads `om cluster status -o json` (the data `om daemon hb list` prints its rows from, `core/commoncmd/daemon_hb_list.go`): the arbitrators of this node, `.cluster.node[<node>].status.arbitrators`, and its streams, `.cluster.node[<node>].daemon.heartbeat.streams`. It then compares them with one state file per source under `/var/lib/maintenant-cluster/`. A source going down creates its file and alerts. Coming back removes the file and alerts. Anything else sends nothing. The state survives a reboot: a node that rebooted during an incident still reports the return.
+
+Two things run the reconcile, under one `flock` so that two runs never alert twice:
+
+- the hook `hook#cluster_alert`, in `node.conf`, on `ArbitratorError`, `HeartbeatStale`, `HeartbeatAlive`, `NodeStale` and `NodeAlive`. It returns at once and reconciles 3 s later, in the background. om3 publishes a heartbeat event before its status shows the change, which hbctrl copies into the daemon data on a 1 s ticker (`daemon/hb/hbctrl/main.go:209-291`). Returning at once also keeps the hook free for the next event. `ForgetPeer` is not listened to: it follows a `node_stale`, which already says it.
+- the timer `maintenant-cluster-alert.timer`, every 15 s. om3 has no event for an arbitrator that answers again, and a hook only listens to the events of `AllowedEvents` (`daemon/hook/main.go:52`), so the return of the arbitrator is found here, at most 75 s after it answers: the next om3 check, every 60 s (`daemon/nmon/main.go:227`), plus the timer. The timer also catches anything a dropped event hid.
+
+The streams are not judged in the first 30 s after the daemon started (`.daemon.started_at`). om3 starts every peer as not beating until its first message (`daemon/hb/hbctrl/peer_watcher.go`), and a restart would otherwise report every heartbeat lost then back. The arbitrators are judged at once. `arbitrator_down` carries the error of the `ArbitratorError` that triggered the reconcile, and an empty `error` when the timer found it.
+
+**The split action has a hook of its own,** `hook#cluster_alert_split` on `NodeSplitAction` only, so the burst around a split never takes its turn. After the event om3 waits 1.7 s, then reboots the node without syncing anything (`daemon/nmon/main_cmd.go:425-433`, `splitActionDelay`). `maintenant-cluster-alert --split` therefore sends the alert synchronously: the journal line first, at priority `crit`, which journald writes to disk at once, then the POST with a 1.5 s timeout.
+
+Each alert is one journal line under the tag `maintenant-cluster`, in the same `event=... key=value` form as the fencing callout, and a JSON POST to `ha_alert_webhook` when the inventory sets it:
+
+```json
+{"event":"heartbeat_stale","cluster":"maintenant","node":"site-a","at":"2026-11-14T10:00:00Z","peer":"site-b","hb":"hb#2.rx","text":"site-a: heartbeat hb#2.rx with site-b is stale"}
+```
+
+`event`, `cluster`, `node` (the node that saw it), `at` (UTC, the node's clock) and `text`, a one-line summary, are always there. The other fields depend on the event: `arbitrator` and `error` for `arbitrator_down`, `arbitrator` for `arbitrator_up`, `peer` and `hb` for the heartbeats, `peer` for `node_*`, `action`, `pro_voters` and `voting` for `split_action`. The same alert comes from every node that sees it: a lost arbitrator is reported by both nodes. `/etc/default/maintenant-cluster-alert` holds the cluster name and the webhook URL.
+
+Any HTTP endpoint that accepts a JSON POST can take the alerts: an incident tool, a chat webhook that displays a `text` field, or a small relay that reshapes the body for a tool that wants another format. The POST has a 5 s timeout (1.5 s for the split action) and is never retried. A failure only leaves an `event=webhook_failed` line in the journal, so the journal stays the record. `ha_alert_webhook` is empty in the production inventory: the alerts then only reach the journal of each node, where any log shipper can pick them up.
+
+Maintenant does not watch its own cluster, on purpose. It is the service the cluster keeps running: an alert about the cluster that has to go through it would be lost in the very failures it is about, such as a split in which the node holding Maintenant reboots. The nodes send the alerts themselves, with nothing but `sh`, `jq` and `curl`, whether the service runs or not.
+
+om3 passes the event in the `EVENT` environment variable and no other variable, not on the standard input as its keyword reference says (`daemon/hook/main.go:177`). The script sets its own `PATH` and `HOME`.
+
+On the bench, `ha_alert_webhook` points at a receiver on the measurement machine (see The probes), and scenarios 24 and 25 fail when an alert they expect never arrives.
+
 ## Support data
 
 Every cluster node carries `sos`, and journald writes to disk every second instead of every five minutes, so a fenced node keeps its last logs. When a bench verification fails, `lab` keeps om3's view (`om mon`, `om <service> status`) and a sosreport of each node in the report, under `om/` and `sos/`; a node that is down at that moment gets its sosreport after the repair. The sosreport is the one OpenSVC support asks for, `sos report --enable-plugins opensvc --all-logs`. Its OpenSVC plugin copies `/var/lib/opensvc/sec`, the private key of the cluster CA included: look at what an archive holds before it leaves the bench.
@@ -291,6 +335,8 @@ The record is a heartbeat ping: the pings table is append-only, uncapped, and is
 **observer** polls the telemetry and the active alerts once a second, and produces the two figures that are reported beside the write loss and never mixed into it. The telemetry hole is a duration plus the number of samples missing from the stored history, counted against the cadence read from that history rather than an assumed one. A hole is not data loss: samples were never collected because the collector was moving, and counting them as lost writes would be a lie about the RPO. An alert counts as induced only when its subject was healthy just before the injection, so a monitor that was already failing does not become the failover's fault; without a reading from before the injection the summary refuses rather than blame everything on the failover.
 
 The observer also reports whether the agents came back. The bench enrolls an ordinary agent on site-a, site-b and the measurement machine, which also runs a witness container whose stored history the samples are counted on. The agents expected back are those available just before the injection, minus the nodes that were down: a node whose boot id changed or could not be read during the repetition. Each expected agent must be available again within 90 s, under the same identity. An agent that comes back under a new id has re-enrolled, and that fails the repetition.
+
+The measurement machine also runs `lab-alert-receiver`, a few lines of Python behind the `ha_alert_webhook` of the bench inventory. It appends every alert the nodes POST to `alerts.ndjson`, in the probes' state directory, as one line with the time it was received, and `run-all` reads it for the scenarios that list `cluster_alerts`.
 
 `run-all` fails a repetition when a measure the scenario declares comes back empty or in error, rather than reporting it as n/a. A declared measure the bench cannot take yet is reported as `not_measured`.
 

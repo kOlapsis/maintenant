@@ -60,6 +60,8 @@ RUN_ALL_VERIFY_INTERVAL=2
 WRITES_VERIFY_TIMEOUT=30s
 RUN_ALL_ABORTED=0
 AGENTS_RECONNECT_MAX_S=90
+# om3 checks an arbitrator every 60 s and the node alert check runs every 15 s.
+CLUSTER_ALERTS_WAIT_S=90
 PROBE_MEASURES='["rto_ms", "writes", "telemetry_gap_s", "telemetry_samples_lost", "alerts_induced", "agents"]'
 NODE_MEASURES='["local_restarts", "failover_count", "detection_delay_s", "fencing_outcome", "agent_watchdog_restart", "primary_count", "former_primary_rebuild", "sync_standby", "loss_window", "crash_confirmed", "nodes_written", "divergence"]'
 POSTGRES_MEASURES='["primary_count", "former_primary_rebuild", "sync_standby", "loss_window", "divergence"]'
@@ -747,6 +749,26 @@ JQEOF
 		-f "$TMP/measure-reasons.jq"
 }
 
+# Prints one line per expected cluster alert the receiver on the measurement host has not logged
+# since <since>, waiting for them up to CLUSTER_ALERTS_WAIT_S.
+#   missing_cluster_alerts <measurement host> <probe state dir> <since> <expected, a JSON array>
+missing_cluster_alerts() {
+	ma_since=$(date -u -d "$3" +%s)
+	ma_deadline=$(($(date +%s) + CLUSTER_ALERTS_WAIT_S))
+	while :; do
+		ma_missing=$(ssh_to "$1" "sudo -n cat $(shell_quote "$2/alerts.ndjson")" 2>/dev/null | jq -rs --argjson since "$ma_since" --argjson expected "$4" '
+			[.[] | select(.received_at >= $since) | .alert | objects] as $got
+			| $expected[] | select(. as $e | any($got[]; . as $a | all($e | to_entries[]; $a[.key] == .value)) | not)
+			| "no alert \(tojson) received"
+		') || ma_missing="the alert journal could not be read"
+		if [ -z "$ma_missing" ] || [ "$(date +%s)" -ge "$ma_deadline" ]; then
+			[ -z "$ma_missing" ] || printf '%s\n' "$ma_missing"
+			return 0
+		fi
+		sleep 5
+	done
+}
+
 # Prints, as a JSON array, the measures that have no object in a mode.
 not_applicable_measures() {
 	case "$1" in
@@ -1261,6 +1283,18 @@ $ver_out"
 				if [ "$rto_ms" -gt "$max_rto_ms" ]; then
 					add_reason "rto_ms=$rto_ms exceeds max_rto_s=${max_rto_s}s"
 				fi
+			fi
+		fi
+
+		expected_alerts=$(jq -c --arg m "$mode" '(.cluster_alerts // []) + (.modes[$m].cluster_alerts // [])' "$TMP/scenario-def-$number.json")
+		if [ "$expected_alerts" != "[]" ]; then
+			if [ -z "${state_dir:-}" ]; then
+				add_reason "cluster_alerts: not measured (the probe state directory could not be read)"
+			else
+				missing_cluster_alerts "$probe_host" "$state_dir" "$t0" "$expected_alerts" >"$TMP/missing-alerts-$number-$rep.txt"
+				while IFS= read -r missing_alert; do
+					add_reason "cluster_alerts: $missing_alert"
+				done <"$TMP/missing-alerts-$number-$rep.txt"
 			fi
 		fi
 

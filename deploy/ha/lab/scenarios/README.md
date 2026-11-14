@@ -29,6 +29,11 @@ authoritative for intent.
   `kernel` (only the lines that start with `drbd maintenant` are kept). Declaring `fencing_outcome` means
   the injected node must be fenced: the measure fails when it is not, and when the service
   starts elsewhere before that fencing.
+- A scenario that expects cluster alerts lists them under `cluster_alerts`, at the top for
+  every mode and under a mode for that mode only. Each entry gives fields an alert must carry
+  (`event: arbitrator_down`, `hb: 'hb#2.rx'`). `lab run-all` reads the receiver on the
+  measurement machine after the repetition and fails it for each entry no alert received since
+  the injection matches, waiting up to 90 s for the alerts that follow the repair.
 - A scenario that tests a bounded local restart names it with `local_restart`: `resource` is
   `app` or `postgres`, and `failover` says whether the service is expected to move once the
   restarts run out (scenario 18) or to stay on the injected node (scenarios 7 and 10).
@@ -245,6 +250,7 @@ Their numbers, names and scope are fixed here.
 | **Expected, `postgres/streaming`, `sqlite/drbd`, `postgres/drbd`** | With no relay, the cut leaves no heartbeat path and om3 splits. The selective arbitrator grants the vote to the side holding the data (the `UpToDate` DRBD primary, or the PostgreSQL primary) and refuses the other, which lacks quorum and reboots (`split_action=reboot`), then is refused again each time it comes back until the partition heals. Exactly one side keeps the service; after repair, `nodes_written` is never 2 and no data diverged (SC-004). |
 | **Expected, `ip-only`** | The arbitrator reads no replication state and grants both votes: both sides keep quorum and neither reboots. The passive side, whose peer was running the service, fences the active one through the host and takes the service, which moves although both nodes were alive. The active side flags no fencing, since its peer runs nothing, so there is no fencing race. Exactly one side holds the service at a time and `nodes_written` is never 2. |
 | **Measures** | `nodes_written`, `writes`, `rto_ms`, post-repair divergence check. |
+| **Cluster alerts** | A `heartbeat_stale` alert on `hb#2.rx`, the relay heartbeat, in every mode. In `postgres/streaming`, `sqlite/drbd` and `postgres/drbd`, a `split_action` alert with `action: reboot` from the refused node, sent in the 1.7 s om3 waits before it reboots. |
 
 ### 25. Third site unreachable
 
@@ -254,6 +260,7 @@ Their numbers, names and scope are fixed here.
 | **Repair** | Delete the rules. |
 | **Expected, all modes** | The nodes still hear each other on the direct heartbeat, so om3 sees no split and asks for no vote. `om mon` shows the relay heartbeat stale and the arbitrator down, and `lab status` reports the bench degraded. No failover, no reboot, `rto_ms` is 0, and no acknowledged write is lost. In the DRBD modes the two copies stay `Connected` and `UpToDate` and the primary keeps quorum with its peer; in `postgres/streaming` the standby keeps streaming synchronously. |
 | **Measures** | `failover_count` (expected: zero), `rto_ms`, `writes`, `nodes_written`. |
+| **Cluster alerts** | `arbitrator_down` and `heartbeat_stale` on `hb#2.rx` during the cut, `arbitrator_up` and `heartbeat_alive` on `hb#2.rx` after the repair. The cut lasts 90 s: om3 checks the arbitrator every 60 s, so a shorter cut could end before any check sees it. |
 
 ---
 

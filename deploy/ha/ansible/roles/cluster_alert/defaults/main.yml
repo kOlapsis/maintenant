@@ -1,0 +1,12 @@
+---
+cluster_alert_webhook: "{{ ha_alert_webhook | default('') }}"
+cluster_alert_cluster: "{{ opensvc_cluster_name | default('maintenant') }}"
+cluster_alert_script: /usr/local/sbin/maintenant-cluster-alert
+cluster_alert_conf: /etc/default/maintenant-cluster-alert
+cluster_alert_check_interval: 15s
+
+cluster_alert_node_settings:
+  hook#cluster_alert.events: ArbitratorError HeartbeatStale HeartbeatAlive NodeStale NodeAlive
+  hook#cluster_alert.command: "{{ cluster_alert_script }}"
+  hook#cluster_alert_split.events: NodeSplitAction
+  hook#cluster_alert_split.command: "{{ cluster_alert_script }} --split"

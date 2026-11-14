@@ -16,3 +16,6 @@ ha_fencing_check_command: 'virsh domstate "$ha_fencing_target"'
 # streaming mode, and backs the DRBD volume in sqlite/drbd (see lab/topology.yml).
 ha_postgres_data_device: /dev/vdb
 ha_drbd_backing_device: /dev/vdb
+
+# The cluster alerts go to the receiver on the measurement machine, which run-all reads.
+ha_alert_webhook: "http://{{ hostvars[groups['measurement'] | first].ansible_host }}:9099/"
