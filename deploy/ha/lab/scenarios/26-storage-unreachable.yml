@@ -1,0 +1,51 @@
+# Scenario 26, Storage unreachable while the process lives (FR-029).
+#
+# The binary keeps running and answers /api/v1/health, but its storage stops
+# answering: every PostgreSQL process is stopped by SIGSTOP (the postmaster
+# alone leaves the open connections working), or the SQLite volume is frozen. The application test must read this as degraded, not dead.
+id: 26
+slug: storage-unreachable
+name: Storage unreachable while the process lives
+source: FR-029
+repetitions: 1
+injection:
+  'on': active
+  command: |
+    case "$LAB_MODE" in
+    postgres/streaming) pkill -STOP -u postgres -x postgres ;;
+    sqlite/drbd) fsfreeze -f "$(findmnt -no TARGET -T "$LAB_STATE_DIR")" ;;
+    *) exit 1 ;;
+    esac
+repair:
+  'on': active
+  command: |
+    case "$LAB_MODE" in
+    postgres/streaming) pkill -CONT -u postgres -x postgres || true ;;
+    sqlite/drbd) fsfreeze -u "$(findmnt -no TARGET -T "$LAB_STATE_DIR")" || true ;;
+    esac
+settle_s: 120
+verify:
+  'on': measurement
+  command: curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
+measures:
+- rto_ms
+- writes
+- failover_count
+modes:
+  ip-only:
+    applicable: false
+    reason: no storage outside the binary in this mode
+  postgres/streaming:
+    applicable: true
+    expected: 'The binary stays up and /api/v1/health keeps answering 200 with
+      storage.connected false; the application test reports degraded, not dead.
+      app#pg goes down, the restart in place kills the silent server and starts it
+      again, and the writes resume before the repair. No failover, no corruption.'
+  sqlite/drbd:
+    applicable: true
+    expected: 'The binary stays up and /api/v1/health keeps answering 200; the
+      application test reports degraded or alive, never dead. No failover, no
+      corruption, and the writes resume after the repair.'
+  postgres/drbd:
+    applicable: false
+    reason: mode not built on the bench

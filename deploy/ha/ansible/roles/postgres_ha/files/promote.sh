@@ -110,6 +110,10 @@ case "$state" in
 standby-running | standby-stopped) promote_standby "$state" ;;
 primary-running) keep_running_primary ;;
 primary-stopped) restart_stopped_primary ;;
+unresponsive)
+	kill_local
+	refuse unresponsive "local PostgreSQL ran without answering: it was killed, the next start recovers it"
+	;;
 absent) refuse no_data "there is no data directory at $PG_DATADIR" ;;
 *) refuse unknown_state "local PostgreSQL is in an unknown state" ;;
 esac

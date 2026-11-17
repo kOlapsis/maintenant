@@ -30,7 +30,7 @@ as_postgres() {
 
 local_sql() {
 	as_postgres "$PG_BINDIR/psql" -X -A -t -q -v ON_ERROR_STOP=1 \
-		-h /var/run/postgresql -p "$PG_PORT" -d postgres -c "$1"
+		"host=/var/run/postgresql port=$PG_PORT dbname=postgres connect_timeout=3" -c "$1"
 }
 
 peer_sql() {
@@ -42,7 +42,8 @@ local_running() {
 	local_sql 'select 1' >/dev/null 2>&1
 }
 
-# absent, primary-running, standby-running, primary-stopped, standby-stopped or unknown.
+# absent, primary-running, standby-running, primary-stopped, standby-stopped,
+# unresponsive (the unit runs but the server does not answer) or unknown.
 local_state() {
 	if [ ! -f "$PG_DATADIR/PG_VERSION" ]; then
 		echo absent
@@ -55,6 +56,8 @@ local_state() {
 		f) echo primary-running ;;
 		*) echo unknown ;;
 		esac
+	elif systemctl is-active --quiet "$PG_UNIT"; then
+		echo unresponsive
 	elif [ -f "$PG_DATADIR/standby.signal" ]; then
 		echo standby-stopped
 	else
@@ -91,6 +94,12 @@ start_local() {
 }
 
 stop_local() {
+	systemctl stop "$PG_UNIT"
+}
+
+# The unit waits up to an hour for a server that does not answer SIGTERM.
+kill_local() {
+	systemctl kill --signal=SIGKILL "$PG_UNIT"
 	systemctl stop "$PG_UNIT"
 }
 
