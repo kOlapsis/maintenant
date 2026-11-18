@@ -25,10 +25,12 @@ No throwaway script is ever required to deploy.
 | `ansible/roles/maintenant_agent/`   | an ordinary agent as a systemd unit on each node and on the measurement machine, enrolled with a one-time token                      |
 | `ansible/roles/lab_witness/`        | Docker and the witness container whose resource history counts the samples a failover lost                                           |
 | `ansible/roles/probes/`             | the three probes, built, shipped and kept running on the measurement machine                                                        |
+| `ansible/roles/lab_inventory/`      | the bench's trace of every file the product writes, a systemd unit on each cluster node started before om3                          |
 | `opensvc/`                          | service templates, one per replication mode                                                                                         |
 | `split-brain.md`                    | the manual resolution of a DRBD split brain in `sqlite/drbd`, whose side to keep `lab status` names                                  |
 | `lab/`                              | bench topology, provisioning, `lab` CLI, scenarios and probes                                                                       |
-| `lab/lab`                           | the single entry point: `up`, `down`, `status`, `chaos`, `heal`, `run-all` (one scenario with `--scenario <n>`), `giveback`           |
+| `lab/lab`                           | the single entry point: `up`, `down`, `status`, `chaos`, `heal`, `run-all` (one scenario with `--scenario <n>`), `giveback`, `inventory` |
+| `lab/inventory`                     | the state inventory: the trace the nodes record, the file trees compared, the verdict                                               |
 | `lab/scenarios/`                    | the twelve scenarios of the bench plan, plus the mode-specific ones                                                                 |
 | `lab/probes/`                       | the measurement probes (availability, writes, observer), in Go                                                                      |
 | `reports/`                          | versioned run reports, one directory per run                                                                                        |
@@ -330,6 +332,8 @@ sudo om maintenant restart --rid app#0
 
 ## The probes
 
+The probes' journals grow from `lab up` to `lab down`, and the observer and the writes probe read theirs whole at each repetition, on a measurement machine of 1 GiB without swap. Run `lab down` then `lab up` between two campaigns, for instance before each `run-all --repeat 20`, so every campaign starts with empty journals.
+
 All three run on the measurement machine, outside both sites, and both keep running from `lab up` to `lab down`: no scenario ever restarts them. They are Go programs built like the product binary is, and CI compiles and lints them with the rest of the backend, because every figure in a run report comes out of them.
 
 **availability** issues one request every 100 ms on the service address and writes one ndjson line per request. Each line carries a wall clock stamp, to line up with the other logs, and a monotonic offset, which is the one that can be trusted to measure a duration. The cadence is held even while requests hang, since an outage is exactly when they do.
@@ -348,6 +352,70 @@ The measurement machine also runs `lab-alert-receiver`, a few lines of Python be
 `run-all` fails a repetition when a measure the scenario declares comes back empty or in error, rather than reporting it as n/a. A declared measure the bench cannot take yet is reported as `not_measured`.
 
 All three units restart on their own if they die, and a probe picks up the numbering where its journal left off, so a crash costs a few records rather than the whole comparison. Each line also carries the `epoch` of the process that wrote it: `mono_ns` measures a duration exactly within one epoch, and across a restart only the wall clock is common ground.
+
+## The state inventory
+
+Everything the product changes must live under the state root, `/var/lib/maintenant`, which is what the service moves between the nodes (FR-031, FR-035). The bench proves it on every run.
+
+Each cluster node runs `lab-inventory-trace.service`, installed by the `lab_inventory` role, enabled at boot and ordered before `opensvc-server`, so it already runs when the service starts there, including after the node reboots. It runs `lab/inventory record`, which keeps `fatrace` (fanotify) writing the file events of the command `maintenant` under `/var/log/lab-inventory`. The agent, `maintenant-agent`, is another command (`maintenant-agen` in the kernel) and is not traced. What `fatrace` 0.17 does on the bench kernel (6.1), checked on 2026-11-17, and what the recorder does about it:
+
+- It marks the file systems mounted when it starts and never looks again: a file system mounted later, such as the DRBD volume a failover mounts, is not seen. The recorder watches the mount table (`findmnt --poll`) and starts a new set of tracers each time it changes, before stopping the old ones.
+- It skips file systems that have no device, so `/run` and every other tmpfs are not traced. The recorder runs one more tracer from inside each tmpfs (`-c`), apart from those under `/dev`, `/run/user` and `/run/credentials`.
+- It reports writes on the file (`W`, and `CW` for a file opened for writing and closed, which is all `touch` leaves), and creations, deletions and renames on the directory that holds the entry (`+`, `D`, `<`, `>`), not on the entry itself.
+- `-C` compares the whole command name.
+- It refuses to write to an output file that exists, so each tracer gets a new file.
+- It keeps a descriptor open on every file system it traces, so the DRBD volume is busy when `fs#0` unmounts it. om3 then runs `fuser -kMm` on the mount point, which kills that tracer, and unmounts. The product is already stopped by then, and the recorder starts the next tracers as soon as the mount table changes; the unit itself does not restart. Measured on 2026-11-18: the stop of `fs#0` takes 150 ms with the kill. Any other unmount on a node finds the file system busy too: scenario 22 unmounts lazily, then waits for the tracer to let the volume go before it demotes it.
+- A file deleted before `fatrace` resolves its name is reported as `(deleted)`, with no path; the creation and deletion events still name its directory, so the inventory drops those lines.
+
+`run-all` takes the inventory of the whole run: it records a tree of the files the `maintenant` account owns outside the state root on each node (path, mtime and size, `/proc`, `/sys`, `/dev` and `/run/user` left out) before the first scenario and again after the last, and reads the trace of the run's window on each node. Every path the trace shows, and every file new or changed between the two trees, goes into `run.json` under `inventory.written`, by node. Any of them outside the state root, apart from `/dev/null` and the pseudo file systems, goes into `inventory.outside_volume`, named `node:path`, and fails the run; `/run` and `/tmp` count as outside. The scenarios that declare `inventory` (2, 3, 9 and 27) get the same verdict on the trace of each repetition.
+
+The verdict is never `pass` on a trace that cannot be trusted: a node where the unit did not run at the start or at the end of the window, where it restarted while the node stayed up, or whose trace cannot be read, makes it `not_measured`, with the reason, and that fails the run too. A node that rebooted is fine: the unit starts again with it. A file found outside the state root fails the verdict even when the trace has a gap.
+
+```sh
+deploy/ha/lab/lab inventory                              # since the trace started on the active node
+deploy/ha/lab/lab inventory --since '2026-11-17 10:00'
+```
+
+`lab inventory` lists the files the product wrote on the node that holds the service address and exits 1 when one is outside the state root. `lab inventory --self-test` proves it can fail: it writes `/var/tmp/lab-parasite` on that node as the product would, through a link named `maintenant` to `touch` (the kernel names the command after the link), and checks the inventory names it. It then removes the file and starts a fresh trace on that node, so no later inventory or run finds the parasite. Never run it during a `run-all`: the trace restart would make that run's inventory `not_measured`.
+
+The limits: the verdict classifies paths, so a write under `/var/lib/maintenant` while the volume is not mounted there counts as inside (scenario 27 is the guard against starting there); a node destroyed abruptly loses the last seconds of its trace, which were not on disk yet, as its journal does; and the trace directory is never rotated, it lives as long as the machines do.
+
+## Identities across a failover
+
+A failover must not regenerate what identifies the deployment (FR-038, FR-044). The scenarios that move the service declare `identities`: before the injection and after the repair, `run-all` reads, on the node that holds the service, the telemetry identity (`instance_id` and `public_key` of `shm/shm_identity.json`), the licence the service reports (`status`, `edition`, `plan`, `expires_at`, `updates_until` of `/api/v1/license/status`) and a digest of the licence key the running process was given, and fails the repetition when one changed. The digest is compared and never written to the report; the private key is never read. `.maintenant-license` is not compared: it is a cache of the signed answer of the licence server, rewritten at each verification with a new date, so it differs from one node to the other without the licence changing. The agents are compared by `agents` (see The probes).
+
+In `sqlite/drbd` the telemetry identity sits on the replicated volume. In `postgres/streaming` the state root is not replicated, and each node used to create its own identity on its first start, so a failover changed the instance the deployment reports as. The `maintenant` role now installs one identity on both nodes in that mode (`0600`, owned by `maintenant`): the one a node already holds, the first in inventory order, or a new one. It is kept on the controller beside the gRPC pair, under `~/.cache/maintenant-lab/maintenant-build/telemetry`, and the product is restarted where the service runs when its file changed.
+
+## The data set must exist
+
+The product refuses to start without an explicit state root: the role sets `MAINTENANT_STATE_DIR` and `MAINTENANT_REQUIRE_STATE_DIR=1`, and refuses a deployment that turns the guard off (FR-033). It also refuses a data set that holds no schema once `MAINTENANT_REQUIRE_EXISTING_DATA=1` is set (FR-036, FR-043): an unmounted volume, an empty volume, an empty database. The first start of a deployment has to create that data set, so the role starts the service with the setting off, and turns it on in the service as soon as the service is up (`om maintenant config update` of `app#0.environment`, then the rendered template and `/etc/maintenant.env`). Every later deployment reads it from the service and keeps it. It stays off in `ip-only`, where each node starts its own data set on its first failover.
+
+Without an explicit root, checked on 2026-11-18 in `postgres/streaming`: with the service frozen, `MAINTENANT_STATE_DIR` removed from `app#0.environment` and `app#0` started alone, the start fails in 1.6 s and the instance turns `warn`:
+
+```text
+$ om maintenant instance start --rid app#0
+WRN maintenant: app#0: stderr: maintenant exited before answering
+ERR maintenant: app#0: start: /usr/bin/om exit code 1 not in success codes: [0]
+INF maintenant: <<< done start [om maintenant instance start --rid app#0] in 1.625914977s, instance status is now warn, with warnings
+$ journalctl -t maintenant -o cat
+{"level":"ERROR","msg":"failed to initialize application","error":"MAINTENANT_REQUIRE_STATE_DIR is on but MAINTENANT_STATE_DIR is not set"}
+$ om maintenant status
+  avail                  warn
+    app#0                X M2     / M2 ¹  forking
+       mixed resource states: app#pg ip#0 up, app#0 down
+```
+
+The binary reads and verifies its licence before it checks the root, from the working directory om3 gives it (`cwd`, the state root itself), so nothing is written elsewhere: the trace of that start holds the state root only.
+
+A deployment that changes the mode of an existing bench keeps the service, and so the requirement, while its new backend starts empty: `lab down` before `lab up` in another mode, or pass `-e maintenant_require_existing_data=false` once to let the new data set be created. Scenario 27 plays both refusals the cluster can meet: the volume left unmounted in `sqlite/drbd`, an empty database in `postgres/streaming`.
+
+## No node identity in the service
+
+Nothing tied to one node runs inside the service (FR-038): every node, the measurement machine included, is watched by an ordinary agent (`maintenant_agent`), enrolled once with its own identity under `/var/lib/maintenant-agent`, outside the service. The `maintenant` role refuses a deployment whose settings turn on `MAINTENANT_EMBEDDED_AGENT` or set `MAINTENANT_RUNTIME`, and a product account in the `docker` group of the node: the service would otherwise report as its own the agent or the containers of whichever node runs it, and a failover would swap them for another node's. The service then keeps no `embedded-agent` directory in its state root.
+
+The product's API always lists one more host, `Local`, with an empty agent id: a live reading of the CPU, memory and disk of the machine that runs the server. It is not stored and has no identity to regenerate, but it is a different machine after each failover, and the binary offers no setting to leave it out. The hosts to trust are the agents: site-a, site-b and probe on the bench.
+
+Checked on 2026-11-18 in `postgres/streaming`: the running service carries neither setting, the `maintenant` account is in no other group, the state root holds `.maintenant-license`, `shm` and `tmp` and no `embedded-agent`, and `/api/v1/agents` lists site-a, site-b and probe. Of the tables keyed by agent, only `heartbeats` holds a row under the local sentinel: `lab-writes`, the heartbeat the writes probe pings, which the API creates and which belongs to the deployment, not to a node.
 
 ## Vocabulary
 

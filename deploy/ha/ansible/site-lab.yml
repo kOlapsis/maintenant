@@ -8,6 +8,12 @@
     - opensvc_arbitrator
     - opensvc_relay
 
+# Before the cluster, so the trace already runs when the service first starts.
+- name: Trace what the product writes
+  hosts: opensvc_cluster
+  roles:
+    - lab_inventory
+
 - name: Form the cluster
   hosts: opensvc_cluster
   roles:

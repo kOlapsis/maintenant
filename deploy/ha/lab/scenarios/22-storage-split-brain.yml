@@ -19,8 +19,14 @@ injection:
     mkdir -p /run/lab-split-brain
     mount /dev/drbd0 /run/lab-split-brain
     date -u +%Y-%m-%dT%H:%M:%SZ >/run/lab-split-brain/split-brain-marker
-    umount /run/lab-split-brain
-    drbdadm secondary maintenant
+    # The bench's inventory trace keeps the file system open until it sees the mount go.
+    umount -l /run/lab-split-brain
+    tries=0
+    until drbdadm secondary maintenant; do
+      tries=$((tries + 1))
+      [ "$tries" -lt 20 ] || exit 1
+      sleep 0.5
+    done
     drbdadm adjust maintenant
 repair:
   'on': host

@@ -5,6 +5,7 @@
 #   lab down                 destroy everything, leaving no residue
 #   lab status [--json]      cluster, mode, probes and OpenSVC agent state
 #   lab giveback             move the service back to the preferred node
+#   lab inventory            files the product wrote on the active node
 #
 # Contract: specs/030-ha-opensvc/contracts/lab-cli.md. No command ever asks a
 # question: the bench is built, played and torn down unattended (FR-046).
@@ -66,7 +67,8 @@ PROBE_MEASURES='["rto_ms", "writes", "telemetry_gap_s", "telemetry_samples_lost"
 NODE_MEASURES='["local_restarts", "failover_count", "detection_delay_s", "fencing_outcome", "agent_watchdog_restart", "primary_count", "former_primary_rebuild", "sync_standby", "loss_window", "crash_confirmed", "nodes_written", "divergence"]'
 POSTGRES_MEASURES='["primary_count", "former_primary_rebuild", "sync_standby", "loss_window", "divergence"]'
 STREAMING_MEASURES='["sync_standby", "loss_window"]'
-SHARED_DATA_MEASURES='["writes", "telemetry_gap_s", "telemetry_samples_lost", "alerts_induced", "agents"]'
+STATE_MEASURES='["inventory", "identities"]'
+SHARED_DATA_MEASURES='["writes", "telemetry_gap_s", "telemetry_samples_lost", "alerts_induced", "agents", "identities"]'
 # Must match maintenant_check_log_identifier, the fencing callout and log_event of postgres_ha; systemd logs the watchdog kills, kernel the DRBD state changes.
 NODE_EVENT_TAGS="maintenant-svc maintenant-fence maintenant-pg systemd kernel"
 
@@ -87,6 +89,15 @@ GIVEBACK_LAG_TRIES=10
 SERVER_LOG_IDENTIFIER="maintenant"
 # Kept in run.json as information: the writes probe already counts an ack the server did not store.
 SERVER_LOG_WATCH="insert ping"
+
+STATE_ROOT="${LAB_STATE_DIR:-/var/lib/maintenant}"
+PRODUCT_USER=maintenant
+# Must match the defaults of the lab_inventory role.
+INVENTORY_BIN=/usr/local/sbin/lab-inventory
+INVENTORY_TRACE_DIR=/var/log/lab-inventory
+INVENTORY_UNIT=lab-inventory-trace.service
+PARASITE_FILE=/var/tmp/lab-parasite
+PARASITE_LINK_DIR=/usr/local/lib/lab-parasite
 
 # virsh reads qemu:///session for a non-root user, where the bench has nothing.
 LIBVIRT_DEFAULT_URI="${LIBVIRT_DEFAULT_URI:-qemu:///system}"
@@ -143,7 +154,13 @@ usage: lab <command> [options]
   report [--run <id>]
   giveback               move the service back to the preferred node, refused
                          while that node's copy of the data is not up to date
-  inventory              on-disk state inventory of the active node
+  inventory [--since <date>] [--self-test]
+                         files the product wrote on the active node since
+                         <date> (default: since its trace started), and
+                         whether one lies outside the state root;
+                         --self-test writes a parasite file outside it,
+                         checks the inventory names it, then removes the
+                         file and starts a fresh trace on that node
 
 modes: ip-only (default), postgres/streaming, sqlite/drbd, postgres/drbd
        ip-only is the bare bench: service address failover, no replicated
@@ -689,7 +706,7 @@ def num($m): if declared($m) and (($node[$m]? | type) == "number") then $node[$m
 	 elif $writes.lost > 0 then
 		"writes: \($writes.lost) acknowledged writes lost (seq \($writes.lost_seqs[0:10] | map(tostring) | join(", "))\(if ($writes.lost_seqs | length) > 10 then ", ..." else "" end))"
 	 else empty end),
-	($wired[] | select(. != "rto_ms" and . != "writes") as $m | select(declared($m))
+	($wired[] | select(IN("rto_ms", "writes", "inventory", "identities") | not) as $m | select(declared($m))
 		| observed($m) | select(.value == null) | "\($m): not measured (\(.error | trimmed))"),
 	(if declared("alerts_induced") and ($observer.alerts_induced? // null) != null
 		and ([$observer.alerts_induced[]] | add) > 0 then
@@ -731,7 +748,18 @@ def num($m): if declared($m) and (($node[$m]? | type) == "number") then $node[$m
 		  (if (.started_before_crash | length) > 0 then "crash_confirmed: \(.started_before_crash | join(", ")) started the service before crashing" else empty end)),
 	(num("nodes_written") | select(. >= 2) | "nodes_written: \(.) nodes wrote at the same time"),
 	(num("divergence") | select(. > 0 and $mode == "sqlite/drbd") | "divergence: DRBD detected a split brain, the writes of one side are to be discarded"),
-	(num("divergence") | select(. > 0 and $mode != "sqlite/drbd") | "divergence: \(.) commits of the former primary past the fork, at least one after the promotion, thrown away by its rebuild")
+	(num("divergence") | select(. > 0 and $mode != "sqlite/drbd") | "divergence: \(.) commits of the former primary past the fork, at least one after the promotion, thrown away by its rebuild"),
+	(if declared("inventory") then
+		(if $inventory == null then "inventory: not measured (the trace was not read)"
+		 elif $inventory.verdict == "fail" then "inventory: written outside the state root: \($inventory.outside_volume | join(", "))"
+		 elif $inventory.verdict != "pass" then "inventory: not measured (\($inventory.reasons | join("; ")))"
+		 else empty end)
+	 else empty end),
+	(if declared("identities") then
+		(if $identities == null then "identities: not measured (\(($identities_error // "no reading") | trimmed))"
+		 elif ($identities.changed | length) > 0 then "identities: \($identities.changed | join(", ")) changed across the repetition"
+		 else empty end)
+	 else empty end)
 ]
 JQEOF
 	jq -nc \
@@ -742,6 +770,9 @@ JQEOF
 		--argjson observer "$5" \
 		--argjson observer_error "$6" \
 		--argjson node "$7" \
+		--argjson inventory "$8" \
+		--argjson identities "$9" \
+		--argjson identities_error "${10}" \
 		--argjson node_set "$NODE_MEASURES" \
 		--argjson wired "$(wired_measures "$2")" \
 		--argjson not_applicable "$(not_applicable_measures "$2")" \
@@ -781,9 +812,94 @@ not_applicable_measures() {
 # Prints, as a JSON array, the measures the bench takes in a mode.
 wired_measures() {
 	case "$1" in
-	ip-only | postgres/streaming | sqlite/drbd) jq -nc --argjson p "$PROBE_MEASURES" --argjson n "$NODE_MEASURES" '$p + $n' ;;
+	ip-only | postgres/streaming | sqlite/drbd) jq -nc --argjson p "$PROBE_MEASURES" --argjson n "$NODE_MEASURES" --argjson s "$STATE_MEASURES" '$p + $n + $s' ;;
 	*) printf '%s\n' "$PROBE_MEASURES" ;;
 	esac
+}
+
+# Succeeds when a scenario declares a measure that has an object in the mode.
+declares() {
+	jq -ne --argjson d "$1" --arg m "$2" --argjson na "$(not_applicable_measures "$3")" \
+		'($d | index($m)) != null and ($na | index($m)) == null' >/dev/null
+}
+
+# Prints one "node state invocation boot_id" line per cluster node for the trace unit, "-" for what cannot be read.
+inventory_marks() {
+	for im_host in $(group_hosts opensvc_cluster); do
+		im_out=$(ssh_to "$im_host" "systemctl is-active $INVENTORY_UNIT; systemctl show -p InvocationID --value $INVENTORY_UNIT; cat /proc/sys/kernel/random/boot_id" 2>/dev/null) || im_out=""
+		im_state=$(printf '%s\n' "$im_out" | sed -n 1p)
+		im_invocation=$(printf '%s\n' "$im_out" | sed -n 2p)
+		im_boot=$(printf '%s\n' "$im_out" | sed -n 3p)
+		printf '%s %s %s %s\n' "$im_host" "${im_state:--}" "${im_invocation:--}" "${im_boot:--}"
+	done
+}
+
+# Writes into a directory, one file per cluster node, the files the product account owns outside the state root.
+inventory_trees() {
+	mkdir -p "$1"
+	for it_host in $(group_hosts opensvc_cluster); do
+		ssh_to "$it_host" "sudo -n $INVENTORY_BIN tree $(shell_quote "$STATE_ROOT") $PRODUCT_USER" >"$1/$it_host" 2>/dev/null || rm -f "$1/$it_host"
+	done
+}
+
+# Prints, as JSON, the files the product wrote on each cluster node between two epochs, those
+# outside the state root, and why the verdict cannot be trusted when it cannot.
+#   inventory_measure <marks before> <marks after> <since> <until> [<trees before> <trees after>]
+inventory_measure() {
+	iv_before=$1
+	iv_after=$2
+	iv_since=$3
+	iv_until=$4
+	iv_trees_before=${5:-}
+	iv_trees_after=${6:-}
+	: >"$TMP/inventory-written"
+	: >"$TMP/inventory-gaps"
+	for iv_host in $(group_hosts opensvc_cluster); do
+		read -r iv_state_a iv_inv_a iv_boot_a <<-EOF
+			$(awk -v h="$iv_host" '$1 == h { print $2, $3, $4 }' "$iv_before")
+		EOF
+		read -r iv_state_b iv_inv_b iv_boot_b <<-EOF
+			$(awk -v h="$iv_host" '$1 == h { print $2, $3, $4 }' "$iv_after")
+		EOF
+		if [ "${iv_state_a:-}" != active ]; then
+			printf 'the trace did not run on %s at the start\n' "$iv_host"
+		elif [ "${iv_state_b:-}" != active ]; then
+			printf 'the trace did not run on %s at the end\n' "$iv_host"
+		elif [ "$iv_boot_a" = "$iv_boot_b" ] && [ "$iv_inv_a" != "$iv_inv_b" ]; then
+			printf 'the trace restarted on %s while the node stayed up\n' "$iv_host"
+		fi >>"$TMP/inventory-gaps"
+		if iv_paths=$(ssh_to "$iv_host" "sudo -n $INVENTORY_BIN trace $INVENTORY_TRACE_DIR $iv_since $iv_until" 2>/dev/null); then
+			printf '%s\n' "$iv_paths" | awk -v h="$iv_host" 'NF { print h "\t" $0 }' >>"$TMP/inventory-written"
+		else
+			printf 'the trace of %s could not be read\n' "$iv_host" >>"$TMP/inventory-gaps"
+		fi
+		[ -n "$iv_trees_before" ] || continue
+		if [ -f "$iv_trees_before/$iv_host" ] && [ -f "$iv_trees_after/$iv_host" ]; then
+			LC_ALL=C comm -13 "$iv_trees_before/$iv_host" "$iv_trees_after/$iv_host" | cut -f1 | awk -v h="$iv_host" 'NF { print h "\t" $0 }' >>"$TMP/inventory-written"
+		else
+			printf 'the file tree of %s could not be read\n' "$iv_host" >>"$TMP/inventory-gaps"
+		fi
+	done
+	sh "$LAB_DIR/inventory" verdict "$STATE_ROOT" <"$TMP/inventory-written" | jq -c --rawfile gaps "$TMP/inventory-gaps" '
+		($gaps | split("\n") | map(select(length > 0))) as $r
+		| . + {reasons: $r, verdict: (if .verdict == "fail" or ($r | length) == 0 then .verdict else "not_measured" end)}'
+}
+
+# Prints the telemetry identity and the licence the service runs with, read on the node that holds it.
+service_identities() {
+	si_node=$(ssh_to "$1" "sudo -n $INVENTORY_BIN identities $(shell_quote "$STATE_ROOT")") || return 1
+	si_licence=$(curl -fsS -m 5 "http://$(service_address):8080/api/v1/license/status") || return 1
+	jq -nc --argjson n "$si_node" --argjson l "$si_licence" \
+		'{instance_id: $n.instance_id, public_key: $n.public_key,
+		  licence: ($l | {status, edition, plan, expires_at, updates_until}) + {key_sha256: $n.licence_key_sha256}}'
+}
+
+# Prints the identities measure of one repetition; the licence key digest is compared, never kept.
+identities_measure() {
+	jq -nc --argjson b "$1" --argjson a "$2" '
+		{before: ($b | del(.licence.key_sha256)), after: ($a | del(.licence.key_sha256)),
+		 changed: ([("instance_id", "public_key") | select($b[.] != $a[.])]
+			+ [$b.licence | keys[] | select($b.licence[.] != $a.licence[.]) | "licence." + .])}'
 }
 
 # Writes, as one JSON object keyed by cluster node, the lines the node scripts logged between two
@@ -933,7 +1049,18 @@ build_scenario_summary() {
 				started_before_crash: (map(.started_before_crash[]) | unique)
 			})),
 			nodes_written: (node("nodes_written") | none_if_empty(max)),
-			divergence: (node("divergence") | none_if_empty(add))
+			divergence: (node("divergence") | none_if_empty(add)),
+			inventory: (map(.inventory // empty) | none_if_empty({
+				repetitions: length,
+				pass: (map(select(.verdict == "pass")) | length),
+				not_measured: (map(select(.verdict == "not_measured")) | length),
+				outside_volume: (map(.outside_volume[]) | unique)
+			})),
+			identities: (map(.identities // empty) | none_if_empty({
+				repetitions: length,
+				unchanged: (map(select(.changed == [])) | length),
+				changed: (map(.changed[]) | unique)
+			}))
 		} as $node_summary |
 		{
 			id: $id,
@@ -1114,6 +1241,16 @@ run_all_scenario() {
 
 		server_log_cursors "$TMP/server-log-cursors-$number-$rep"
 		cluster_boot_ids >"$TMP/boot-before-$number-$rep"
+		inventory_json=null
+		identities_json=null
+		identities_error=null
+		identities_before=""
+		if declares "$declared" inventory "$mode"; then
+			inventory_marks >"$TMP/inventory-before-$number-$rep"
+		fi
+		if declares "$declared" identities "$mode"; then
+			identities_before=$(service_identities "$holder_t0" 2>/dev/null) || identities_before=""
+		fi
 		t0=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
 
 		if inj_out=$(scenario_act injection "$number" 2>&1); then
@@ -1173,6 +1310,27 @@ $ver_out"
 		cluster_boot_ids >"$TMP/boot-after-$number-$rep"
 		faulted=$(faulted_nodes "$TMP/boot-before-$number-$rep" "$TMP/boot-after-$number-$rep")
 		t_end=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
+
+		if declares "$declared" inventory "$mode"; then
+			inventory_marks >"$TMP/inventory-after-$number-$rep"
+			inventory_json=$(inventory_measure "$TMP/inventory-before-$number-$rep" "$TMP/inventory-after-$number-$rep" \
+				"$(date -u -d "$t0" +%s)" "$(($(date -u -d "$t_end" +%s) + 1))") || inventory_json=""
+			[ -n "$inventory_json" ] || inventory_json=null
+		fi
+		if declares "$declared" identities "$mode"; then
+			holder_end=$(jq -r '.service.holders | if length == 1 then .[0] else empty end' "$TMP/status-post-$number.json" 2>/dev/null) || holder_end=""
+			if [ -z "$identities_before" ]; then
+				identities_error="they could not be read on $holder_t0 before the injection"
+			elif [ -z "$holder_end" ]; then
+				identities_error="no single node held the service after the repair"
+			elif identities_after=$(service_identities "$holder_end" 2>/dev/null); then
+				identities_json=$(identities_measure "$identities_before" "$identities_after")
+				identities_error=""
+			else
+				identities_error="they could not be read on $holder_end after the repair"
+			fi
+			identities_error=$(jq -nc --arg e "$identities_error" 'if $e == "" then null else $e end')
+		fi
 
 		t1_window=$(date -u -d "$t1 +10 seconds" +%Y-%m-%dT%H:%M:%S.%NZ)
 		agents_to=$(date -u -d "$t1 +$AGENTS_RECONNECT_MAX_S seconds" +%Y-%m-%dT%H:%M:%S.%NZ)
@@ -1267,7 +1425,8 @@ $ver_out"
 		[ "$repair_rc" -eq 0 ] || add_reason "repair failed (rc=$repair_rc)"
 		[ "$green_after" -eq 1 ] || add_reason "bench did not return to green after repair"
 		[ "$holders" -eq 1 ] || add_reason "holders after recovery = $holders, expected 1"
-		if measure_reasons "$declared" "$mode" "$writes_json" "$writes_error" "$observer_json" "$observer_error" "$node_measures_json" >"$TMP/measure-reasons-$number-$rep.json" &&
+		if measure_reasons "$declared" "$mode" "$writes_json" "$writes_error" "$observer_json" "$observer_error" "$node_measures_json" \
+			"$inventory_json" "$identities_json" "$identities_error" >"$TMP/measure-reasons-$number-$rep.json" &&
 			jq -r '.[]' "$TMP/measure-reasons-$number-$rep.json" >"$TMP/measure-reasons-$number-$rep.txt"; then
 			while IFS= read -r measure_reason; do
 				add_reason "$measure_reason"
@@ -1328,6 +1487,9 @@ $ver_out"
 			--arg faulted "$faulted" \
 			--argjson server_log "$server_log_json" \
 			--argjson node_measures "$node_measures_json" \
+			--argjson inventory "$inventory_json" \
+			--argjson identities "$identities_json" \
+			--argjson identities_error "$identities_error" \
 			--argjson reasons "$(cat "$reasons_file")" \
 			--arg verdict "$rep_verdict" \
 			'{
@@ -1340,6 +1502,8 @@ $ver_out"
 				observer: $observer, observer_error: $observer_error,
 				writes: $writes, writes_error: $writes_error,
 				node_measures: $node_measures,
+				inventory: $inventory,
+				identities: $identities, identities_error: $identities_error,
 				faulted_hosts: ($faulted | split(",") | map(select(length > 0))),
 				server_log: $server_log,
 				verdict: $verdict, reasons: $reasons
@@ -1427,6 +1591,13 @@ cmd_run_all() {
 
 	run_all_settings >"$RUN_SETTINGS_FILE"
 
+	info "recording the file trees of the cluster nodes"
+	inventory_marks >"$TMP/inventory-run-before"
+	untraced=$(awk '$2 != "active" { print $1 }' "$TMP/inventory-run-before" | paste -sd' ' -)
+	[ -z "$untraced" ] || die "the trace of the state inventory does not run on $untraced ($INVENTORY_UNIT): run 'lab up' to deploy it" 1
+	inventory_trees "$TMP/trees-before"
+	run_since=$(date -u +%s)
+
 	scenarios_ndjson="$report_dir/scenarios.ndjson"
 	: >"$scenarios_ndjson"
 
@@ -1444,6 +1615,13 @@ cmd_run_all() {
 		fi
 	done
 
+	info "taking the state inventory of the run"
+	inventory_marks >"$TMP/inventory-run-after"
+	inventory_trees "$TMP/trees-after"
+	run_inventory=$(inventory_measure "$TMP/inventory-run-before" "$TMP/inventory-run-after" "$run_since" "$(($(date -u +%s) + 1))" \
+		"$TMP/trees-before" "$TMP/trees-after") || run_inventory=""
+	[ -n "$run_inventory" ] || run_inventory='{"verdict": "not_measured", "outside_volume": [], "written": {}, "reasons": ["the inventory could not be judged"]}'
+
 	versions_json=$(run_all_versions)
 	settings_json=$(cat "$RUN_SETTINGS_FILE")
 	mode_json_val=$(mode_json "$mode")
@@ -1453,12 +1631,14 @@ cmd_run_all() {
 		--argjson mode "$mode_json_val" \
 		--argjson versions "$versions_json" \
 		--argjson settings "$settings_json" \
+		--argjson inventory "$run_inventory" \
 		--slurpfile scenarios "$scenarios_ndjson" \
 		'{
 			run_id: $run_id,
 			mode: $mode,
 			versions: $versions,
 			settings: $settings,
+			inventory: $inventory,
 			scenarios: $scenarios,
 			totals: {
 				scenarios: ($scenarios | length),
@@ -1474,10 +1654,12 @@ cmd_run_all() {
 	pass=$(printf '%s' "$run_json" | jq -r '.totals.pass')
 	fail=$(printf '%s' "$run_json" | jq -r '.totals.fail')
 	na=$(printf '%s' "$run_json" | jq -r '.totals.not_applicable')
-	info "run-all $run_id complete: $pass pass, $fail fail, $na not applicable"
+	inventory_verdict=$(printf '%s' "$run_json" | jq -r '.inventory.verdict')
+	info "run-all $run_id complete: $pass pass, $fail fail, $na not applicable, inventory $inventory_verdict"
+	printf '%s' "$run_json" | jq -r '.inventory | (.outside_volume[] | "    written outside the state root: " + .), (.reasons[] | "    " + .)'
 	info "report: $report_dir/run.md"
 
-	[ "$fail" -eq 0 ] || exit 1
+	[ "$fail" -eq 0 ] && [ "$inventory_verdict" = pass ] || exit 1
 }
 
 scenario_file() {
@@ -1546,7 +1728,7 @@ scenario_env() {
 	LAB_MEASUREMENT_ADDRESS=$(hostvar "$probe" ansible_host "$probe")
 	LAB_ACTIVE_DOMAIN="$LAB_DOMAIN_PREFIX$active"
 	LAB_PASSIVE_DOMAIN="$LAB_DOMAIN_PREFIX$passive"
-	LAB_STATE_DIR="${LAB_STATE_DIR:-/var/lib/maintenant}"
+	LAB_STATE_DIR="$STATE_ROOT"
 	LAB_INTERCONNECT=$(ssh_to "$active" "ip -o -4 addr show" 2>/dev/null |
 		awk -v a="$LAB_ACTIVE_ADDRESS/" '$0 ~ " inet "a {print $2; exit}')
 	LAB_SSH_ACTIVE="ssh $SSH_BATCH_OPTS $(ssh_target "$active")"
@@ -1808,6 +1990,11 @@ def node_cell($m):
 		"rebuilt \(.rebuilt)/\(.repetitions) by \(.methods | list_s), max \(or_na(.max_duration_s))s, primary before rebuild \(.primary_started_before_rebuild)/\(.repetitions)"
 	elif $m == "loss_window" then
 		"opened \(.opened)/\(.repetitions)" + (if .max_duration_s == null then "" else ", max \(.max_duration_s)s" end)
+	elif $m == "inventory" then
+		"pass \(.pass)/\(.repetitions)" + (if .not_measured > 0 then ", not measured \(.not_measured)/\(.repetitions)" else "" end)
+		+ (if (.outside_volume | length) > 0 then ", outside the state root \(.outside_volume | join(", "))" else "" end)
+	elif $m == "identities" then
+		"unchanged \(.unchanged)/\(.repetitions)" + (if (.changed | length) > 0 then ", changed \(.changed | join(", "))" else "" end)
 	elif $m == "crash_confirmed" then
 		"confirmed \(.confirmed)/\(.repetitions), crashed \(.crashed | list_s), started before crash \(.started_before_crash | list_s)"
 	else tostring end;
@@ -1838,6 +2025,16 @@ def node_cell($m):
      "- stonith: \(bool_s($r.settings.stonith))",
      "- sync_standby: \(or_na($r.settings.sync_standby))",
      "",
+     "## Inventory",
+     "",
+     "inventory: \(if $r.inventory == null then "absent" else $r.inventory.verdict end)"]
+    + (if $r.inventory == null then [] else
+        [""]
+        + [$r.inventory.outside_volume[] | "- written outside the state root: \(.)"]
+        + [$r.inventory.reasons[] | "- \(.)"]
+        + [$r.inventory.written | to_entries[] | "- written on \(.key): \(.value | join(", "))"]
+      end)
+    + ["",
      "## Scenarios",
      "",
      "| # | Scenario | Verdict | Repetitions | RTO min/p50/max | Writes lost/acked | Telemetry gap | Samples lost | Alerts induced | Agents back/expected | Not measured |",
@@ -1893,7 +2090,7 @@ def node_cell($m):
   )
 | .[]
 JQEOF
-	jq -r --argjson node_set "$NODE_MEASURES" -f "$TMP/render.jq" "$run_json_file"
+	jq -r --argjson node_set "$(jq -nc --argjson n "$NODE_MEASURES" --argjson s "$STATE_MEASURES" '$n + $s')" -f "$TMP/render.jq" "$run_json_file"
 }
 
 cmd_report() {
@@ -2001,8 +2198,65 @@ cmd_giveback() {
 	render_status <"$TMP/status-giveback-after.json"
 }
 
-not_yet() {
-	die "$1 is not implemented yet ($2)" 3
+cmd_inventory() {
+	since=0
+	self_test=0
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--since)
+			[ $# -ge 2 ] || die "--since takes a date" 2
+			since=$(date -u -d "$2" +%s) || die "--since takes a date: $2" 2
+			shift 2
+			;;
+		--self-test)
+			self_test=1
+			shift
+			;;
+		*) die "unknown option for inventory: $1" 2 ;;
+		esac
+	done
+	need ansible-inventory
+	need jq
+	need ssh
+
+	holder=""
+	for name in $(group_hosts opensvc_cluster); do
+		if ssh_to "$name" "ip -o addr show" 2>/dev/null | grep -q " inet $(service_address)/"; then
+			holder=$name
+		fi
+	done
+	[ -n "$holder" ] || die "no node holds $(service_address): there is no active node to inventory" 1
+	ssh_to "$holder" "systemctl is-active --quiet $INVENTORY_UNIT" ||
+		die "the trace does not run on $holder: the inventory cannot be taken (systemctl status $INVENTORY_UNIT)" 1
+	if [ "$self_test" -eq 1 ]; then
+		since=$(ssh_to "$holder" "date -u +%s")
+		# The kernel names the command after the link, so touch is traced as the product.
+		ssh_to "$holder" "sudo -n mkdir -p $PARASITE_LINK_DIR && sudo -n ln -sf /usr/bin/touch $PARASITE_LINK_DIR/maintenant &&
+			sudo -n -u $PRODUCT_USER $PARASITE_LINK_DIR/maintenant $PARASITE_FILE && sleep 2" ||
+			die "the parasite file could not be written on $holder" 1
+	fi
+	paths=$(ssh_to "$holder" "sudo -n $INVENTORY_BIN trace $INVENTORY_TRACE_DIR $since $(($(date -u +%s) + 1))") ||
+		die "the trace of $holder could not be read" 1
+	printf '%s\n' "$paths" | awk -v h="$holder" 'NF { print h "\t" $0 }' |
+		sh "$LAB_DIR/inventory" verdict "$STATE_ROOT" >"$TMP/state-inventory.json"
+	if [ "$self_test" -eq 1 ]; then
+		# A fresh trace, so that no later inventory finds the parasite.
+		ssh_to "$holder" "sudo -n rm -rf $PARASITE_FILE $PARASITE_LINK_DIR && sudo -n systemctl stop $INVENTORY_UNIT &&
+			sudo -n find $INVENTORY_TRACE_DIR -mindepth 1 -delete && sudo -n systemctl start $INVENTORY_UNIT" ||
+			die "the parasite or the trace of $holder could not be cleared" 1
+		if jq -e --arg p "$holder:$PARASITE_FILE" '.verdict == "fail" and (.outside_volume | index($p)) != null' "$TMP/state-inventory.json" >/dev/null; then
+			printf 'self-test pass: the inventory named %s:%s, removed with the trace of %s\n' "$holder" "$PARASITE_FILE" "$holder"
+			return 0
+		fi
+		printf 'self-test fail: the inventory did not name %s:%s\n' "$holder" "$PARASITE_FILE" >&2
+		exit 1
+	fi
+	jq -r --arg h "$holder" --arg root "$STATE_ROOT" '
+		"files the product wrote on \($h):",
+		((.written[$h] // [])[] | "  " + .),
+		(if (.outside_volume | length) > 0 then "outside \($root):", (.outside_volume[] | "  " + .) else empty end),
+		"verdict \(.verdict)"' "$TMP/state-inventory.json"
+	[ "$(jq -r '.verdict' "$TMP/state-inventory.json")" = pass ] || exit 1
 }
 
 main() {
@@ -2022,7 +2276,7 @@ main() {
 	run-all) cmd_run_all "$@" ;;
 	report) cmd_report "$@" ;;
 	giveback) cmd_giveback "$@" ;;
-	inventory) not_yet "inventory" "T080" ;;
+	inventory) cmd_inventory "$@" ;;
 	help | --help | -h)
 		usage
 		;;

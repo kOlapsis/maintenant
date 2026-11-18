@@ -47,6 +47,7 @@ measures:
 - local_restarts
 - primary_count
 - former_primary_rebuild
+- identities
 local_restart:
   resource: postgres
   failover: true

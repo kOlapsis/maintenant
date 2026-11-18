@@ -1,0 +1,78 @@
+---
+# Scenario 27, The service refuses a missing or empty data set (FR-036, FR-043).
+#
+# With the service frozen, the product is started on the active node where its
+# data set is not: the volume unmounted in sqlite/drbd, an empty database in
+# postgres/streaming. It must refuse to start, and the cluster must show it down.
+id: 27
+slug: empty-data-set
+name: The service refuses a missing or empty data set
+source: FR-036
+repetitions: 1
+injection:
+  'on': active
+  command: |
+    set -eu
+    om "$LAB_SERVICE" freeze
+    om "$LAB_SERVICE" instance stop --rid app#0
+    case "$LAB_MODE" in
+    sqlite/drbd) om "$LAB_SERVICE" instance stop --rid fs#0 ;;
+    postgres/streaming)
+      runuser -u postgres -- psql -X -q -d postgres -c 'ALTER DATABASE maintenant RENAME TO maintenant_lab_hidden'
+      runuser -u postgres -- psql -X -q -d postgres -c 'CREATE DATABASE maintenant OWNER maintenant'
+      ;;
+    *) exit 1 ;;
+    esac
+    if om "$LAB_SERVICE" instance start --rid app#0; then
+      echo "the product started on a missing or empty data set" >&2
+      exit 1
+    fi
+repair:
+  'on': active
+  command: |
+    set -eu
+    case "$LAB_MODE" in
+    sqlite/drbd)
+      # What the refused start left in the bare mount point, never the volume.
+      if ! mountpoint -q "$LAB_STATE_DIR"; then
+        find "$LAB_STATE_DIR" -mindepth 1 -delete
+      fi
+      ;;
+    postgres/streaming)
+      if runuser -u postgres -- psql -X -A -t -d postgres -c "select 1 from pg_database where datname = 'maintenant_lab_hidden'" | grep -q 1; then
+        runuser -u postgres -- psql -X -q -d postgres -c 'DROP DATABASE maintenant'
+        runuser -u postgres -- psql -X -q -d postgres -c 'ALTER DATABASE maintenant_lab_hidden RENAME TO maintenant'
+      fi
+      ;;
+    esac
+    om "$LAB_SERVICE" instance start
+    om "$LAB_SERVICE" unfreeze
+verify:
+  'on': active
+  # True once the refusal is logged and the cluster shows the instance down, and again once the repair restored it.
+  command: |
+    journalctl --quiet --no-pager -t maintenant --since -5min -o cat | grep -q 'MAINTENANT_REQUIRE_EXISTING_DATA is on but no migration is applied' &&
+      { curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null ||
+        om cluster status -o json | jq -e --arg n "$(hostname)" --arg s "$LAB_SERVICE" '.cluster.node[$n].instance[$s].status.avail != "up"' >/dev/null; }
+measures:
+- failover_count
+- inventory
+modes:
+  ip-only:
+    applicable: false
+    reason: each node starts its own data set on its first failover, so the role does not require one in this mode
+  postgres/streaming:
+    applicable: true
+    expected: 'The product refuses to start on the empty database and names MAINTENANT_REQUIRE_EXISTING_DATA
+      in the journal; nothing is written to the empty database beyond the schema read. app#0 stays down,
+      the instance is not up in om cluster status, and lab status is not green. The service never moves.
+      After the repair the original database is back and the service answers.'
+  sqlite/drbd:
+    applicable: true
+    expected: 'The product refuses to start in the bare mount point of the unmounted volume and names
+      MAINTENANT_REQUIRE_EXISTING_DATA in the journal. app#0 stays down, the instance is not up in om
+      cluster status, and lab status is not green. The service never moves and the volume is untouched.
+      After the repair the volume is mounted again and the service answers.'
+  postgres/drbd:
+    applicable: false
+    reason: mode not built on the bench

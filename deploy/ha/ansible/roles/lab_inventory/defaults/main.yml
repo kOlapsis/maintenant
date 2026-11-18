@@ -1,0 +1,5 @@
+---
+# lab/lab reads these three paths: change them there too.
+lab_inventory_bin: /usr/local/sbin/lab-inventory
+lab_inventory_trace_dir: /var/log/lab-inventory
+lab_inventory_unit: lab-inventory-trace.service

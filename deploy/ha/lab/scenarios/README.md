@@ -29,6 +29,13 @@ authoritative for intent.
   `kernel` (only the lines that start with `drbd maintenant` are kept). Declaring `fencing_outcome` means
   the injected node must be fenced: the measure fails when it is not, and when the service
   starts elsewhere before that fencing.
+- `inventory` is the state inventory of the repetition: the files the product wrote on each
+  cluster node from the injection to the return to green, read from the trace of the node
+  (`deploy/ha/README.md`, The state inventory). A file outside the state root fails the
+  repetition and is named. Every scenario that moves the service (1, 2, 3, 16, 18, 19, 20, 21
+  and 23) also declares `identities`: the telemetry identity and the licence of the service,
+  read on the node that holds it before the injection and after the repair, must not change.
+  Agents are compared by `agents`.
 - A scenario that expects cluster alerts lists them under `cluster_alerts`, at the top for
   every mode and under a mode for that mode only. Each entry gives fields an alert must carry
   (`event: arbitrator_down`, `hb: 'hb#2.rx'`). `lab run-all` reads the receiver on the
@@ -67,6 +74,8 @@ is fixed here so that later phases cannot collide:
 | 23 | Freeze of the active node | all |
 | 24 | Relay down, then inter-site partition | all |
 | 25 | Third site unreachable | all |
+| 26 | Storage unreachable while the process lives | `postgres/streaming`, `sqlite/drbd` |
+| 27 | The service refuses a missing or empty data set | `postgres/streaming`, `sqlite/drbd` |
 
 One provisional name used while planning, `11-degraded-network`, is dropped: number 11 is the
 plan's degraded WAN scenario, which already covers it. The two others, `13-degraded-storage`
@@ -404,6 +413,19 @@ node, ordered by time, and from `lab status --json` after the repair:
 
 The injection defeats quorum on purpose: the scenario shows what happens once the safeties
 have been bypassed, not that they can be.
+
+## Data set scenarios
+
+### 27. The service refuses a missing or empty data set
+
+| | |
+|---|---|
+| **Injection** | On the active node, with the service frozen: stop `app#0`, then unmount the volume (`fs#0`) in `sqlite/drbd`, or rename the `maintenant` database aside and create an empty one in `postgres/streaming`, and start `app#0` alone. The injection fails if the product starts. |
+| **Repair** | Delete what the refused start left in the bare mount point (only while the volume is unmounted), or drop the empty database and rename the original back, then start the instance and unfreeze the service. |
+| **Expected** | The role sets `MAINTENANT_REQUIRE_EXISTING_DATA=1` once the service has created its data set, so the product refuses to start and names that setting in the journal (tag `maintenant`). `app#0` stays down, the instance is not up in `om cluster status`, `lab status` is not green, and the service never moves (FR-036, FR-043). |
+| **Measures** | `failover_count` (expected: zero), `inventory`. |
+
+Played on 2026-11-18 in both modes (`reports/20261118-001547-postgres-streaming`, `reports/20261118-013637-sqlite-drbd`): the start is refused in about 2 s, `failover_count` 0, nothing written outside the state root.
 
 ## Server log
 

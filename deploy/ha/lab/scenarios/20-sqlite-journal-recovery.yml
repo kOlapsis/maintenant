@@ -28,6 +28,7 @@ measures:
 - writes
 - telemetry_gap_s
 - agents
+- identities
 modes:
   ip-only:
     applicable: false

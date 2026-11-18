@@ -1,0 +1,12 @@
+[Unit]
+Description=Trace of the files the product writes, for the bench inventory
+Before=opensvc-server.service
+
+[Service]
+Type=simple
+ExecStart={{ lab_inventory_bin }} record {{ lab_inventory_trace_dir }}
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

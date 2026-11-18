@@ -1,0 +1,115 @@
+#!/bin/sh
+# The state inventory of the bench (FR-035): every file the product writes, and
+# whether one lies outside the state root.
+#
+#   inventory record <dir>                       trace the product's writes into <dir>, until killed
+#   inventory trace <dir> <since> <until>        paths the product wrote between two epochs
+#   inventory tree <state root> <user>           files <user> owns outside the state root, with mtime and size
+#   inventory verdict <state root>               reads "node<TAB>path", prints the JSON verdict
+#   inventory identities <state root>            telemetry identity and licence key digest of the running service
+#
+# record, trace, tree and identities run as root on a cluster node; verdict runs anywhere.
+#
+# POSIX sh. record needs fatrace, findmnt and ps, verdict and identities need jq.
+
+set -eu
+
+PRODUCT_COMM=maintenant
+
+mounts() {
+	findmnt -rn -o TARGET,SOURCE,FSTYPE | awk '$1 !~ "^/run/(user|credentials)/"'
+}
+
+record() {
+	dir=$1
+	mkdir -p "$dir"
+	pids=""
+	seen=""
+	while :; do
+		now=$(mounts)
+		if [ "$now" != "$seen" ]; then
+			old=$pids
+			gen=$(date +%s%N)
+			# fatrace marks the mounts present when it starts, and skips tmpfs unless -c is run from inside it.
+			fatrace -t -t -C "$PRODUCT_COMM" -o "$dir/$gen-0.log" &
+			pids=$!
+			n=1
+			for target in $(findmnt -rn -t tmpfs -o TARGET | awk '$1 !~ "^/(dev|proc|sys|run/user|run/credentials)(/|$)"'); do
+				(cd "$target" && exec fatrace -c -t -t -C "$PRODUCT_COMM" -o "$dir/$gen-$n.log") &
+				pids="$pids $!"
+				n=$((n + 1))
+			done
+			# shellcheck disable=SC2086 # one pid per word
+			[ -z "$old" ] || { kill $old 2>/dev/null; wait $old 2>/dev/null; } || true
+			seen=$now
+		fi
+		for pid in $pids; do
+			case $(ps -o stat= -p "$pid" 2>/dev/null) in
+			'' | Z*) exit 1 ;;
+			esac
+		done
+		findmnt --poll --first-only --timeout 1000 >/dev/null 2>&1 || true
+	done
+}
+
+trace() {
+	[ -d "$1" ] || {
+		echo "no trace directory $1" >&2
+		exit 1
+	}
+	find "$1" -name '*.log' -exec cat {} + | awk -v s="$2" -v u="$3" '
+		$1 >= s && $1 <= u && $3 ~ /[W+D<>]/ {
+			p = $0
+			sub(/^[^ ]+ [^ ]+ [^ ]+ +/, "", p)
+			sub(/ \(deleted\)$/, "", p)
+			# A file gone before fatrace named it; its creation and deletion name its directory.
+			if (p != "(deleted)") print p
+		}
+	' | sort -u
+}
+
+tree() {
+	find / \( -path /proc -o -path /sys -o -path /dev -o -path /run/user -o -path "$1" \) -prune -o -user "$2" -printf '%p\t%T@\t%s\n' 2>/dev/null | LC_ALL=C sort
+}
+
+verdict() {
+	jq -Rn --arg root "$1" '
+		def outside: . != $root and (startswith($root + "/") | not)
+			and . != "/dev/null" and (test("^/(proc|sys|dev)(/|$)") | not);
+		[inputs | select(length > 0) | split("\t") | {node: .[0], path: .[1]}] as $w
+		| ($w | map(select(.path | outside) | "\(.node):\(.path)") | unique) as $out
+		| {
+			verdict: (if ($out | length) == 0 then "pass" else "fail" end),
+			outside_volume: $out,
+			written: ($w | group_by(.node) | map({key: .[0].node, value: (map(.path) | unique)}) | from_entries)
+		}'
+}
+
+identities() {
+	pid=$(pgrep -xo "$PRODUCT_COMM") || {
+		echo "the product does not run here" >&2
+		exit 1
+	}
+	key=$(tr '\0' '\n' <"/proc/$pid/environ" | sed -n 's/^MAINTENANT_LICENSE_KEY=//p')
+	digest=""
+	[ -z "$key" ] || digest=$(printf '%s' "$key" | sha256sum | cut -c1-64)
+	jq -c --arg digest "$digest" '{instance_id, public_key, licence_key_sha256: (if $digest == "" then null else $digest end)}' "$1/shm/shm_identity.json"
+}
+
+[ $# -ge 1 ] || {
+	sed -n '5,9p' "$0" >&2
+	exit 2
+}
+command=$1
+shift
+case "$command" in
+record) record "$@" ;;
+trace) trace "$@" ;;
+tree) tree "$@" ;;
+verdict) verdict "$@" ;;
+identities) identities "$@" ;;
+*)
+	sed -n '5,9p' "$0" >&2
+	exit 2
+	;;
+esac

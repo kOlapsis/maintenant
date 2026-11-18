@@ -43,6 +43,7 @@ measures:
 - nodes_written
 - primary_count
 - former_primary_rebuild
+- identities
 modes:
   ip-only:
     applicable: false

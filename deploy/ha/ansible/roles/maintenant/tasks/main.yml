@@ -30,6 +30,16 @@
     that: maintenant_mode in ['embedded', 'server']
     fail_msg: "maintenant_mode must be embedded or server, got {{ maintenant_mode }}"
 
+# The service moves between the nodes: an identity tied to one node would move with it (FR-038).
+- name: Refuse an identity tied to the node in the service
+  ansible.builtin.assert:
+    that:
+      - (maintenant_settings.MAINTENANT_EMBEDDED_AGENT | default('') | string | trim | lower) not in ['1', 't', 'true', 'y', 'yes', 'on']
+      - "'MAINTENANT_RUNTIME' not in maintenant_settings"
+    fail_msg: >-
+      The service must not run the embedded agent nor a local runtime: each node is watched by
+      an ordinary agent (maintenant_agent). Remove MAINTENANT_EMBEDDED_AGENT and MAINTENANT_RUNTIME.
+
 - name: Refuse a gRPC URL that names a node instead of the service
   ansible.builtin.include_tasks: grpc_url.yml
   when: maintenant_mode == 'server'
@@ -130,6 +140,19 @@
     home: "{{ maintenant_state_dir }}"
     create_home: false
 
+- name: Read the groups of the product account
+  ansible.builtin.command:
+    argv: [id, -Gn, "{{ maintenant_user }}"]
+  register: maintenant_user_groups
+  changed_when: false
+
+- name: Refuse a product account that reaches the container runtime of the node
+  ansible.builtin.assert:
+    that: "'docker' not in maintenant_user_groups.stdout.split()"
+    fail_msg: >-
+      {{ maintenant_user }} is in the docker group of {{ inventory_hostname }}: the service would
+      report the containers of whichever node runs it. Remove it from the group.
+
 - name: Install the product binary
   ansible.builtin.copy:
     src: "{{ maintenant_build_dir }}/maintenant"
@@ -162,6 +185,28 @@
 - name: Install the gRPC certificate and key
   ansible.builtin.include_tasks: tls.yml
   when: maintenant_mode == 'server'
+
+# The state root is not replicated in this mode: each node would create its own identity.
+- name: Install one telemetry identity on every node
+  ansible.builtin.include_tasks: telemetry.yml
+  when: ha_mode | default('ip-only') == 'postgres/streaming'
+
+# The first start creates the data set; every later start must find it (FR-036, FR-043).
+# Not in ip-only, where each node starts its own data set on its first failover.
+- name: Read whether the service already requires an existing data set
+  ansible.builtin.command:
+    argv: [om, "{{ opensvc_service_name | default('maintenant') }}", config, get, --kw, "app#0.environment"]
+  register: maintenant_live_environment
+  changed_when: false
+  failed_when: false
+  no_log: true
+  run_once: true
+
+- name: Require the data set the service already created
+  ansible.builtin.set_fact:
+    maintenant_require_existing_data: "{{ 'MAINTENANT_REQUIRE_EXISTING_DATA=1' in maintenant_live_environment.stdout | default('') | split }}"
+  when: ha_mode | default('ip-only') in maintenant_shared_data_modes
+  run_once: true
 
 - name: Write the settings
   ansible.builtin.template:

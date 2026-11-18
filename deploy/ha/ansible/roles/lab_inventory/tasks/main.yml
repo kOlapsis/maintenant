@@ -1,0 +1,33 @@
+---
+- name: Install fatrace
+  ansible.builtin.apt:
+    name: fatrace
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install the inventory
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../lab/inventory"
+    dest: "{{ lab_inventory_bin }}"
+    mode: "0755"
+    owner: root
+    group: root
+  notify: Restart the trace
+
+- name: Install the trace unit
+  ansible.builtin.template:
+    src: lab-inventory-trace.service.j2
+    dest: "/etc/systemd/system/{{ lab_inventory_unit }}"
+    mode: "0644"
+  notify: Restart the trace
+
+- name: Apply the unit before starting it
+  ansible.builtin.meta: flush_handlers
+
+- name: Start the trace
+  ansible.builtin.systemd_service:
+    name: "{{ lab_inventory_unit }}"
+    enabled: true
+    state: started
+    daemon_reload: true

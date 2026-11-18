@@ -32,6 +32,7 @@ measures:
 - inventory
 - primary_count
 - former_primary_rebuild
+- identities
 modes:
   ip-only:
     applicable: true

@@ -1,0 +1,6 @@
+---
+- name: Restart the trace
+  ansible.builtin.systemd_service:
+    name: "{{ lab_inventory_unit }}"
+    state: restarted
+    daemon_reload: true

@@ -29,6 +29,7 @@ measures:
 - fencing_outcome
 - primary_count
 - former_primary_rebuild
+- identities
 modes:
   ip-only:
     applicable: true

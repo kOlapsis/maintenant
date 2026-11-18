@@ -250,18 +250,9 @@ func runSummarise(journalPath, fromRaw, toRaw string) error {
 		return fmt.Errorf("-to: %w", err)
 	}
 
-	all, err := readSamples(journalPath)
+	kept, err := readSamples(journalPath, from, to)
 	if err != nil {
 		return err
-	}
-
-	var kept []sample
-	for _, sm := range all {
-		at, err := time.Parse(time.RFC3339Nano, sm.Wall)
-		if err != nil || at.Before(from) || at.After(to) {
-			continue
-		}
-		kept = append(kept, sm)
 	}
 	sort.Slice(kept, func(i, j int) bool { return kept[i].Seq < kept[j].Seq })
 
@@ -282,7 +273,8 @@ func parseWindowTime(raw string) (time.Time, error) {
 	return time.Parse(time.RFC3339, raw)
 }
 
-func readSamples(path string) ([]sample, error) {
+// readSamples keeps only the samples of the window: the journal holds every sample since lab up.
+func readSamples(path string, from, to time.Time) ([]sample, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -298,6 +290,10 @@ func readSamples(path string) ([]sample, error) {
 				break
 			}
 			return nil, fmt.Errorf("journal %s: %w", path, err)
+		}
+		at, err := time.Parse(time.RFC3339Nano, sm.Wall)
+		if err != nil || at.Before(from) || at.After(to) {
+			continue
 		}
 		out = append(out, sm)
 	}

@@ -25,6 +25,7 @@ measures:
 - telemetry_gap_s
 - alerts_induced
 - agents
+- identities
 modes:
   ip-only:
     applicable: true

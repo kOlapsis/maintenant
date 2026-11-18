@@ -1,0 +1,66 @@
+---
+- name: Read the telemetry identity each node holds
+  ansible.builtin.slurp:
+    src: "{{ maintenant_state_dir }}/shm/shm_identity.json"
+  register: maintenant_telemetry_held
+  failed_when: false
+  no_log: true
+
+- name: Create the directory the identity is kept in
+  ansible.builtin.file:
+    path: "{{ maintenant_build_dir }}/telemetry"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  run_once: true
+  become: false
+
+# The instance the deployment already reports as is kept, not replaced.
+- name: Keep the identity a node already holds as the deployment's
+  ansible.builtin.copy:
+    content: "{{ (held | first).content | b64decode }}"
+    dest: "{{ maintenant_build_dir }}/telemetry/shm_identity.json"
+    mode: "0600"
+    force: false
+  vars:
+    held: "{{ ansible_play_hosts | map('extract', hostvars, 'maintenant_telemetry_held') | selectattr('content', 'defined') | list }}"
+  when: held | length > 0
+  delegate_to: localhost
+  run_once: true
+  become: false
+  no_log: true
+
+- name: Create the telemetry identity of the deployment
+  ansible.builtin.shell: |
+    set -eu
+    umask 077
+    cd "{{ maintenant_build_dir }}/telemetry"
+    openssl genpkey -algorithm ed25519 -out key.pem
+    seed=$(openssl pkey -in key.pem -outform DER | tail -c 32 | od -An -v -tx1 | tr -d ' \n')
+    pub=$(openssl pkey -in key.pem -pubout -outform DER | tail -c 32 | od -An -v -tx1 | tr -d ' \n')
+    rm -f key.pem
+    printf '{"instance_id": "%s", "private_key": "%s%s", "public_key": "%s"}\n' \
+      "$(cat /proc/sys/kernel/random/uuid)" "$seed" "$pub" "$pub" >shm_identity.json
+  args:
+    creates: "{{ maintenant_build_dir }}/telemetry/shm_identity.json"
+  delegate_to: localhost
+  run_once: true
+  become: false
+
+- name: Create the telemetry directory
+  ansible.builtin.file:
+    path: "{{ maintenant_state_dir }}/shm"
+    state: directory
+    owner: "{{ maintenant_user }}"
+    group: "{{ maintenant_user }}"
+    mode: "0750"
+
+- name: Install the telemetry identity
+  ansible.builtin.copy:
+    src: "{{ maintenant_build_dir }}/telemetry/shm_identity.json"
+    dest: "{{ maintenant_state_dir }}/shm/shm_identity.json"
+    owner: "{{ maintenant_user }}"
+    group: "{{ maintenant_user }}"
+    mode: "0600"
+  register: maintenant_telemetry_identity
+  no_log: true

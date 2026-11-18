@@ -115,7 +115,7 @@
   when:
     - opensvc_service_existing.rc == 0
     - opensvc_service_local.status.avail | default('') == 'up'
-    - maintenant_binary_install is changed or opensvc_service_render is changed
+    - maintenant_binary_install is changed or opensvc_service_render is changed or maintenant_telemetry_identity | default({}) is changed
 
 - name: Wait for the service to be up on exactly one node, or to fail starting
   ansible.builtin.command:
@@ -173,3 +173,41 @@
       ({{ opensvc_service_license.json.status }}: {{ opensvc_service_license.json.message | default('') }}).
       The high availability options are ignored below Pro.
   run_once: true
+
+- name: Require the data set from now on
+  ansible.builtin.command:
+    argv:
+      - om
+      - "{{ opensvc_service_name }}"
+      - config
+      - update
+      - --set
+      - "app#0.environment={{ (maintenant_settings | combine({'MAINTENANT_REQUIRE_EXISTING_DATA': '1'})).items() | map('join', '=') | join(' ') }}"
+  when:
+    - ha_mode | default('ip-only') in maintenant_shared_data_modes
+    - not maintenant_require_existing_data | bool
+  register: opensvc_service_data_required
+  changed_when: true
+  run_once: true
+  no_log: true
+
+- name: Keep the data set required in what the role renders
+  ansible.builtin.set_fact:
+    maintenant_require_existing_data: true
+  when: opensvc_service_data_required is changed
+  run_once: true
+
+- name: Render the service with the data set required
+  ansible.builtin.template:
+    src: "{{ opensvc_service_template }}"
+    dest: "{{ opensvc_service_rendered }}"
+    mode: "0640"
+  when: opensvc_service_data_required is changed
+  run_once: true
+
+- name: Write the requirement in the settings
+  ansible.builtin.lineinfile:
+    path: "{{ maintenant_env_file }}"
+    regexp: '^MAINTENANT_REQUIRE_EXISTING_DATA='
+    line: MAINTENANT_REQUIRE_EXISTING_DATA=1
+  when: opensvc_service_data_required is changed

@@ -31,7 +31,9 @@ maintenant_database_url: >-
   {{ ('postgres://' ~ maintenant_user ~ '@/' ~ maintenant_database_name ~ '?host=/var/run/postgresql')
      if (ha_mode | default('ip-only')).startswith('postgres/') else '' }}
 maintenant_require_state_dir: true
+# Turned on by the role once the service has created its data set.
 maintenant_require_existing_data: false
+maintenant_shared_data_modes: [postgres/streaming, sqlite/drbd]
 
 # The agents' authentication tolerance is 300 s. Refusing at 30 s leaves room
 # to notice the drift long before it starts rejecting agents.
