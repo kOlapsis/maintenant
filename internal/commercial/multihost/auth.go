@@ -23,7 +23,7 @@ var (
 	ErrAgentUnknown = errors.New("agent not found")
 )
 
-const maxClockSkewSeconds = 300
+const maxClockSkew = 300 * time.Second
 
 // GenerateChallenge creates a 32-byte random nonce for the auth handshake.
 func GenerateChallenge() (*agentpb.AuthChallenge, error) {
@@ -55,7 +55,7 @@ func Verify(req *agentpb.AuthResponse, nonce []byte, ag *agent.Agent, serverNow 
 	if diff < 0 {
 		diff = -diff
 	}
-	if diff > maxClockSkewSeconds {
+	if diff > int64(maxClockSkew/time.Second) {
 		return ErrClockSkew
 	}
 

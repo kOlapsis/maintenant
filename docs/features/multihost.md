@@ -233,7 +233,7 @@ The server enforces a per-agent limit of **1 000 events/second** (token bucket).
 
 ### Clock checks
 
-The server refuses an event observed more than 60 seconds ahead of its own clock, or more than 24 hours in the past. Keep agent clocks in sync (the handshake tolerates 5 minutes of skew, events far less).
+The server refuses an event observed more than 5 minutes ahead of its own clock (the same tolerance as the handshake), or more than 24 hours in the past. A refused event is acknowledged and dropped, the agent logs the refusal, and the server counts it in the agent's `rejected_events` (`GET /api/v1/agents`, MCP `list_agents`). Keep agent clocks in sync.
 
 ---
 
@@ -272,9 +272,15 @@ the restart counter or bring back an archived container. A container that only
 appears in the replay (the fresh inventory did not list it, so it is gone) is
 recorded as archived history.
 
-Delivery is at-least-once. A stream that breaks mid-replay resends everything
-past the last acknowledgement, so the server may see an event twice. Records are
-keyed by the event, so a duplicate rewrites the same row instead of adding one.
+Delivery is at-least-once. The server acknowledges an event once it has handled
+it, or once it refused it for good (an invalid event, an observation time out of
+range). When its database cannot store a container state or health change, it
+closes the stream without acknowledging it, and the agent reconnects and resends
+from that event; a server that shuts down closes the streams before its database,
+so nothing is acknowledged that was not written. A stream
+that breaks mid-replay resends everything past the last acknowledgement, so the
+server may see an event twice. Records are keyed by the event, so a duplicate
+rewrites the same row instead of adding one.
 
 ### Limits
 
@@ -368,7 +374,7 @@ The Agents page shows each agent's runtime (the one the agent detected, reported
 |---------|-----------|
 | Transport encryption | TLS at the gRPC listener, or h2c behind a trusted reverse proxy (`MAINTENANT_GRPC_TLS_INSECURE=true`). Plaintext mode is explicit opt-in, not the default. A private CA is trusted through `MAINTENANT_CA_CERT`. |
 | Per-stream authentication | Ed25519 challenge-response, fresh nonce per connection |
-| Clock skew tolerance | ±5 minutes between agent and server clocks for the handshake |
+| Clock skew tolerance | ±5 minutes between agent and server clocks, for the handshake and for the observation time of each event |
 | Token exposure | Cleartext shown once at creation, stored hashed, masked in subsequent reads |
 | Key compromise | Revoke the agent from the UI; re-enrolling generates a new keypair |
 | Edition enforcement | All `/api/v1/agents/*` endpoints return `403 EDITION_REQUIRED` below Personal, naming the capability and the edition that grants it |

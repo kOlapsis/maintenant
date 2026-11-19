@@ -135,7 +135,7 @@ func registerReadTools(server *gomcp.Server, svc *Services) {
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_agents",
-		Description: "List active remote agents, newest first, each with agent_id, label, hostname, runtime and live connection_state (connected or disconnected); the server itself is not listed. Pass an agent_id to the agent_id filter of the list tools, or 'local' for the server." + requires(extension.CapMultihost),
+		Description: "List active remote agents, newest first, each with agent_id, label, hostname, runtime, live connection_state (connected or disconnected) and rejected_events, the events refused since the server started because they were observed more than 5 minutes ahead of the server clock or more than 24 hours ago; the server itself is not listed. Pass an agent_id to the agent_id filter of the list tools, or 'local' for the server." + requires(extension.CapMultihost),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listAgentsHandler(svc))
 }
@@ -499,7 +499,9 @@ func listAgentsHandler(svc *Services) gomcp.ToolHandlerFor[listAgentsInput, any]
 			Hostname        string `json:"hostname"`
 			Runtime         string `json:"runtime"`
 			ConnectionState string `json:"connection_state"`
+			RejectedEvents  uint64 `json:"rejected_events"`
 		}
+		rejections, _ := svc.Sessions.(interface{ RejectedEvents(agentID string) uint64 })
 		rows := make([]agentRow, len(agents))
 		for i, a := range agents {
 			state := "disconnected"
@@ -512,6 +514,9 @@ func listAgentsHandler(svc *Services) gomcp.ToolHandlerFor[listAgentsInput, any]
 				Hostname:        a.Hostname,
 				Runtime:         a.DetectedRuntime,
 				ConnectionState: state,
+			}
+			if rejections != nil {
+				rows[i].RejectedEvents = rejections.RejectedEvents(a.AgentID)
 			}
 		}
 		return jsonResult(rows)

@@ -24,6 +24,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/ratelimit"
+	"github.com/kolapsis/maintenant/internal/store"
 )
 
 // ingestImpl implements agentpb.IngestServer.
@@ -237,9 +238,10 @@ func (impl *ingestImpl) Push(stream pushStream) error {
 	// Commands from HTTP handlers are queued here and written by this goroutine
 	// only, keeping the single-writer invariant on the gRPC stream.
 	sendCh := make(chan *agentpb.ServerMessage, 16)
+	closeReason := "stream_ended"
 	if sessions != nil {
 		tok := sessions.Open(ag.AgentID, cancel, addr, resp.GetCapabilities(), sendCh)
-		defer sessions.CloseStream(ag.AgentID, tok, "stream_ended")
+		defer func() { sessions.CloseStream(ag.AgentID, tok, closeReason) }()
 	}
 
 	connectedAt := impl.markConnected(stream.Context(), ag, resp)
@@ -261,7 +263,11 @@ func (impl *ingestImpl) Push(stream pushStream) error {
 	ackTicker := time.NewTicker(ackTick)
 	defer ackTicker.Stop()
 
-	return s.run(streamCtx, recvCh, sendCh, ackTicker.C)
+	err = s.run(streamCtx, recvCh, sendCh, ackTicker.C)
+	if errors.Is(err, errEventNotStored) && stream.Context().Err() == nil {
+		closeReason = reasonResend
+	}
+	return err
 }
 
 func receiveAuth(stream pushStream) (*agentpb.AuthResponse, error) {
@@ -413,13 +419,18 @@ func (s *pushSession) handleEvent(evt *agentpb.AgentEvent) error {
 		return nil
 	}
 
-	s.acks.accept(evt.GetSeq())
-
 	if sessions := s.impl.deps.Sessions; sessions != nil {
 		sessions.IncrEvents(s.agentID)
 	}
 
-	s.dispatch(evt)
+	if err := s.dispatch(evt); err != nil {
+		if seq, ok := s.acks.pending(); ok {
+			_ = s.sendAck(seq)
+		}
+		return err
+	}
+
+	s.acks.accept(evt.GetSeq())
 
 	if seq, ok := s.acks.afterEvent(time.Now()); ok {
 		return s.sendAck(seq)
@@ -454,21 +465,37 @@ func (s *pushSession) rateLimited(evt *agentpb.AgentEvent) bool {
 	return true
 }
 
-func (s *pushSession) dispatch(evt *agentpb.AgentEvent) {
+var errEventNotStored = grpcstatus.Error(codes.Unavailable, "event_not_stored")
+
+// dispatch fails, closing the stream for the agent to resend from its last ack, only on an error that may clear on its own.
+func (s *pushSession) dispatch(evt *agentpb.AgentEvent) error {
 	dispatcher := s.impl.deps.Dispatcher
 	if dispatcher == nil {
-		return
+		return nil
 	}
-	if err := dispatcher.Dispatch(s.stream.Context(), s.agentID, evt); err != nil {
-		s.impl.deps.Logger.Error("Push: dispatch failed", "agent_id", s.agentID, "err", err)
-		if errors.Is(err, agentevent.ErrInvalid) {
-			_ = s.stream.Send(&agentpb.ServerMessage{
-				Payload: &agentpb.ServerMessage_Error{
-					Error: &agentpb.StreamError{Code: "invalid_argument", Message: err.Error()},
-				},
-			})
-		}
+	err := dispatcher.Dispatch(s.stream.Context(), s.agentID, evt)
+	if err == nil {
+		return nil
 	}
+	if retryable(err) {
+		s.impl.deps.Logger.Warn("Push: event not stored, closing the stream for the agent to resend it",
+			"agent_id", s.agentID, "seq", evt.GetSeq(), "err", err)
+		return errEventNotStored
+	}
+	s.impl.deps.Logger.Error("Push: dispatch failed", "agent_id", s.agentID, "err", err)
+	if errors.Is(err, agentevent.ErrInvalid) {
+		_ = s.stream.Send(&agentpb.ServerMessage{
+			Payload: &agentpb.ServerMessage_Error{
+				Error: &agentpb.StreamError{Code: "invalid_argument", Message: err.Error()},
+			},
+		})
+	}
+	return nil
+}
+
+func retryable(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
+		store.IsUnavailable(err) || store.IsBusy(err)
 }
 
 // touchLiveness records that the agent is alive. Any message proves it:

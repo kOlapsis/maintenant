@@ -433,7 +433,7 @@ func (h *AgentHandler) HandleListAgents(w http.ResponseWriter, r *http.Request) 
 		if connFilter != "" && connFilter != connState {
 			continue
 		}
-		out = append(out, AgentPayload(a, connState, h.spoolForAgent(a.AgentID), table))
+		out = append(out, h.agentView(a, connState, table))
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{"agents": out})
@@ -450,7 +450,7 @@ func (h *AgentHandler) HandleGetAgent(w http.ResponseWriter, r *http.Request) {
 		WriteStoreError(w, err, "Failed to get agent")
 		return
 	}
-	WriteJSON(w, http.StatusOK, AgentPayload(a, h.resolveConnectionState(a), h.spoolForAgent(a.AgentID), h.eolTable()))
+	WriteJSON(w, http.StatusOK, h.agentView(a, h.resolveConnectionState(a), h.eolTable()))
 }
 
 func (h *AgentHandler) HandleUpdateAgent(w http.ResponseWriter, r *http.Request) {
@@ -496,7 +496,7 @@ func (h *AgentHandler) HandleUpdateAgent(w http.ResponseWriter, r *http.Request)
 		"label":    *body.Label,
 	}})
 
-	WriteJSON(w, http.StatusOK, AgentPayload(a, h.resolveConnectionState(a), h.spoolForAgent(a.AgentID), h.eolTable()))
+	WriteJSON(w, http.StatusOK, h.agentView(a, h.resolveConnectionState(a), h.eolTable()))
 }
 
 func (h *AgentHandler) HandleRevokeAgent(w http.ResponseWriter, r *http.Request) {
@@ -633,6 +633,21 @@ func (h *AgentHandler) spoolForAgent(agentID string) map[string]any {
 		"dropped_since_connect": st.DroppedSinceConnect,
 		"reported_at":           st.ReportedAt,
 	}
+}
+
+// rejectionReporter is the optional part of the session registry that counts
+// the events refused for their observation time.
+type rejectionReporter interface {
+	RejectedEvents(agentID string) uint64
+}
+
+// agentView renders a for the API with what the session registry knows of it.
+func (h *AgentHandler) agentView(a *agent.Agent, connectionState string, table eol.Table) map[string]any {
+	p := AgentPayload(a, connectionState, h.spoolForAgent(a.AgentID), table)
+	if r, ok := h.sessions.(rejectionReporter); ok {
+		p["rejected_events"] = r.RejectedEvents(a.AgentID)
+	}
+	return p
 }
 
 // AgentPayload renders an agent for the API and for the agent.updated SSE event.

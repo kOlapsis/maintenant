@@ -47,7 +47,7 @@ func NewMultiHost(d extpoint.MultiHostDeps) extpoint.MultiHost {
 		}),
 		logger: d.Logger,
 	}
-	return extpoint.MultiHost{Sessions: sessions, Serve: m.serve}
+	return extpoint.MultiHost{Sessions: sessions, Serve: m.serve, Stop: m.server.Stop}
 }
 
 // StartWatchers starts the ring-buffer tick and the stale-agent watcher.

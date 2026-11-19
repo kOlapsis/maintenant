@@ -28,6 +28,9 @@ var (
 	ErrSessionClosed   = errors.New("session_closed")
 )
 
+// reasonResend raises no disconnect alert: the agent reconnects at once, and the stale watcher reports one that does not.
+const reasonResend = "resend"
+
 // CauseForReason maps a Close reason to the cause handed to the agent.
 func CauseForReason(reason string) error {
 	switch reason {
@@ -158,6 +161,8 @@ type Sessions struct {
 
 	certFingerprint string // guarded by mu
 	certSelfSigned  bool   // guarded by mu
+
+	rejectedEvents func(agentID string) uint64 // set once by New, before serving
 }
 
 // NewSessions creates an empty Sessions registry.
@@ -272,7 +277,7 @@ func (s *Sessions) remove(agentID string, only *activeStream, reason string) {
 	// removal (revoke/delete), so a pending disconnect alert is resolved even
 	// when the agent was already offline with no live session to close.
 	terminal := reason == "revoked" || reason == "deleted"
-	if s.alertHook != nil && (had || terminal) {
+	if s.alertHook != nil && (had || terminal) && reason != reasonResend {
 		s.mu.Lock()
 		if terminal {
 			delete(s.offlineReported, agentID)
@@ -483,6 +488,14 @@ func (s *Sessions) SpoolStatus(agentID string) *agentproto.SpoolState {
 		DroppedSinceConnect: stream.spoolDropped.Load(),
 		ReportedAt:          time.Unix(at, 0),
 	}
+}
+
+// RejectedEvents returns how many events of agentID were refused for their observation time since startup.
+func (s *Sessions) RejectedEvents(agentID string) uint64 {
+	if s.rejectedEvents == nil {
+		return 0
+	}
+	return s.rejectedEvents(agentID)
 }
 
 // EventsSeen returns the events_seen counter for agentID (0 if not connected).

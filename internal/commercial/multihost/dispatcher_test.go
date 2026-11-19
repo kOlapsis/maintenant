@@ -407,7 +407,7 @@ func TestDispatcher_FutureObservedAtBeyondSkewIsRejected(t *testing.T) {
 
 	err := d.Dispatch(context.Background(), dispatchAgentID, &agentpb.AgentEvent{
 		AgentId:    dispatchAgentID,
-		ObservedAt: timestamppb.New(time.Now().Add(5 * time.Minute)),
+		ObservedAt: timestamppb.New(time.Now().Add(maxClockSkew + time.Minute)),
 		Body:       &agentpb.AgentEvent_Container{Container: &agentpb.ContainerEvent{ContainerId: "ctr-future"}},
 	})
 

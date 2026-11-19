@@ -63,6 +63,9 @@ type Server struct {
 
 // New creates a Server. Call Start to begin accepting connections.
 func New(deps Deps) *Server {
+	if deps.Sessions != nil && deps.Dispatcher != nil {
+		deps.Sessions.rejectedEvents = deps.Dispatcher.RejectedEvents
+	}
 	return &Server{
 		impl: &ingestImpl{deps: deps, perIP: ratelimit.New(attemptsPerMinute/60.0, attemptsBurst, nil)},
 		deps: deps,
@@ -92,6 +95,7 @@ func (s *Server) Start(ctx context.Context, listen string, tlsCfg *tls.Config) e
 		grpc.ConnectionTimeout(connectionTimeout),
 		grpc.KeepaliveParams(keepalive.ServerParameters{MaxConnectionIdle: 5 * time.Minute, Time: 60 * time.Second, Timeout: 20 * time.Second}),
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{MinTime: 30 * time.Second, PermitWithoutStream: true}),
+		grpc.WaitForHandlers(true),
 	}
 	if s.deps.DemoMode {
 		opts = append(opts,
@@ -125,6 +129,23 @@ func (s *Server) Start(ctx context.Context, listen string, tlsCfg *tls.Config) e
 	}()
 
 	return nil
+}
+
+// Stop closes every agent stream and waits, within ctx, for their handlers to return.
+func (s *Server) Stop(ctx context.Context) {
+	if s.grpc == nil {
+		return
+	}
+	stopped := make(chan struct{})
+	go func() {
+		s.grpc.Stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-ctx.Done():
+		s.deps.Logger.Warn("agentserver: agent handlers still running at shutdown")
+	}
 }
 
 var errDemoMode = grpcstatus.Error(codes.PermissionDenied, "demo mode: this server does not accept agents")
