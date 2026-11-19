@@ -265,7 +265,7 @@ func Copy(ctx context.Context, src, dst *sql.DB, out io.Writer, confirm func(Pla
 	return report, nil
 }
 
-// A down heartbeat goes back to up with its deadline kept: only an overdue deadline raises it again.
+// neutralizeAlertLocks clears the alert locks of the carried monitors and the health of unhealthy containers, so a failure still present alerts again.
 func neutralizeAlertLocks(ctx context.Context, tx *sql.Tx) error {
 	for _, q := range []string{
 		`UPDATE endpoints SET alert_state='normal', consecutive_failures=0, consecutive_successes=0

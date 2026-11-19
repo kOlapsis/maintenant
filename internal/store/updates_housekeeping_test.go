@@ -67,7 +67,7 @@ func TestCleanupExpired_KeepsPendingUpdatesForTheNextScanToResolve(t *testing.T)
 	_, err = us.CleanupExpired(ctx, time.Now().Add(-30*24*time.Hour))
 	require.NoError(t, err)
 
-	pending, err := us.GetImageUpdateByContainer(ctx, "ext-web")
+	pending, err := us.GetAgentImageUpdate(ctx, uid.LocalAgent, "ext-web")
 	require.NoError(t, err)
 	require.NotNil(t, pending, "an update still pending must survive the retention")
 
