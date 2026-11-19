@@ -25,7 +25,15 @@ func TestParseTagOSVariant(t *testing.T) {
 		{"noble", "Ubuntu:24.04", true},
 		{"jammy", "Ubuntu:22.04", true},
 		{"focal", "Ubuntu:20.04", true},
+		{"trixie", "Debian:13", true},
+		{"trixie-slim", "Debian:13", true},
+		{"alpine3.22", "Alpine:3.22", true},
+		{"alpine3.23", "Alpine:3.23", true},
 
+		{"12-trixie", "Debian:13", true},
+		{"3.2-slim-trixie", "Debian:13", true},
+		{"1.27-alpine3.22", "Alpine:3.22", true},
+		{"1.27-alpine3.23", "Alpine:3.23", true},
 		// Suffix variants
 		{"1.25-alpine", "Alpine:3.20", true},
 		{"1.25-alpine3.19", "Alpine:3.19", true},

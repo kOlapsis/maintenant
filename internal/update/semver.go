@@ -4,6 +4,7 @@
 package update
 
 import (
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -11,33 +12,26 @@ import (
 	"github.com/Masterminds/semver/v3"
 )
 
-// knownVariantSuffixes lists OS/distro suffixes that are NOT semver prereleases.
-// Ordered longest-first so "-slim-bookworm" matches before "-bookworm".
-var knownVariantSuffixes = []string{
-	"-slim-bookworm",
-	"-slim-bullseye",
-	"-slim-buster",
-	"-alpine3.21",
-	"-alpine3.20",
-	"-alpine3.19",
-	"-alpine3.18",
-	"-alpine",
-	"-bookworm",
-	"-bullseye",
-	"-buster",
-	"-noble",
-	"-jammy",
-	"-focal",
-}
+// prereleaseIdent matches the usual semver pre-release identifiers, which are not image variants.
+var prereleaseIdent = regexp.MustCompile(`(?i)^(rc|beta|alpha|pre|dev)[0-9.]*$`)
 
 // splitVariant separates a Docker tag into its version part and variant suffix.
-// e.g. "18.3-alpine" → ("18.3", "-alpine"), "3.19.1" → ("3.19.1", "")
+// A variant is what follows the first "-" that starts with a letter and is not a pre-release identifier.
+// e.g. "18.3-alpine" → ("18.3", "-alpine"), "3.19.1" → ("3.19.1", ""), "1.2.3-rc1" → ("1.2.3-rc1", "")
 func splitVariant(tag string) (version, variant string) {
-	lower := strings.ToLower(tag)
-	for _, suffix := range knownVariantSuffixes {
-		if strings.HasSuffix(lower, suffix) {
-			return tag[:len(tag)-len(suffix)], tag[len(tag)-len(suffix):]
+	for i := 0; i+1 < len(tag); i++ {
+		if tag[i] != '-' {
+			continue
 		}
+		rest := tag[i+1:]
+		if c := rest[0] | 0x20; c < 'a' || c > 'z' {
+			continue
+		}
+		ident, _, _ := strings.Cut(rest, "-")
+		if prereleaseIdent.MatchString(ident) {
+			continue
+		}
+		return tag[:i], tag[i:]
 	}
 	return tag, ""
 }
