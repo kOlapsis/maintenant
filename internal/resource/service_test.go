@@ -55,11 +55,26 @@ func (m *mockResourceStore) GetAlertConfig(_ context.Context, containerID string
 	return &cp, nil
 }
 
-func (m *mockResourceStore) UpsertAlertConfig(_ context.Context, cfg *ResourceAlertConfig) error {
+func (m *mockResourceStore) UpdateAlertSettings(_ context.Context, containerID string, cpu, mem float64, enabled bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	cp := *cfg
-	m.alertConfigs[cfg.ContainerID] = &cp
+	cfg, ok := m.alertConfigs[containerID]
+	if !ok {
+		cfg = &ResourceAlertConfig{ContainerID: containerID, AlertState: AlertStateNormal}
+		m.alertConfigs[containerID] = cfg
+	}
+	cfg.CPUThreshold, cfg.MemThreshold, cfg.Enabled = cpu, mem, enabled
+	return nil
+}
+
+func (m *mockResourceStore) UpdateAlertState(_ context.Context, containerID string, state AlertState, cpuBreaches, memBreaches int, lastAlertedAt *time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cfg, ok := m.alertConfigs[containerID]
+	if !ok {
+		return nil
+	}
+	cfg.AlertState, cfg.CPUConsecutiveBreaches, cfg.MemConsecutiveBreaches, cfg.LastAlertedAt = state, cpuBreaches, memBreaches, lastAlertedAt
 	return nil
 }
 

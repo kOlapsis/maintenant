@@ -154,30 +154,37 @@ func (s *ResourceStore) GetAlertConfig(ctx context.Context, containerID string) 
 	return scanAlertConfig(row)
 }
 
-func (s *ResourceStore) UpsertAlertConfig(ctx context.Context, cfg *resource.ResourceAlertConfig) error {
+func (s *ResourceStore) UpdateAlertSettings(ctx context.Context, containerID string, cpuThreshold, memThreshold float64, enabled bool) error {
 	now := time.Now().Unix()
-	var lastAlerted *int64
-	if cfg.LastAlertedAt != nil {
-		v := cfg.LastAlertedAt.Unix()
-		lastAlerted = &v
-	}
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO resource_alert_configs (id, container_id, cpu_threshold, mem_threshold, enabled, alert_state,
 			cpu_consecutive_breaches, mem_consecutive_breaches, last_alerted_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, 'normal', 0, 0, NULL, ?, ?)
 		ON CONFLICT(container_id) DO UPDATE SET
 			cpu_threshold=excluded.cpu_threshold, mem_threshold=excluded.mem_threshold,
-			enabled=excluded.enabled, alert_state=excluded.alert_state,
-			cpu_consecutive_breaches=excluded.cpu_consecutive_breaches,
-			mem_consecutive_breaches=excluded.mem_consecutive_breaches,
-			last_alerted_at=excluded.last_alerted_at, updated_at=excluded.updated_at`,
-		uid.New(), cfg.ContainerID, cfg.CPUThreshold, cfg.MemThreshold,
-		boolToInt(cfg.Enabled), string(cfg.AlertState),
-		cfg.CPUConsecutiveBreaches, cfg.MemConsecutiveBreaches,
-		lastAlerted, now, now,
+			enabled=excluded.enabled, updated_at=excluded.updated_at`,
+		uid.New(), containerID, cpuThreshold, memThreshold, boolToInt(enabled), now, now,
 	)
 	if err != nil {
-		return fmt.Errorf("upsert alert config: %w", err)
+		return fmt.Errorf("update alert settings: %w", err)
+	}
+	return nil
+}
+
+func (s *ResourceStore) UpdateAlertState(ctx context.Context, containerID string, state resource.AlertState, cpuBreaches, memBreaches int, lastAlertedAt *time.Time) error {
+	var lastAlerted *int64
+	if lastAlertedAt != nil {
+		v := lastAlertedAt.Unix()
+		lastAlerted = &v
+	}
+	_, err := s.writer.Exec(ctx,
+		`UPDATE resource_alert_configs SET alert_state = ?, cpu_consecutive_breaches = ?,
+			mem_consecutive_breaches = ?, last_alerted_at = ?, updated_at = ?
+		WHERE container_id = ?`,
+		string(state), cpuBreaches, memBreaches, lastAlerted, time.Now().Unix(), containerID,
+	)
+	if err != nil {
+		return fmt.Errorf("update alert state: %w", err)
 	}
 	return nil
 }

@@ -322,7 +322,7 @@ func (h *ResourceHandler) HandleUpsertAlertConfig(w http.ResponseWriter, r *http
 	var input struct {
 		CPUThreshold float64 `json:"cpu_threshold"`
 		MemThreshold float64 `json:"mem_threshold"`
-		Enabled      bool    `json:"enabled"`
+		Enabled      *bool   `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		WriteError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid request body")
@@ -338,24 +338,9 @@ func (h *ResourceHandler) HandleUpsertAlertConfig(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Get existing config to preserve state fields.
-	existing, _ := h.service.GetAlertConfig(r.Context(), id)
-	cfg := &resource.ResourceAlertConfig{
-		ContainerID:  id,
-		CPUThreshold: input.CPUThreshold,
-		MemThreshold: input.MemThreshold,
-		Enabled:      input.Enabled,
-		AlertState:   resource.AlertStateNormal,
-	}
-	if existing != nil {
-		cfg.AlertState = existing.AlertState
-		cfg.CPUConsecutiveBreaches = existing.CPUConsecutiveBreaches
-		cfg.MemConsecutiveBreaches = existing.MemConsecutiveBreaches
-		cfg.LastAlertedAt = existing.LastAlertedAt
-	}
-
-	if err := h.service.UpsertAlertConfig(r.Context(), cfg); err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to save alert config")
+	cfg, err := h.service.SetAlertConfig(r.Context(), id, input.CPUThreshold, input.MemThreshold, input.Enabled)
+	if err != nil {
+		WriteStoreError(w, err, "Failed to save alert config")
 		return
 	}
 
