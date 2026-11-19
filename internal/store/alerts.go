@@ -175,14 +175,13 @@ func (s *AlertStoreImpl) ListActiveAlerts(ctx context.Context) ([]*alert.Alert, 
 }
 
 func (s *AlertStoreImpl) DeleteInactiveAlertsOlderThan(ctx context.Context, before time.Time) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`DELETE FROM alerts WHERE status <> 'active' AND COALESCE(resolved_at, created_at) < ?`,
-		before.Unix(),
-	)
-	if err != nil {
-		return 0, fmt.Errorf("delete old alerts: %w", err)
-	}
-	return res.RowsAffected, nil
+	deleted, _, err := s.deleteInactiveAlertsOlderThan(ctx, before, batchOpts{})
+	return deleted, err
+}
+
+func (s *AlertStoreImpl) deleteInactiveAlertsOlderThan(ctx context.Context, before time.Time, o batchOpts) (int64, bool, error) {
+	return deleteRowsWhere(ctx, s.writer, o, "alerts",
+		`status <> 'active' AND COALESCE(resolved_at, created_at) < ?`, before.Unix())
 }
 
 // scanAlertFromRow scans a single alert from any type implementing rowScanner.
