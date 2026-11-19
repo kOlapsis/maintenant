@@ -110,7 +110,7 @@ When an alert is acknowledged, any active escalation run is immediately stopped 
 Acknowledged by <who> at <time in RFC 3339, UTC>: <original alert message>
 ```
 
-When no name was recorded, the text is `Acknowledged at <time>: <original alert message>`. A run that has not reached its first level has notified nobody, so it sends no notice. No level goes out once the acknowledgment or the resolution is recorded, even when an evaluation is under way at that moment: a channel whose delivery was reserved just before still receives the acknowledgment notice after it.
+When no name was recorded, the text is `Acknowledged at <time>: <original alert message>`. A run with no `sent` or `pending` delivery yet has notified nobody, so it sends no notice. No level goes out once the acknowledgment or the resolution is recorded, even when an evaluation is under way at that moment: a channel whose delivery was reserved just before still receives the acknowledgment notice after it.
 
 ### Resolution stops escalation
 

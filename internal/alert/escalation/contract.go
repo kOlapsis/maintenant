@@ -15,7 +15,7 @@ var (
 	ErrPolicyNotFound   = errors.New("policy_not_found")
 	ErrRunNotFound      = errors.New("run_not_found")
 
-	// ErrDeliveryDuplicate is returned by Store.InsertDelivery when a row
+	// ErrDeliveryDuplicate is returned by Store.InsertDelivery and Store.ReserveDelivery when a row
 	// for (run_id, level_index, channel_id) already exists. This signals the
 	// runner that another worker has already reserved this delivery slot
 	// (idempotence guarantee R4 — reserve-then-deliver).

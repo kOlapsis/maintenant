@@ -63,8 +63,8 @@ type RunnerDeps struct {
 // notifications via the provided alert.Notifier — its delivery rows live in
 // escalation_deliveries (separate from notification_deliveries).
 //
-// Idempotence (R4): InsertDelivery enforces a UNIQUE (run_id, level_index,
-// channel_id) constraint, so a crash between InsertDelivery and the network
+// Idempotence (R4): ReserveDelivery enforces a UNIQUE (run_id, level_index,
+// channel_id) constraint, so a crash between ReserveDelivery and the network
 // send is recovered at the next cycle without duplicate notifications.
 type Runner struct {
 	store         esc.Store
@@ -469,8 +469,8 @@ func (r *Runner) reserve(ctx context.Context, d *esc.Delivery) (bool, error) {
 }
 
 // dispatchToChannel reserves a delivery row (UNIQUE constraint catches crash-recovery
-// duplicates, FR-022) and dispatches the send in a goroutine if the channel is enabled.
-// One channel's failure must not block the others.
+// duplicates, FR-022): a pending one sent in a goroutine for an enabled channel, a failed
+// one that traces a disabled or deleted channel. One channel's failure must not block the others.
 func (r *Runner) dispatchToChannel(ctx context.Context, runID string, levelIndex int, chID string, a *alert.Alert, now time.Time) error {
 	ch, err := r.channelStore.GetChannel(ctx, chID)
 	if err != nil {
