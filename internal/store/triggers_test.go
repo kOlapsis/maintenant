@@ -208,24 +208,6 @@ func TestTriggerStore_Delete(t *testing.T) {
 	assert.Nil(t, got)
 }
 
-func TestTriggerStore_SetChannels_AtomicReplace(t *testing.T) {
-	store, rawDB := setupTriggerTestDB(t)
-	ctx := context.Background()
-
-	chID1 := seedChannelForTrigger(t, rawDB, "set-ch1")
-	chID2 := seedChannelForTrigger(t, rawDB, "set-ch2")
-	chID3 := seedChannelForTrigger(t, rawDB, "set-ch3")
-
-	id, err := store.InsertTrigger(ctx, &alert.AlertTrigger{Name: "SetCh", Enabled: true, ChannelIDs: []string{chID1, chID2}})
-	require.NoError(t, err)
-
-	require.NoError(t, store.SetChannels(ctx, id, []string{chID3}))
-
-	got, err := store.GetTrigger(ctx, id)
-	require.NoError(t, err)
-	assert.Equal(t, []string{chID3}, got.ChannelIDs)
-}
-
 func TestTriggerStore_ListTriggersForChannel(t *testing.T) {
 	store, rawDB := setupTriggerTestDB(t)
 	ctx := context.Background()

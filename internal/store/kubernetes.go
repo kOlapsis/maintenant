@@ -33,17 +33,19 @@ func NewKubernetesStore(d *DB) *KubernetesStore {
 // supersedes the stored set: wipe the agent's rows, then insert the new set.
 func (s *KubernetesStore) ReplaceNamespacesForAgent(ctx context.Context, agentID string, namespaces []string) error {
 	agentID = uid.Agent(agentID)
-	if _, err := s.writer.Exec(ctx, `DELETE FROM kubernetes_namespaces WHERE agent_id=?`, agentID); err != nil {
-		return fmt.Errorf("clear namespaces for agent %s: %w", agentID, err)
-	}
-	for _, ns := range namespaces {
-		if _, err := s.writer.Exec(ctx,
-			`INSERT INTO kubernetes_namespaces (id, agent_id, name) VALUES (?, ?, ?)`,
-			uid.Namespace(agentID, ns), agentID, ns); err != nil {
-			return fmt.Errorf("insert namespace %s: %w", ns, err)
+	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM kubernetes_namespaces WHERE agent_id=?`, agentID); err != nil {
+			return fmt.Errorf("clear namespaces for agent %s: %w", agentID, err)
 		}
-	}
-	return nil
+		for _, ns := range namespaces {
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO kubernetes_namespaces (id, agent_id, name) VALUES (?, ?, ?)`,
+				uid.Namespace(agentID, ns), agentID, ns); err != nil {
+				return fmt.Errorf("insert namespace %s: %w", ns, err)
+			}
+		}
+		return nil
+	})
 }
 
 // ReplaceWorkloadsForAgent reconciles the agent's workloads.
@@ -286,22 +288,24 @@ func (s *KubernetesStore) ListPods(ctx context.Context, agentID string, namespac
 // snapshot fully supersedes the stored set: wipe the agent's rows, then insert.
 func (s *KubernetesStore) ReplaceEventsForAgent(ctx context.Context, agentID string, events []kubernetes.K8sEventRef) error {
 	agentID = uid.Agent(agentID)
-	if _, err := s.writer.Exec(ctx, `DELETE FROM kubernetes_events WHERE agent_id=?`, agentID); err != nil {
-		return fmt.Errorf("clear k8s events for agent %s: %w", agentID, err)
-	}
-	for i := range events {
-		e := &events[i]
-		if _, err := s.writer.Exec(ctx,
-			`INSERT INTO kubernetes_events (id, agent_id, involved_kind, involved_namespace, involved_name,
-				type, reason, message, source, first_seen, last_seen, count)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			uid.New(), agentID, e.InvolvedKind, e.InvolvedNamespace, e.InvolvedName,
-			e.Type, e.Reason, e.Message, e.Source, e.FirstSeen.Unix(), e.LastSeen.Unix(), e.Count,
-		); err != nil {
-			return fmt.Errorf("insert k8s event for %s/%s: %w", e.InvolvedNamespace, e.InvolvedName, err)
+	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM kubernetes_events WHERE agent_id=?`, agentID); err != nil {
+			return fmt.Errorf("clear k8s events for agent %s: %w", agentID, err)
 		}
-	}
-	return nil
+		for i := range events {
+			e := &events[i]
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO kubernetes_events (id, agent_id, involved_kind, involved_namespace, involved_name,
+					type, reason, message, source, first_seen, last_seen, count)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				uid.New(), agentID, e.InvolvedKind, e.InvolvedNamespace, e.InvolvedName,
+				e.Type, e.Reason, e.Message, e.Source, e.FirstSeen.Unix(), e.LastSeen.Unix(), e.Count,
+			); err != nil {
+				return fmt.Errorf("insert k8s event for %s/%s: %w", e.InvolvedNamespace, e.InvolvedName, err)
+			}
+		}
+		return nil
+	})
 }
 
 // ListEventsForObject returns the agent's events concerning a single object

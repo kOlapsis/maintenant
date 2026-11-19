@@ -6,6 +6,7 @@ package v1
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/mail"
@@ -108,11 +109,18 @@ func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *htt
 			WriteError(w, http.StatusBadRequest, "validation", "explicit-mode components require at least one monitor")
 			return
 		}
+		type monitorKey struct{ typ, id string }
+		seen := make(map[monitorKey]bool, len(req.Monitors))
 		for i, m := range req.Monitors {
 			if !validTypes[m.Type] {
 				WriteError(w, http.StatusBadRequest, "validation", "invalid monitor type: "+m.Type)
 				return
 			}
+			if seen[monitorKey{m.Type, m.ID}] {
+				WriteError(w, http.StatusBadRequest, "validation", fmt.Sprintf("monitors[%d] repeats %s %q", i, m.Type, m.ID))
+				return
+			}
+			seen[monitorKey{m.Type, m.ID}] = true
 			label, err := status.ValidateMonitorLabel(m.Label)
 			if err != nil {
 				WriteError(w, http.StatusBadRequest, "validation", err.Error())

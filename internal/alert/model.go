@@ -237,7 +237,6 @@ type TriggerStore interface {
 	ListEnabledTriggers(ctx context.Context) ([]*AlertTrigger, error)
 	UpdateTrigger(ctx context.Context, t *AlertTrigger) error
 	DeleteTrigger(ctx context.Context, id string) error
-	SetChannels(ctx context.Context, triggerID string, channelIDs []string) error
 	ListChannelsForTrigger(ctx context.Context, triggerID string) ([]string, error)
 	ListTriggersForChannel(ctx context.Context, channelID string) ([]*AlertTrigger, error)
 }
