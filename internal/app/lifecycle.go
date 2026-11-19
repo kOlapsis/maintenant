@@ -299,9 +299,7 @@ func (a *App) startContainerDownCheck(ctx context.Context) {
 
 var containerReconcileInterval = 30 * time.Second
 
-// startContainerReconcile re-aligns the stored local containers with the runtime
-// every tick, so a lost event or a change made while the server was down does not last.
-// It runs for one connection cycle and stops when until closes.
+// startContainerReconcile re-aligns the stored local containers with the runtime every tick, for one connection cycle.
 func (a *App) startContainerReconcile(ctx context.Context, until <-chan struct{}) {
 	ticker := time.NewTicker(containerReconcileInterval)
 	defer ticker.Stop()
