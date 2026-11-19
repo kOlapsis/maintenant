@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/mail"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
@@ -27,6 +28,7 @@ type StatusAdminHandler struct {
 	maintRunner status.MaintenanceRunner
 	statusSvc   *status.Service
 	mailer      status.Mailer
+	componentMu sync.Mutex
 }
 
 // NewStatusAdminHandler creates a status admin handler; a nil mailer means SMTP is not configured, a nil runner that no window ever runs.
@@ -138,6 +140,9 @@ func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *htt
 			return
 		}
 	}
+
+	h.componentMu.Lock()
+	defer h.componentMu.Unlock()
 
 	// Component cap, read from the single declaration. -1 means unlimited.
 	if limit := extension.Limit(extension.ResourceStatusComponents); limit >= 0 {

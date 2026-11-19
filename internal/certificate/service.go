@@ -236,15 +236,8 @@ func (s *Service) CreateStandalone(ctx context.Context, input CreateCertificateI
 		return nil, nil, ErrDuplicateMonitor
 	}
 
-	fits, err := s.newMonitorFits(ctx)
-	if err != nil {
+	if err := s.createWithinLimit(ctx, monitor); err != nil {
 		return nil, nil, err
-	}
-	if !fits {
-		return nil, nil, ErrLimitReached
-	}
-	if _, err := s.store.CreateMonitor(ctx, monitor); err != nil {
-		return nil, nil, fmt.Errorf("create standalone monitor: %w", err)
 	}
 	s.applyLimitLogged(ctx)
 
@@ -1093,6 +1086,22 @@ func (s *Service) applyLimitLogged(ctx context.Context) {
 	if err := s.ApplyLimit(ctx); err != nil {
 		s.logger.Error("certificate: apply limit", "error", err)
 	}
+}
+
+func (s *Service) createWithinLimit(ctx context.Context, monitor *CertMonitor) error {
+	s.limitMu.Lock()
+	defer s.limitMu.Unlock()
+	fits, err := s.newMonitorFits(ctx)
+	if err != nil {
+		return err
+	}
+	if !fits {
+		return ErrLimitReached
+	}
+	if _, err := s.store.CreateMonitor(ctx, monitor); err != nil {
+		return fmt.Errorf("create standalone monitor: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) newMonitorFits(ctx context.Context) (bool, error) {

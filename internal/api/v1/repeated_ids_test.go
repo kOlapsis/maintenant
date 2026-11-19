@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -98,4 +99,32 @@ func TestStatusAdmin_RefusesARepeatedMonitorOnCreation(t *testing.T) {
 	rec = serve(t, admin, http.MethodPost, "/api/v1/status/components",
 		`{"display_name":"API","monitors":[{"type":"endpoint","id":"e1"},{"type":"container","id":"e1"}]}`)
 	assert.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+}
+
+func TestCreateComponent_ConcurrentCallsFillTheCapOnce(t *testing.T) {
+	withEdition(t, extension.Community)
+	create := newCreator(t, extension.ResourceStatusComponents)
+	for i := 0; i < 2; i++ {
+		require.Equal(t, http.StatusCreated, create(i).Code)
+	}
+
+	codes := make(chan int, 12)
+	var wg sync.WaitGroup
+	for i := 2; i < 14; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			codes <- create(i).Code
+		}()
+	}
+	wg.Wait()
+	close(codes)
+
+	created := 0
+	for code := range codes {
+		if code == http.StatusCreated {
+			created++
+		}
+	}
+	assert.Equal(t, 1, created, "one place is left under the cap of three")
 }
