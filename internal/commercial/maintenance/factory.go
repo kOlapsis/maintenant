@@ -5,15 +5,25 @@
 package maintenance
 
 import (
+	"context"
+
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/extpoint"
 )
 
-// NewMaintenanceSuppressor builds the suppressor when the running edition opens maintenance windows, nil otherwise.
-func NewMaintenanceSuppressor(d extpoint.SuppressorDeps) alert.MaintenanceSuppressor {
+type editionGated struct {
+	inner alert.MaintenanceSuppressor
+}
+
+func (g editionGated) IsSuppressed(ctx context.Context, source, entityType, entityID string) (bool, error) {
 	if !extension.Allows(extension.CapMaintenanceWindows) {
-		return nil
+		return false, nil
 	}
-	return NewSuppressor(d.Windows, d.Logger.With("component", "maintenance-suppressor"))
+	return g.inner.IsSuppressed(ctx, source, entityType, entityID)
+}
+
+// NewMaintenanceSuppressor builds the suppressor in every edition; it suppresses only while the running edition opens maintenance windows.
+func NewMaintenanceSuppressor(d extpoint.SuppressorDeps) alert.MaintenanceSuppressor {
+	return editionGated{inner: NewSuppressor(d.Windows, d.Logger.With("component", "maintenance-suppressor"))}
 }
