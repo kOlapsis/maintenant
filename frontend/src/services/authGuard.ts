@@ -102,7 +102,6 @@ function purgeApiCaches(): void {
 export function reportAuthChallenge(): void {
   if (sessionExpired.value) return
   sessionExpired.value = true
-  purgeApiCaches()
 
   if (Date.now() - lastReauthAt() < REAUTH_LOOP_WINDOW_MS) {
     // We just came back from the proxy and it is challenging us again: stop
@@ -169,8 +168,9 @@ export async function probeAuth(): Promise<boolean> {
   }
 }
 
-/** Strips the re-auth param from the address bar once the app has booted. */
+/** Drops api-* caches left by older service workers, then strips the re-auth param from the address bar. */
 export function initAuthGuard(): void {
+  purgeApiCaches()
   const url = new URL(window.location.href)
   if (!url.searchParams.has(REAUTH_PARAM)) return
   url.searchParams.delete(REAUTH_PARAM)

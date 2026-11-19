@@ -1,7 +1,7 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
 // SPDX-License-Identifier: Apache-2.0
 
-// Acceptance tests of 047-audit-small-fixes, C13: the service worker never serves sensitive answers from a cache.
+// Acceptance tests of 047-audit-small-fixes, C13: the service worker never caches an API answer.
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -22,6 +22,8 @@ function runtimeRoutes(): Route[] {
     routes.push({ pattern: new RegExp(m[1]!, m[2]), handler: m[3]! })
   }
   expect(routes.length).toBeGreaterThan(0)
+  // A urlPattern this parser cannot read (string, function) would slip past every assertion below.
+  expect(routes).toHaveLength(block.match(/urlPattern\s*:/g)!.length)
   return routes
 }
 
@@ -31,38 +33,48 @@ function handlerFor(path: string): string | undefined {
 }
 
 describe('service worker runtime caching', () => {
-  // FR-007, US3 scenario 1: logs, subscribers, escalation, agents, security and CVE are NetworkOnly.
+  // FR-007, US3 scenario 1, SC-005: no runtimeCaching rule targets /api/, sensitive families or not.
   it.each([
     '/api/v1/containers/0123abcd/logs',
     '/api/v1/containers/0123abcd/logs?lines=200',
     '/api/v1/status/subscribers',
     '/api/v1/escalation-policies',
     '/api/v1/escalation-policies/p1',
-    '/api/v1/escalation-policies/p1/runs',
+    '/api/v1/escalation-runs/r1',
     '/api/v1/agents',
-    '/api/v1/agents/a1',
     '/api/v1/agents/enrollment-tokens',
     '/api/v1/security/insights',
-    '/api/v1/security/summary',
     '/api/v1/security/posture/containers',
-    '/api/v1/security/acknowledgments',
     '/api/v1/cve',
     '/api/v1/cve/0123abcd',
-  ])('serves %s from the network only', (path) => {
-    expect(handlerFor(path)).toBe('NetworkOnly')
+    '/api/v1/containers',
+    '/api/v1/endpoints',
+    '/api/v1/alerts',
+    '/api/v1/dashboard/summary',
+    '/api/v1/edition',
+    '/api/v1/edition?__probe=1',
+    '/api/v1/containers/events',
+    '/api/v1/channels',
+    '/api/v1/status/smtp',
+    '/api/v1/webhooks',
+  ])('leaves %s to the network, untouched by any rule', (path) => {
+    expect(handlerFor(path)).toBeUndefined()
   })
 
-  // FR-007, US3 scenario 1: the other API routes keep their strategy.
+  // FR-007, US3 scenario 1: static files keep CacheFirst.
   it.each([
-    ['/api/v1/containers', 'NetworkFirst'],
-    ['/api/v1/endpoints', 'NetworkFirst'],
-    ['/api/v1/alerts', 'NetworkFirst'],
-    ['/api/v1/dashboard/summary', 'NetworkFirst'],
-    ['/api/v1/edition?__probe=1', 'NetworkOnly'],
-    ['/api/v1/containers/events', undefined],
-    ['/api/v1/channels', undefined],
-    ['/assets/index-abc123.js', 'CacheFirst'],
-  ])('keeps %s on %s', (path, handler) => {
-    expect(handlerFor(path)).toBe(handler)
+    '/assets/index-abc123.js',
+    '/assets/index-abc123.css',
+    '/assets/inter-latin.woff2',
+    '/icons/icon-192.png',
+    '/logo.svg',
+    '/favicon.ico',
+  ])('keeps %s on CacheFirst', (path) => {
+    expect(handlerFor(path)).toBe('CacheFirst')
+  })
+
+  // FR-007: only static files stay cached, so no cache of the config may be named api-*.
+  it('declares no api-* cache', () => {
+    expect(source).not.toMatch(/cacheName:\s*[`'"]api-/)
   })
 })
