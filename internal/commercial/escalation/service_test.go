@@ -130,8 +130,11 @@ type mockChannelStore struct{}
 func (m *mockChannelStore) InsertChannel(_ context.Context, _ *alert.NotificationChannel) (string, error) {
 	return "1", nil
 }
-func (m *mockChannelStore) GetChannel(_ context.Context, _ string) (*alert.NotificationChannel, error) {
-	return &alert.NotificationChannel{ID: "1", Name: "test", Enabled: true}, nil
+func (m *mockChannelStore) GetChannel(_ context.Context, id string) (*alert.NotificationChannel, error) {
+	if id != "1" {
+		return nil, nil
+	}
+	return &alert.NotificationChannel{ID: id, Name: "test", Enabled: true}, nil
 }
 func (m *mockChannelStore) ListChannels(_ context.Context) ([]*alert.NotificationChannel, error) {
 	return nil, nil

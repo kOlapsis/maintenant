@@ -119,6 +119,11 @@ func validateRequest(req esc.PolicyRequest) error {
 	if len(req.Levels) > esc.MaxLevels {
 		return fmt.Errorf("field=levels: at most %d levels are allowed, got %d: %w", esc.MaxLevels, len(req.Levels), esc.ErrValidationFailed)
 	}
+	for i, sev := range req.Filters.Severities {
+		if !alert.IsSeverity(sev) {
+			return fmt.Errorf("field=filters.severities[%d]: %q is not one of critical, warning, info: %w", i, sev, esc.ErrValidationFailed)
+		}
+	}
 	for i, lvl := range req.Levels {
 		if lvl.DelaySeconds < 60 || lvl.DelaySeconds > 86400 {
 			return fmt.Errorf("field=levels[%d].delay_seconds: must be between 60 and 86400: %w", i, esc.ErrValidationFailed)
@@ -129,13 +134,41 @@ func validateRequest(req esc.PolicyRequest) error {
 		if i > 0 && req.Levels[i].DelaySeconds-req.Levels[i-1].DelaySeconds < 60 {
 			return fmt.Errorf("field=levels[%d].delay_seconds: must be at least 60 seconds after the previous level: %w", i, esc.ErrValidationFailed)
 		}
+		seen := make(map[string]struct{}, len(lvl.ChannelIDs))
+		for _, id := range lvl.ChannelIDs {
+			if id == "" {
+				return fmt.Errorf("field=levels[%d].channel_ids: channel id must not be empty: %w", i, esc.ErrValidationFailed)
+			}
+			if _, dup := seen[id]; dup {
+				return fmt.Errorf("field=levels[%d].channel_ids: channel %s is listed twice: %w", i, id, esc.ErrValidationFailed)
+			}
+			seen[id] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func (s *Service) validatePolicy(ctx context.Context, req esc.PolicyRequest) error {
+	if err := validateRequest(req); err != nil {
+		return err
+	}
+	for i, lvl := range req.Levels {
+		for _, id := range lvl.ChannelIDs {
+			ch, err := s.channelStore.GetChannel(ctx, id)
+			if err != nil {
+				return fmt.Errorf("validate channel %s: %w", id, err)
+			}
+			if ch == nil {
+				return fmt.Errorf("field=levels[%d].channel_ids: channel %s does not exist, channel_ids takes ids and not names: %w", i, id, esc.ErrValidationFailed)
+			}
+		}
 	}
 	return nil
 }
 
 // CreatePolicy validates and persists a new escalation policy.
 func (s *Service) CreatePolicy(ctx context.Context, req esc.PolicyRequest) (*esc.Policy, error) {
-	if err := validateRequest(req); err != nil {
+	if err := s.validatePolicy(ctx, req); err != nil {
 		return nil, err
 	}
 
@@ -219,7 +252,7 @@ func (s *Service) UpdatePolicy(ctx context.Context, id string, req esc.PolicyReq
 		return nil, esc.ErrPolicyNotFound
 	}
 
-	if err := validateRequest(req); err != nil {
+	if err := s.validatePolicy(ctx, req); err != nil {
 		return nil, err
 	}
 

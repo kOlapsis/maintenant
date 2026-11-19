@@ -132,6 +132,9 @@ func (m *mcpChannelStore) InsertChannel(_ context.Context, _ *alert.Notification
 	return "1", nil
 }
 func (m *mcpChannelStore) GetChannel(_ context.Context, id string) (*alert.NotificationChannel, error) {
+	if id != "1" {
+		return nil, nil
+	}
 	return &alert.NotificationChannel{ID: id, Name: "chan", Enabled: true}, nil
 }
 func (m *mcpChannelStore) ListChannels(_ context.Context) ([]*alert.NotificationChannel, error) {

@@ -44,6 +44,11 @@ const (
 	SeverityInfo     = "info"
 )
 
+// IsSeverity reports whether s is one of the severity levels the engine emits.
+func IsSeverity(s string) bool {
+	return s == SeverityCritical || s == SeverityWarning || s == SeverityInfo
+}
+
 // Delivery statuses.
 const (
 	DeliveryPending   = "pending"

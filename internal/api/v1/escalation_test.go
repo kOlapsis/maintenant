@@ -135,6 +135,9 @@ func (m *escalationTestChannelStore) InsertChannel(_ context.Context, _ *alert.N
 	return "1", nil
 }
 func (m *escalationTestChannelStore) GetChannel(_ context.Context, id string) (*alert.NotificationChannel, error) {
+	if id != "1" {
+		return nil, nil
+	}
 	return &alert.NotificationChannel{ID: id, Name: "test-channel", Enabled: true}, nil
 }
 func (m *escalationTestChannelStore) ListChannels(_ context.Context) ([]*alert.NotificationChannel, error) {
