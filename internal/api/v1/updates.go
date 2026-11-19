@@ -503,8 +503,11 @@ func (h *UpdateHandler) HandleDeleteExclusion(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// requestAgent names the agent a container route acts on: the only agent that runs externalID, else the local runtime.
+// requestAgent names the agent a container route acts on: ?agent_id=, else the only agent that runs externalID, else the local runtime.
 func requestAgent(r *http.Request, s update.UpdateStore, externalID string) (string, error) {
+	if agentID := agentScopeParam(r); agentID != "" {
+		return agentID, nil
+	}
 	return s.ContainerAgent(r.Context(), externalID)
 }
 

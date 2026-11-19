@@ -744,7 +744,7 @@ All routes are open in every edition. Two response fields depend on the edition:
 | `POST` | `/api/v1/updates/exclusions` | Create an exclusion |
 | `DELETE` | `/api/v1/updates/exclusions/{id}` | Delete an exclusion |
 
-`{container_id}` is the container's external id (the runtime id; for Kubernetes `namespace/Kind/name`, slashes included).
+`{container_id}` is the container's external id (the runtime id; for Kubernetes `namespace/Kind/name`, slashes included). Two agents can report the same external id, two Kubernetes clusters running the same workload for instance: `?agent_id=` names the agent, and without it a route acts on the only agent running that id, else on the local runtime. Each agent keeps its own pin.
 
 - `GET /api/v1/updates` takes `status` (`available` or `pinned`) and `update_type` (`major`, `minor`, `patch`, `digest_only` or `unknown`). The answer is `{ "updates": [...], "last_scan", "next_scan" }` (both dates are the zero time until a scan finishes). An update has `id`, `container_id`, `container_name`, `image`, `current_tag`, `current_digest`, `latest_tag`, `latest_digest`, `update_type`, `risk_score`, `status`, `detected_at`, and `pin_reason` when pinned. `risk_score` (Personal and above) adds up at most 75 points: update type (up to 20), CVE severity (30), network exposure (10, from the container's security insights), restarts over the last 24 hours (10) and breaking changes (5). Container criticality and dependents no longer count.
 - `summary` answers `last_scan`, `next_scan`, `scan_status` (`running`, `completed`, `failed` or `idle`), `counts` (`critical`, `recommended`, `available`, `up_to_date`, `pinned`), `cve_counts` (Personal) and `os_counts` (`ended`, `ending_soon`, `unknown`, `untracked`, `supported`).
@@ -798,7 +798,7 @@ Requires **Personal** (capability `cve_enrichment`). The check is made by the ha
 | `GET` | `/api/v1/cve` | List known CVEs across all containers (`?severity=&container_id=`) | Personal |
 | `GET` | `/api/v1/cve/{container_id}` | List CVEs for a specific container | Personal |
 
-`{container_id}` is the external id. The list answers `{ "cves": [{ "cve_id", "cvss_score", "severity", "summary", "first_detected_at", "affected_containers" }], "total", "by_severity" }`; `total` and `by_severity` count container-CVE pairs, not distinct CVEs. The container route answers `{ "container_id", "cves": [...] }`.
+`{container_id}` is the external id, with the same optional `agent_id` as the update routes; the list takes it next to `container_id`. The list answers `{ "cves": [{ "cve_id", "cvss_score", "severity", "summary", "first_detected_at", "affected_containers" }], "total", "by_severity" }`, an affected container on a remote agent carrying its `agent_id`; `total` and `by_severity` count container-CVE pairs, not distinct CVEs. The container route answers `{ "container_id", "cves": [...] }`.
 
 ---
 
@@ -811,7 +811,7 @@ Requires **Personal** (capability `risk_scoring`). Every route answers `403 EDIT
 | `GET` | `/api/v1/risk` | Risk scores for all containers | Personal |
 | `GET` | `/api/v1/risk/{container_id}` | Risk score of a container; with `?period=24h\|7d\|30d`, its score history | Personal |
 
-The list answers `{ "containers": [{ "container_id", "container_name", "risk_score", "level" }], "host_risk_score", "host_risk_level" }`. `level` is `critical` from 81, `high` from 61, `moderate` from 31, else `low`. With `period`, the container route answers `{ "container_id", "history": [{ "score", "recorded_at" }] }`. Errors: `400 invalid_period`, `404 not_found` (no risk data), `500 internal`.
+`{container_id}` is the external id, with the same optional `agent_id` as the update routes. The list answers `{ "containers": [{ "container_id", "container_name", "risk_score", "level" }], "host_risk_score", "host_risk_level" }`. `level` is `critical` from 81, `high` from 61, `moderate` from 31, else `low`. With `period`, the container route answers `{ "container_id", "history": [{ "score", "recorded_at" }] }`. Errors: `400 invalid_period`, `404 not_found` (no risk data), `500 internal`.
 
 ---
 

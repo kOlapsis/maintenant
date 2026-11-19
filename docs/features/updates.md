@@ -126,7 +126,7 @@ POST /api/v1/updates/pin/{container_id}
 DELETE /api/v1/updates/pin/{container_id}
 ```
 
-`container_id` is the `container_id` of the update in `GET /api/v1/updates`, which is the container's runtime ID (`namespace/Kind/name` for a Kubernetes workload). Pinning needs an update to pin: it answers `404 NOT_FOUND` when none is pending for the container. The pin records the tag and digest the container runs. The update shows as **Pinned** until the next scan, which skips the container, drops the update and resolves its alert. `DELETE` removes the pin and the container is checked again.
+`container_id` is the `container_id` of the update in `GET /api/v1/updates`, which is the container's runtime ID (`namespace/Kind/name` for a Kubernetes workload). For a container on a remote agent, add `?agent_id=` with the update's `agent_id`: two clusters can run a workload under the same name, and each one is pinned on its own. Pinning needs an update to pin: it answers `404 NOT_FOUND` when none is pending for the container. The pin records the tag and digest the container runs. The update shows as **Pinned** until the next scan, which skips the container, drops the update and resolves its alert. `DELETE` removes the pin and the container is checked again.
 
 ---
 
