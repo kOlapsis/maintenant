@@ -94,66 +94,74 @@ func (s *MaintenanceStoreImpl) GetMaintenance(ctx context.Context, id string) (*
 	mw.CreatedAt = time.Unix(createdAt, 0).UTC()
 	mw.UpdatedAt = time.Unix(updatedAt, 0).UTC()
 
-	if err := s.loadMaintenanceComponents(ctx, &mw); err != nil {
+	windows := []status.MaintenanceWindow{mw}
+	if err := s.hydrateMaintenanceComponents(ctx, windows); err != nil {
 		return nil, err
 	}
-	return &mw, nil
+	return &windows[0], nil
 }
 
 func (s *MaintenanceStoreImpl) CreateMaintenance(ctx context.Context, mw *status.MaintenanceWindow, componentIDs []string) (string, error) {
 	now := time.Now().Unix()
 	mw.ID = uid.New()
-	_, err := s.writer.Exec(ctx,
-		`INSERT INTO maintenance_windows (id, title, description, starts_at, ends_at, active, incident_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?)`,
-		mw.ID, mw.Title, mw.Description, mw.StartsAt.Unix(), mw.EndsAt.Unix(), now, now,
-	)
-	if err != nil {
-		return "", fmt.Errorf("create maintenance: %w", err)
-	}
-	mw.CreatedAt = time.Unix(now, 0).UTC()
-	mw.UpdatedAt = mw.CreatedAt
-
-	for _, cid := range componentIDs {
-		if _, err := s.writer.Exec(ctx,
-			`INSERT INTO maintenance_components (maintenance_id, component_id) VALUES (?, ?)`,
-			mw.ID, cid,
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO maintenance_windows (id, title, description, starts_at, ends_at, active, incident_id, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?)`,
+			mw.ID, mw.Title, mw.Description, mw.StartsAt.Unix(), mw.EndsAt.Unix(), now, now,
 		); err != nil {
-			return "", fmt.Errorf("link maintenance component: %w", err)
-		}
-	}
-
-	return mw.ID, nil
-}
-
-func (s *MaintenanceStoreImpl) UpdateMaintenance(ctx context.Context, mw *status.MaintenanceWindow, componentIDs []string) error {
-	now := time.Now().Unix()
-	_, err := s.writer.Exec(ctx,
-		`UPDATE maintenance_windows SET title = ?, description = ?, starts_at = ?, ends_at = ?, updated_at = ?
-		WHERE id = ?`,
-		mw.Title, mw.Description, mw.StartsAt.Unix(), mw.EndsAt.Unix(), now, mw.ID,
-	)
-	if err != nil {
-		return fmt.Errorf("update maintenance: %w", err)
-	}
-	mw.UpdatedAt = time.Unix(now, 0).UTC()
-
-	if componentIDs != nil {
-		if _, err := s.writer.Exec(ctx,
-			`DELETE FROM maintenance_components WHERE maintenance_id = ?`, mw.ID,
-		); err != nil {
-			return fmt.Errorf("clear maintenance components: %w", err)
+			return fmt.Errorf("create maintenance: %w", err)
 		}
 		for _, cid := range componentIDs {
-			if _, err := s.writer.Exec(ctx,
+			if _, err := tx.ExecContext(ctx,
 				`INSERT INTO maintenance_components (maintenance_id, component_id) VALUES (?, ?)`,
 				mw.ID, cid,
 			); err != nil {
 				return fmt.Errorf("link maintenance component: %w", err)
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return "", err
 	}
+	mw.CreatedAt = time.Unix(now, 0).UTC()
+	mw.UpdatedAt = mw.CreatedAt
+	return mw.ID, nil
+}
 
+func (s *MaintenanceStoreImpl) UpdateMaintenance(ctx context.Context, mw *status.MaintenanceWindow, componentIDs []string) error {
+	now := time.Now().Unix()
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE maintenance_windows SET title = ?, description = ?, starts_at = ?, ends_at = ?, updated_at = ?
+			WHERE id = ?`,
+			mw.Title, mw.Description, mw.StartsAt.Unix(), mw.EndsAt.Unix(), now, mw.ID,
+		); err != nil {
+			return fmt.Errorf("update maintenance: %w", err)
+		}
+		if componentIDs == nil {
+			return nil
+		}
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM maintenance_components WHERE maintenance_id = ?`, mw.ID,
+		); err != nil {
+			return fmt.Errorf("clear maintenance components: %w", err)
+		}
+		for _, cid := range componentIDs {
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO maintenance_components (maintenance_id, component_id) VALUES (?, ?)`,
+				mw.ID, cid,
+			); err != nil {
+				return fmt.Errorf("link maintenance component: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	mw.UpdatedAt = time.Unix(now, 0).UTC()
 	return nil
 }
 
@@ -244,20 +252,37 @@ func (s *MaintenanceStoreImpl) scanMaintenanceWindows(ctx context.Context, rows 
 		mw.EndsAt = time.Unix(endsAt, 0).UTC()
 		mw.CreatedAt = time.Unix(createdAt, 0).UTC()
 		mw.UpdatedAt = time.Unix(updatedAt, 0).UTC()
-
-		if err := s.loadMaintenanceComponents(ctx, &mw); err != nil {
-			return nil, err
-		}
 		windows = append(windows, mw)
 	}
-	return windows, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := s.hydrateMaintenanceComponents(ctx, windows); err != nil {
+		return nil, err
+	}
+	return windows, nil
 }
 
-func (s *MaintenanceStoreImpl) loadMaintenanceComponents(ctx context.Context, mw *status.MaintenanceWindow) error {
+// The caller must have closed its own cursor: the pool is small and shared with the writer.
+func (s *MaintenanceStoreImpl) hydrateMaintenanceComponents(ctx context.Context, windows []status.MaintenanceWindow) error {
+	if len(windows) == 0 {
+		return nil
+	}
+	idx := make(map[string]int, len(windows))
+	args := make([]any, len(windows))
+	for i := range windows {
+		idx[windows[i].ID] = i
+		args[i] = windows[i].ID
+	}
+
+	// #nosec G202 -- only generated "?" placeholders are concatenated; ids are bound.
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT sc.id, sc.display_name, sc.visible FROM status_components sc
+		`SELECT mc.maintenance_id, sc.id, sc.display_name, sc.visible FROM status_components sc
 		JOIN maintenance_components mc ON mc.component_id = sc.id
-		WHERE mc.maintenance_id = ?`, mw.ID)
+		WHERE mc.maintenance_id IN (`+placeholderList(len(args))+`)`, args...)
 	if err != nil {
 		return fmt.Errorf("load maintenance components: %w", err)
 	}
@@ -265,13 +290,14 @@ func (s *MaintenanceStoreImpl) loadMaintenanceComponents(ctx context.Context, mw
 		_ = rows.Close()
 	}(rows)
 	for rows.Next() {
+		var maintID string
 		var ref status.IncidentCompRef
 		var visible int
-		if err := rows.Scan(&ref.ID, &ref.Name, &visible); err != nil {
+		if err := rows.Scan(&maintID, &ref.ID, &ref.Name, &visible); err != nil {
 			return fmt.Errorf("scan maintenance component: %w", err)
 		}
 		ref.Visible = visible != 0
-		mw.Components = append(mw.Components, ref)
+		windows[idx[maintID]].Components = append(windows[idx[maintID]].Components, ref)
 	}
 	return rows.Err()
 }

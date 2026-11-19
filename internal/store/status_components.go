@@ -158,32 +158,35 @@ func (s *StatusComponentStoreImpl) CreateComponent(ctx context.Context, c *statu
 	}
 
 	c.ID = uid.New()
-	_, err := s.writer.Exec(ctx,
-		`INSERT INTO status_components (id, composition_mode, match_all_type, display_name,
-			display_order, visible, status_override, override_before_maintenance, auto_incident, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.ID, string(c.CompositionMode), matchAllType, c.DisplayName,
-		c.DisplayOrder, boolToInt(c.Visible), c.StatusOverride, c.OverrideBeforeMaintenance, boolToInt(c.AutoIncident),
-		now, now,
-	)
-	if err != nil {
-		return "", fmt.Errorf("create component: %w", err)
-	}
-	c.CreatedAt = time.Unix(now, 0).UTC()
-	c.UpdatedAt = c.CreatedAt
-
-	// Insert monitor refs for explicit mode.
-	if c.CompositionMode == status.CompositionExplicit {
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO status_components (id, composition_mode, match_all_type, display_name,
+				display_order, visible, status_override, override_before_maintenance, auto_incident, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			c.ID, string(c.CompositionMode), matchAllType, c.DisplayName,
+			c.DisplayOrder, boolToInt(c.Visible), c.StatusOverride, c.OverrideBeforeMaintenance, boolToInt(c.AutoIncident),
+			now, now,
+		); err != nil {
+			return fmt.Errorf("create component: %w", err)
+		}
+		if c.CompositionMode != status.CompositionExplicit {
+			return nil
+		}
 		for _, ref := range c.Monitors {
-			if _, err := s.writer.Exec(ctx,
+			if _, err := tx.ExecContext(ctx,
 				`INSERT INTO status_component_monitors (component_id, monitor_type, monitor_id, label) VALUES (?, ?, ?, ?)`,
 				c.ID, ref.Type, ref.ID, ref.Label,
 			); err != nil {
-				return "", fmt.Errorf("insert monitor ref: %w", err)
+				return fmt.Errorf("insert monitor ref: %w", err)
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return "", err
 	}
-
+	c.CreatedAt = time.Unix(now, 0).UTC()
+	c.UpdatedAt = c.CreatedAt
 	return c.ID, nil
 }
 
@@ -195,33 +198,33 @@ func (s *StatusComponentStoreImpl) UpdateComponent(ctx context.Context, c *statu
 		matchAllType = c.MatchAllType
 	}
 
-	_, err := s.writer.Exec(ctx,
-		`UPDATE status_components SET display_name = ?, display_order = ?,
-			visible = ?, status_override = ?, override_before_maintenance = ?, auto_incident = ?, match_all_type = ?, updated_at = ?
-		WHERE id = ?`,
-		c.DisplayName, c.DisplayOrder,
-		boolToInt(c.Visible), c.StatusOverride, c.OverrideBeforeMaintenance, boolToInt(c.AutoIncident),
-		matchAllType, now, c.ID,
-	)
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE status_components SET display_name = ?, display_order = ?,
+				visible = ?, status_override = ?, override_before_maintenance = ?, auto_incident = ?, match_all_type = ?, updated_at = ?
+			WHERE id = ?`,
+			c.DisplayName, c.DisplayOrder,
+			boolToInt(c.Visible), c.StatusOverride, c.OverrideBeforeMaintenance, boolToInt(c.AutoIncident),
+			matchAllType, now, c.ID,
+		); err != nil {
+			return fmt.Errorf("update component: %w", err)
+		}
+		if c.CompositionMode != status.CompositionExplicit {
+			return nil
+		}
+		return deltaApplyMonitorRefs(ctx, tx, c.ID, c.Monitors)
+	})
 	if err != nil {
-		return fmt.Errorf("update component: %w", err)
+		return err
 	}
 	c.UpdatedAt = time.Unix(now, 0).UTC()
-
-	// Delta-apply monitor refs for explicit mode.
-	if c.CompositionMode == status.CompositionExplicit {
-		if err := s.deltaApplyMonitorRefs(ctx, c.ID, c.Monitors); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
 // deltaApplyMonitorRefs computes the diff between stored refs and desired refs,
 // deletes removed entries, inserts new ones and updates changed labels.
-func (s *StatusComponentStoreImpl) deltaApplyMonitorRefs(ctx context.Context, componentID string, desired []status.MonitorRef) error {
-	rows, err := s.db.QueryContext(ctx,
+func deltaApplyMonitorRefs(ctx context.Context, tx *Tx, componentID string, desired []status.MonitorRef) error {
+	rows, err := tx.QueryContext(ctx,
 		`SELECT monitor_type, monitor_id, label FROM status_component_monitors WHERE component_id = ?`,
 		componentID)
 	if err != nil {
@@ -247,6 +250,9 @@ func (s *StatusComponentStoreImpl) deltaApplyMonitorRefs(ctx context.Context, co
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate monitor refs: %w", err)
 	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
 
 	desiredSet := make(map[refKey]string, len(desired))
 	for _, ref := range desired {
@@ -255,7 +261,7 @@ func (s *StatusComponentStoreImpl) deltaApplyMonitorRefs(ctx context.Context, co
 
 	for k := range current {
 		if _, ok := desiredSet[k]; !ok {
-			if _, err := s.writer.Exec(ctx,
+			if _, err := tx.ExecContext(ctx,
 				`DELETE FROM status_component_monitors WHERE component_id = ? AND monitor_type = ? AND monitor_id = ?`,
 				componentID, k.t, k.i,
 			); err != nil {
@@ -268,14 +274,14 @@ func (s *StatusComponentStoreImpl) deltaApplyMonitorRefs(ctx context.Context, co
 		currentLabel, ok := current[k]
 		switch {
 		case !ok:
-			if _, err := s.writer.Exec(ctx,
+			if _, err := tx.ExecContext(ctx,
 				`INSERT INTO status_component_monitors (component_id, monitor_type, monitor_id, label) VALUES (?, ?, ?, ?)`,
 				componentID, k.t, k.i, label,
 			); err != nil {
 				return fmt.Errorf("insert monitor ref: %w", err)
 			}
 		case currentLabel != label:
-			if _, err := s.writer.Exec(ctx,
+			if _, err := tx.ExecContext(ctx,
 				`UPDATE status_component_monitors SET label = ? WHERE component_id = ? AND monitor_type = ? AND monitor_id = ?`,
 				label, componentID, k.t, k.i,
 			); err != nil {

@@ -32,16 +32,18 @@ func NewTriggerStore(d *DB) *TriggerStoreImpl {
 func (s *TriggerStoreImpl) InsertTrigger(ctx context.Context, t *alert.AlertTrigger) (string, error) {
 	t.ID = uid.New()
 	now := time.Now().Unix()
-	_, err := s.writer.Exec(ctx,
-		`INSERT INTO alert_triggers
-			(id, name, filter_severities, filter_sources, filter_scopes, enabled, notify_on_resolve, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.ID, t.Name, t.FilterSeverities, t.FilterSources, t.FilterScopes, boolToInt(t.Enabled), boolToInt(t.NotifyOnResolve), now, now,
-	)
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO alert_triggers
+				(id, name, filter_severities, filter_sources, filter_scopes, enabled, notify_on_resolve, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			t.ID, t.Name, t.FilterSeverities, t.FilterSources, t.FilterScopes, boolToInt(t.Enabled), boolToInt(t.NotifyOnResolve), now, now,
+		); err != nil {
+			return fmt.Errorf("insert trigger: %w", err)
+		}
+		return replaceChannels(ctx, tx, t.ID, t.ChannelIDs)
+	})
 	if err != nil {
-		return "", fmt.Errorf("insert trigger: %w", err)
-	}
-	if err := s.replaceChannels(ctx, t.ID, t.ChannelIDs); err != nil {
 		return "", err
 	}
 	return t.ID, nil
@@ -115,18 +117,19 @@ func (s *TriggerStoreImpl) listTriggersWhere(ctx context.Context, where string) 
 }
 
 func (s *TriggerStoreImpl) UpdateTrigger(ctx context.Context, t *alert.AlertTrigger) error {
-	_, err := s.writer.Exec(ctx,
-		`UPDATE alert_triggers
-			SET name=?, filter_severities=?, filter_sources=?, filter_scopes=?,
-				enabled=?, notify_on_resolve=?, updated_at=?
-			WHERE id=?`,
-		t.Name, t.FilterSeverities, t.FilterSources, t.FilterScopes,
-		boolToInt(t.Enabled), boolToInt(t.NotifyOnResolve), time.Now().Unix(), t.ID,
-	)
-	if err != nil {
-		return fmt.Errorf("update trigger: %w", err)
-	}
-	return s.replaceChannels(ctx, t.ID, t.ChannelIDs)
+	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE alert_triggers
+				SET name=?, filter_severities=?, filter_sources=?, filter_scopes=?,
+					enabled=?, notify_on_resolve=?, updated_at=?
+				WHERE id=?`,
+			t.Name, t.FilterSeverities, t.FilterSources, t.FilterScopes,
+			boolToInt(t.Enabled), boolToInt(t.NotifyOnResolve), time.Now().Unix(), t.ID,
+		); err != nil {
+			return fmt.Errorf("update trigger: %w", err)
+		}
+		return replaceChannels(ctx, tx, t.ID, t.ChannelIDs)
+	})
 }
 
 func (s *TriggerStoreImpl) DeleteTrigger(ctx context.Context, id string) error {
@@ -137,14 +140,8 @@ func (s *TriggerStoreImpl) DeleteTrigger(ctx context.Context, id string) error {
 	return nil
 }
 
-// SetChannels replaces all channel links for a trigger atomically (within
-// the writer's serialization guarantee).
-func (s *TriggerStoreImpl) SetChannels(ctx context.Context, triggerID string, channelIDs []string) error {
-	return s.replaceChannels(ctx, triggerID, channelIDs)
-}
-
-func (s *TriggerStoreImpl) replaceChannels(ctx context.Context, triggerID string, channelIDs []string) error {
-	if _, err := s.writer.Exec(ctx,
+func replaceChannels(ctx context.Context, tx *Tx, triggerID string, channelIDs []string) error {
+	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM alert_trigger_channels WHERE trigger_id = ?`, triggerID); err != nil {
 		return fmt.Errorf("clear channel links: %w", err)
 	}
@@ -160,7 +157,7 @@ func (s *TriggerStoreImpl) replaceChannels(ctx context.Context, triggerID string
 	}
 	q := `INSERT INTO alert_trigger_channels (trigger_id, channel_id) VALUES ` +
 		strings.Join(placeholders, ", ")
-	if _, err := s.writer.Exec(ctx, q, args...); err != nil {
+	if _, err := tx.ExecContext(ctx, q, args...); err != nil {
 		return fmt.Errorf("insert channel links: %w", err)
 	}
 	return nil

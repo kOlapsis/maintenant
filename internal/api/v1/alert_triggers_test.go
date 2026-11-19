@@ -71,7 +71,6 @@ func (s *stubTriggerStore) DeleteTrigger(_ context.Context, id string) error {
 	delete(s.triggers, id)
 	return nil
 }
-func (s *stubTriggerStore) SetChannels(_ context.Context, _ string, _ []string) error { return nil }
 func (s *stubTriggerStore) ListChannelsForTrigger(_ context.Context, _ string) ([]string, error) {
 	return []string{}, nil
 }

@@ -61,7 +61,6 @@ func (m *mcpTriggerStore) DeleteTrigger(_ context.Context, id string) error {
 	delete(m.triggers, id)
 	return nil
 }
-func (m *mcpTriggerStore) SetChannels(_ context.Context, _ string, _ []string) error { return nil }
 func (m *mcpTriggerStore) ListChannelsForTrigger(_ context.Context, _ string) ([]string, error) {
 	return []string{}, nil
 }

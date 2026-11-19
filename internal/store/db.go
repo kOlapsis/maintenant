@@ -84,8 +84,7 @@ func Open(dbPath string, logger *slog.Logger) (*DB, error) {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
-	// Set a connection pool to 1 for writes (serialized via Writer),
-	// but allow multiple read connections.
+	// The writer goroutine and the readers share these connections: close a cursor before running another query.
 	db.SetMaxOpenConns(4)
 
 	sdb := &DB{

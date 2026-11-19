@@ -6,10 +6,12 @@ package v1
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/mail"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
@@ -26,6 +28,7 @@ type StatusAdminHandler struct {
 	maintRunner status.MaintenanceRunner
 	statusSvc   *status.Service
 	mailer      status.Mailer
+	componentMu sync.Mutex
 }
 
 // NewStatusAdminHandler creates a status admin handler; a nil mailer means SMTP is not configured, a nil runner that no window ever runs.
@@ -108,11 +111,18 @@ func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *htt
 			WriteError(w, http.StatusBadRequest, "validation", "explicit-mode components require at least one monitor")
 			return
 		}
+		type monitorKey struct{ typ, id string }
+		seen := make(map[monitorKey]bool, len(req.Monitors))
 		for i, m := range req.Monitors {
 			if !validTypes[m.Type] {
 				WriteError(w, http.StatusBadRequest, "validation", "invalid monitor type: "+m.Type)
 				return
 			}
+			if seen[monitorKey{m.Type, m.ID}] {
+				WriteError(w, http.StatusBadRequest, "validation", fmt.Sprintf("monitors[%d] repeats %s %q", i, m.Type, m.ID))
+				return
+			}
+			seen[monitorKey{m.Type, m.ID}] = true
 			label, err := status.ValidateMonitorLabel(m.Label)
 			if err != nil {
 				WriteError(w, http.StatusBadRequest, "validation", err.Error())
@@ -130,6 +140,9 @@ func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *htt
 			return
 		}
 	}
+
+	h.componentMu.Lock()
+	defer h.componentMu.Unlock()
 
 	// Component cap, read from the single declaration. -1 means unlimited.
 	if limit := extension.Limit(extension.ResourceStatusComponents); limit >= 0 {

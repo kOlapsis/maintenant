@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/status"
@@ -139,10 +140,11 @@ func (s *IncidentStoreImpl) GetIncident(ctx context.Context, id string) (*status
 	}
 	inc.UpdatedAt = time.Unix(updatedAt, 0).UTC()
 
-	if err := s.loadIncidentRelations(ctx, &inc); err != nil {
+	incs := []status.Incident{inc}
+	if err := s.hydrateIncidents(ctx, incs); err != nil {
 		return nil, err
 	}
-	return &inc, nil
+	return &incs[0], nil
 }
 
 func (s *IncidentStoreImpl) GetActiveIncidentByComponent(ctx context.Context, componentID string) (*status.Incident, error) {
@@ -166,67 +168,73 @@ func (s *IncidentStoreImpl) CreateIncident(ctx context.Context, inc *status.Inci
 	now := time.Now().Unix()
 
 	inc.ID = uid.New()
-	_, err := s.writer.Exec(ctx,
-		`INSERT INTO incidents (id, title, severity, status, is_maintenance, maintenance_window_id, created_at, resolved_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		inc.ID, inc.Title, inc.Severity, inc.Status, boolToInt(inc.IsMaintenance), inc.MaintenanceWindowID,
-		now, nil, now,
-	)
-	if err != nil {
-		return "", fmt.Errorf("create incident: %w", err)
-	}
-	inc.CreatedAt = time.Unix(now, 0).UTC()
-	inc.UpdatedAt = inc.CreatedAt
-
-	for _, cid := range componentIDs {
-		if _, err := s.writer.Exec(ctx,
-			`INSERT INTO incident_components (incident_id, component_id) VALUES (?, ?)`,
-			inc.ID, cid,
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO incidents (id, title, severity, status, is_maintenance, maintenance_window_id, created_at, resolved_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			inc.ID, inc.Title, inc.Severity, inc.Status, boolToInt(inc.IsMaintenance), inc.MaintenanceWindowID,
+			now, nil, now,
 		); err != nil {
-			return "", fmt.Errorf("link incident component: %w", err)
-		}
-	}
-
-	if initialMessage != "" {
-		if _, err := s.writer.Exec(ctx,
-			`INSERT INTO incident_updates (id, incident_id, status, message, is_auto, created_at)
-			VALUES (?, ?, ?, ?, 0, ?)`,
-			uid.New(), inc.ID, inc.Status, initialMessage, now,
-		); err != nil {
-			return "", fmt.Errorf("create initial update: %w", err)
-		}
-	}
-
-	return inc.ID, nil
-}
-
-func (s *IncidentStoreImpl) UpdateIncident(ctx context.Context, inc *status.Incident, componentIDs []string) error {
-	now := time.Now().Unix()
-	_, err := s.writer.Exec(ctx,
-		`UPDATE incidents SET title = ?, severity = ?, updated_at = ? WHERE id = ?`,
-		inc.Title, inc.Severity, now, inc.ID,
-	)
-	if err != nil {
-		return fmt.Errorf("update incident: %w", err)
-	}
-	inc.UpdatedAt = time.Unix(now, 0).UTC()
-
-	if componentIDs != nil {
-		if _, err := s.writer.Exec(ctx,
-			`DELETE FROM incident_components WHERE incident_id = ?`, inc.ID,
-		); err != nil {
-			return fmt.Errorf("clear incident components: %w", err)
+			return fmt.Errorf("create incident: %w", err)
 		}
 		for _, cid := range componentIDs {
-			if _, err := s.writer.Exec(ctx,
+			if _, err := tx.ExecContext(ctx,
 				`INSERT INTO incident_components (incident_id, component_id) VALUES (?, ?)`,
 				inc.ID, cid,
 			); err != nil {
 				return fmt.Errorf("link incident component: %w", err)
 			}
 		}
+		if initialMessage != "" {
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO incident_updates (id, incident_id, status, message, is_auto, created_at)
+				VALUES (?, ?, ?, ?, 0, ?)`,
+				uid.New(), inc.ID, inc.Status, initialMessage, now,
+			); err != nil {
+				return fmt.Errorf("create initial update: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
 	}
+	inc.CreatedAt = time.Unix(now, 0).UTC()
+	inc.UpdatedAt = inc.CreatedAt
+	return inc.ID, nil
+}
 
+func (s *IncidentStoreImpl) UpdateIncident(ctx context.Context, inc *status.Incident, componentIDs []string) error {
+	now := time.Now().Unix()
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE incidents SET title = ?, severity = ?, updated_at = ? WHERE id = ?`,
+			inc.Title, inc.Severity, now, inc.ID,
+		); err != nil {
+			return fmt.Errorf("update incident: %w", err)
+		}
+		if componentIDs == nil {
+			return nil
+		}
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM incident_components WHERE incident_id = ?`, inc.ID,
+		); err != nil {
+			return fmt.Errorf("clear incident components: %w", err)
+		}
+		for _, cid := range componentIDs {
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO incident_components (incident_id, component_id) VALUES (?, ?)`,
+				inc.ID, cid,
+			); err != nil {
+				return fmt.Errorf("link incident component: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	inc.UpdatedAt = time.Unix(now, 0).UTC()
 	return nil
 }
 
@@ -267,28 +275,30 @@ func (s *IncidentStoreImpl) CreateUpdate(ctx context.Context, u *status.Incident
 	now := time.Now().Unix()
 
 	u.ID = uid.New()
-	_, err := s.writer.Exec(ctx,
-		`INSERT INTO incident_updates (id, incident_id, status, message, is_auto, alert_id, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		u.ID, u.IncidentID, u.Status, u.Message, boolToInt(u.IsAuto), u.AlertID, now,
-	)
-	if err != nil {
-		return "", fmt.Errorf("create update: %w", err)
-	}
-	u.CreatedAt = time.Unix(now, 0).UTC()
-
-	// Update parent incident status and timestamp
 	resolvedAt := sql.NullInt64{}
 	if u.Status == status.IncidentResolved {
 		resolvedAt = sql.NullInt64{Int64: now, Valid: true}
 	}
-	if _, err := s.writer.Exec(ctx,
-		`UPDATE incidents SET status = ?, resolved_at = COALESCE(?, resolved_at), updated_at = ? WHERE id = ?`,
-		u.Status, resolvedAt, now, u.IncidentID,
-	); err != nil {
-		return "", fmt.Errorf("update incident status: %w", err)
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO incident_updates (id, incident_id, status, message, is_auto, alert_id, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			u.ID, u.IncidentID, u.Status, u.Message, boolToInt(u.IsAuto), u.AlertID, now,
+		); err != nil {
+			return fmt.Errorf("create update: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE incidents SET status = ?, resolved_at = COALESCE(?, resolved_at), updated_at = ? WHERE id = ?`,
+			u.Status, resolvedAt, now, u.IncidentID,
+		); err != nil {
+			return fmt.Errorf("update incident status: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
 	}
-
+	u.CreatedAt = time.Unix(now, 0).UTC()
 	return u.ID, nil
 }
 
@@ -318,21 +328,38 @@ func (s *IncidentStoreImpl) scanIncidents(ctx context.Context, rows *sql.Rows) (
 			inc.ResolvedAt = &t
 		}
 		inc.UpdatedAt = time.Unix(updatedAt, 0).UTC()
-
-		if err := s.loadIncidentRelations(ctx, &inc); err != nil {
-			return nil, err
-		}
 		incidents = append(incidents, inc)
 	}
-	return incidents, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := s.hydrateIncidents(ctx, incidents); err != nil {
+		return nil, err
+	}
+	return incidents, nil
 }
 
-func (s *IncidentStoreImpl) loadIncidentRelations(ctx context.Context, inc *status.Incident) error {
-	// Load components
+// The caller must have closed its own cursor: the pool is small and shared with the writer.
+func (s *IncidentStoreImpl) hydrateIncidents(ctx context.Context, incs []status.Incident) error {
+	if len(incs) == 0 {
+		return nil
+	}
+	idx := make(map[string]int, len(incs))
+	args := make([]any, len(incs))
+	for i := range incs {
+		idx[incs[i].ID] = i
+		args[i] = incs[i].ID
+	}
+	in := placeholderList(len(args))
+
+	// #nosec G202 -- only generated "?" placeholders are concatenated; ids are bound.
 	compRows, err := s.db.QueryContext(ctx,
-		`SELECT sc.id, sc.display_name, sc.visible FROM status_components sc
+		`SELECT ic.incident_id, sc.id, sc.display_name, sc.visible FROM status_components sc
 		JOIN incident_components ic ON ic.component_id = sc.id
-		WHERE ic.incident_id = ?`, inc.ID)
+		WHERE ic.incident_id IN (`+in+`)`, args...)
 	if err != nil {
 		return fmt.Errorf("load incident components: %w", err)
 	}
@@ -340,23 +367,27 @@ func (s *IncidentStoreImpl) loadIncidentRelations(ctx context.Context, inc *stat
 		_ = compRows.Close()
 	}(compRows)
 	for compRows.Next() {
+		var incID string
 		var ref status.IncidentCompRef
 		var visible int
-		if err := compRows.Scan(&ref.ID, &ref.Name, &visible); err != nil {
+		if err := compRows.Scan(&incID, &ref.ID, &ref.Name, &visible); err != nil {
 			return fmt.Errorf("scan incident component: %w", err)
 		}
 		ref.Visible = visible != 0
-		inc.Components = append(inc.Components, ref)
+		incs[idx[incID]].Components = append(incs[idx[incID]].Components, ref)
 	}
 	if err := compRows.Err(); err != nil {
 		return err
 	}
+	if err := compRows.Close(); err != nil {
+		return err
+	}
 
-	// Load updates
+	// #nosec G202 -- only generated "?" placeholders are concatenated; ids are bound.
 	updRows, err := s.db.QueryContext(ctx,
 		`SELECT id, incident_id, status, message, is_auto, alert_id, created_at
-		FROM incident_updates WHERE incident_id = ?
-		ORDER BY created_at DESC`, inc.ID)
+		FROM incident_updates WHERE incident_id IN (`+in+`)
+		ORDER BY created_at DESC`, args...)
 	if err != nil {
 		return fmt.Errorf("load incident updates: %w", err)
 	}
@@ -368,9 +399,13 @@ func (s *IncidentStoreImpl) loadIncidentRelations(ctx context.Context, inc *stat
 		if err != nil {
 			return err
 		}
-		inc.Updates = append(inc.Updates, u)
+		incs[idx[u.IncidentID]].Updates = append(incs[idx[u.IncidentID]].Updates, u)
 	}
 	return updRows.Err()
+}
+
+func placeholderList(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
 }
 
 func scanIncidentUpdate(rows *sql.Rows) (status.IncidentUpdate, error) {

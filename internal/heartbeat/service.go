@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -64,6 +65,7 @@ type Service struct {
 	alertCallback  AlertCallback
 	licenseChecker LicenseChecker
 	baseURL        string
+	createMu       sync.Mutex
 }
 
 // NewService creates a new heartbeat service with all dependencies.
@@ -116,14 +118,6 @@ func (s *Service) CreateHeartbeat(ctx context.Context, input CreateHeartbeatInpu
 		return nil, fmt.Errorf("%w: %s", ErrInvalidInput, err.Error())
 	}
 
-	count, err := s.store.CountActiveHeartbeats(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("count heartbeats: %w", err)
-	}
-	if !s.licenseChecker.CanCreateHeartbeat(count) {
-		return nil, ErrLimitReached
-	}
-
 	h := &Heartbeat{
 		ID:              uid.New(),
 		PingToken:       token,
@@ -134,9 +128,9 @@ func (s *Service) CreateHeartbeat(ctx context.Context, input CreateHeartbeatInpu
 		GraceSeconds:    input.GraceSeconds,
 	}
 
-	id, err := s.store.CreateHeartbeat(ctx, h)
+	id, err := s.createWithinLimit(ctx, h)
 	if err != nil {
-		return nil, fmt.Errorf("create heartbeat: %w", err)
+		return nil, err
 	}
 
 	created, err := s.store.GetHeartbeatByID(ctx, id)
@@ -151,6 +145,23 @@ func (s *Service) CreateHeartbeat(ctx context.Context, input CreateHeartbeatInpu
 	})
 
 	return created, nil
+}
+
+func (s *Service) createWithinLimit(ctx context.Context, h *Heartbeat) (string, error) {
+	s.createMu.Lock()
+	defer s.createMu.Unlock()
+	count, err := s.store.CountActiveHeartbeats(ctx)
+	if err != nil {
+		return "", fmt.Errorf("count heartbeats: %w", err)
+	}
+	if !s.licenseChecker.CanCreateHeartbeat(count) {
+		return "", ErrLimitReached
+	}
+	id, err := s.store.CreateHeartbeat(ctx, h)
+	if err != nil {
+		return "", fmt.Errorf("create heartbeat: %w", err)
+	}
+	return id, nil
 }
 
 // GetHeartbeatByPingToken returns the heartbeat a ping token belongs to, or nil when no heartbeat has it.

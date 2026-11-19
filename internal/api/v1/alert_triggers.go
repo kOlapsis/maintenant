@@ -248,6 +248,13 @@ func validateTriggerInput(t *triggerInput) error {
 	if len(t.ChannelIDs) == 0 {
 		return errors.New("field=channel_ids: at least one channel is required")
 	}
+	seen := make(map[string]bool, len(t.ChannelIDs))
+	for _, id := range t.ChannelIDs {
+		if seen[id] {
+			return errors.New("field=channel_ids: channel " + id + " is repeated")
+		}
+		seen[id] = true
+	}
 	return nil
 }
 
