@@ -349,6 +349,9 @@ func (m *alertStoreMock) GetActiveAlert(_ context.Context, _, _, _ string, _ str
 func (m *alertStoreMock) ListActiveAlerts(_ context.Context) ([]*alert.Alert, error) {
 	return nil, nil
 }
+func (m *alertStoreMock) ListSilencedAlertsSince(_ context.Context, _ time.Time) ([]*alert.Alert, error) {
+	return nil, nil
+}
 func (m *alertStoreMock) DeleteInactiveAlertsOlderThan(_ context.Context, _ time.Time) (int64, error) {
 	return 0, nil
 }

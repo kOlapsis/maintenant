@@ -174,6 +174,28 @@ func (s *AlertStoreImpl) ListActiveAlerts(ctx context.Context) ([]*alert.Alert, 
 	return alerts, rows.Err()
 }
 
+func (s *AlertStoreImpl) ListSilencedAlertsSince(ctx context.Context, since time.Time) ([]*alert.Alert, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+alertColumns+` FROM alerts WHERE status = 'silenced' AND fired_at >= ? ORDER BY fired_at DESC, id DESC`,
+		since.Unix())
+	if err != nil {
+		return nil, fmt.Errorf("list silenced alerts: %w", err)
+	}
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
+
+	var alerts []*alert.Alert
+	for rows.Next() {
+		a, err := scanAlertFromRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		alerts = append(alerts, a)
+	}
+	return alerts, rows.Err()
+}
+
 func (s *AlertStoreImpl) DeleteInactiveAlertsOlderThan(ctx context.Context, before time.Time) (int64, error) {
 	deleted, _, err := s.deleteInactiveAlertsOlderThan(ctx, before, batchOpts{})
 	return deleted, err

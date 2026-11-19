@@ -63,6 +63,7 @@ type Event struct {
 	AlertType  string         // source-specific type
 	Severity   string         // "critical", "warning", "info"
 	IsRecover  bool           // true if this is a recovery event
+	Renotify   bool           // a reminder: refresh and notify a live alert again, even at the same severity
 	Message    string         // human-readable description
 	EntityType string         // "container", "endpoint", "heartbeat", "certificate"
 	EntityID   string         // UUID of the referenced entity in its source table
@@ -213,6 +214,8 @@ type AlertStore interface {
 	UpdateAlertOnEscalation(ctx context.Context, id, severity, message, entityName, details string) error
 	GetActiveAlert(ctx context.Context, source, alertType, entityType string, entityID string) (*Alert, error)
 	ListActiveAlerts(ctx context.Context) ([]*Alert, error)
+	// ListSilencedAlertsSince lists the silenced alerts fired at or after since, newest first.
+	ListSilencedAlertsSince(ctx context.Context, since time.Time) ([]*Alert, error)
 	DeleteInactiveAlertsOlderThan(ctx context.Context, before time.Time) (int64, error)
 	AcknowledgeAlert(ctx context.Context, id string, by string, at time.Time) (bool, error)
 	SetEscalatedAt(ctx context.Context, id string, at time.Time) error

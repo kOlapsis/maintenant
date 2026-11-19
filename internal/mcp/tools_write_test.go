@@ -89,6 +89,9 @@ func (m *mcpAlertStore) GetActiveAlert(_ context.Context, _, _, _, _ string) (*a
 	return nil, nil
 }
 func (m *mcpAlertStore) ListActiveAlerts(_ context.Context) ([]*alert.Alert, error) { return nil, nil }
+func (m *mcpAlertStore) ListSilencedAlertsSince(_ context.Context, _ time.Time) ([]*alert.Alert, error) {
+	return nil, nil
+}
 func (m *mcpAlertStore) DeleteInactiveAlertsOlderThan(_ context.Context, _ time.Time) (int64, error) {
 	return 0, nil
 }
