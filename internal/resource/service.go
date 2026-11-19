@@ -210,8 +210,7 @@ func (s *Service) GetAlertConfig(ctx context.Context, containerID string) (*Reso
 	return s.store.GetAlertConfig(ctx, containerID)
 }
 
-// SetAlertConfig writes a container's thresholds and enabled flag, keeping its alert state. A nil enabled keeps the stored value.
-// Disabling a configuration that is in alert recovers each alerting metric first.
+// SetAlertConfig writes a container's thresholds and enabled flag (nil keeps the stored one) and recovers a configuration disabled while in alert.
 func (s *Service) SetAlertConfig(ctx context.Context, containerID string, cpuThreshold, memThreshold float64, enabled *bool) (*ResourceAlertConfig, error) {
 	s.alertMu.Lock()
 	defer s.alertMu.Unlock()
