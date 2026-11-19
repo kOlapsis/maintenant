@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
-import { apiFetch, apiFetchVoid } from './apiFetch'
+import { apiFetch, apiFetchVoid, isLocalAgent } from './apiFetch'
 import type { AgentOS } from './agentApi'
 
 export interface ImageUpdate {
@@ -184,8 +184,12 @@ export function fetchHostOS(): Promise<{ hosts: HostOS[]; eol_table: EolTable }>
   return apiFetch(`${API_BASE}/updates/hosts`)
 }
 
-export function fetchContainerUpdate(containerId: string): Promise<ContainerUpdateDetail> {
-  return apiFetch(`${API_BASE}/updates/container/${containerId}`)
+function agentQuery(agentId?: string | null): string {
+  return isLocalAgent(agentId) ? '' : `?agent_id=${encodeURIComponent(agentId!)}`
+}
+
+export function fetchContainerUpdate(containerId: string, agentId?: string | null): Promise<ContainerUpdateDetail> {
+  return apiFetch(`${API_BASE}/updates/container/${containerId}${agentQuery(agentId)}`)
 }
 
 export function triggerScan(): Promise<{ status: string; started_at: string }> {
@@ -205,16 +209,16 @@ export function fetchDigest(): Promise<unknown> {
 }
 
 // Pinning
-export function pinVersion(containerId: string, reason?: string): Promise<PinVersionResponse> {
-  return apiFetch(`${API_BASE}/updates/pin/${containerId}`, {
+export function pinVersion(containerId: string, reason?: string, agentId?: string | null): Promise<PinVersionResponse> {
+  return apiFetch(`${API_BASE}/updates/pin/${containerId}${agentQuery(agentId)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ reason: reason || '' }),
   })
 }
 
-export function unpinVersion(containerId: string): Promise<void> {
-  return apiFetchVoid(`${API_BASE}/updates/pin/${containerId}`, { method: 'DELETE' })
+export function unpinVersion(containerId: string, agentId?: string | null): Promise<void> {
+  return apiFetchVoid(`${API_BASE}/updates/pin/${containerId}${agentQuery(agentId)}`, { method: 'DELETE' })
 }
 
 // Exclusions
@@ -243,8 +247,8 @@ export function fetchCves(filters?: { severity?: string; container_id?: string }
   return apiFetch(`${API_BASE}/cve${qs ? '?' + qs : ''}`)
 }
 
-export function fetchContainerCves(containerId: string): Promise<{ container_id: string; cves: CVEInfo[] }> {
-  return apiFetch(`${API_BASE}/cve/${containerId}`)
+export function fetchContainerCves(containerId: string, agentId?: string | null): Promise<{ container_id: string; cves: CVEInfo[] }> {
+  return apiFetch(`${API_BASE}/cve/${containerId}${agentQuery(agentId)}`)
 }
 
 // Risk

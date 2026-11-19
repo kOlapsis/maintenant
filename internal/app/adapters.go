@@ -9,6 +9,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/security"
+	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/kolapsis/maintenant/internal/update"
 )
 
@@ -18,8 +19,8 @@ type CertPostureAdapter struct {
 }
 
 // CertificatesByContainer lists the monitors once and keeps those of the given containers.
-func (a *CertPostureAdapter) CertificatesByContainer(ctx context.Context, containerExternalIDs []string) (map[string][]security.CertificateInfo, error) {
-	wanted := idSet(containerExternalIDs)
+func (a *CertPostureAdapter) CertificatesByContainer(ctx context.Context, containers []security.ContainerInfo) (map[string][]security.CertificateInfo, error) {
+	wanted := containerIDs(containers)
 	monitors, err := a.CertSvc.ListMonitors(ctx, certificate.ListCertificatesOpts{})
 	if err != nil {
 		return nil, fmt.Errorf("list cert monitors: %w", err)
@@ -27,7 +28,8 @@ func (a *CertPostureAdapter) CertificatesByContainer(ctx context.Context, contai
 
 	result := make(map[string][]security.CertificateInfo)
 	for _, m := range monitors {
-		if !wanted[m.ExternalID] {
+		id, ok := wanted[hostedContainer{uid.Agent(m.AgentID), m.ExternalID}]
+		if !ok {
 			continue
 		}
 		info := security.CertificateInfo{
@@ -37,7 +39,7 @@ func (a *CertPostureAdapter) CertificatesByContainer(ctx context.Context, contai
 		if err == nil && cr != nil {
 			info.DaysRemaining = cr.DaysRemaining()
 		}
-		result[m.ExternalID] = append(result[m.ExternalID], info)
+		result[id] = append(result[id], info)
 	}
 	return result, nil
 }
@@ -47,8 +49,8 @@ type CVEPostureAdapter struct {
 	Store update.UpdateStore
 }
 
-func (a *CVEPostureAdapter) ListCVEsForContainer(ctx context.Context, containerExternalID string) ([]security.CVEInfo, error) {
-	cves, err := a.Store.ListContainerCVEs(ctx, containerExternalID)
+func (a *CVEPostureAdapter) ListCVEsForContainer(ctx context.Context, agentID, containerExternalID string) ([]security.CVEInfo, error) {
+	cves, err := a.Store.ListContainerCVEs(ctx, agentID, containerExternalID)
 	if err != nil {
 		return nil, fmt.Errorf("list container cves: %w", err)
 	}
@@ -67,8 +69,8 @@ type CVEEvaluationPostureAdapter struct {
 	Store update.UpdateStore
 }
 
-func (a *CVEEvaluationPostureAdapter) GetCVEEvaluation(ctx context.Context, containerExternalID string) (*security.CVEEvaluationInfo, error) {
-	eval, err := a.Store.GetCVEEvaluation(ctx, containerExternalID)
+func (a *CVEEvaluationPostureAdapter) GetCVEEvaluation(ctx context.Context, agentID, containerExternalID string) (*security.CVEEvaluationInfo, error) {
+	eval, err := a.Store.GetCVEEvaluation(ctx, agentID, containerExternalID)
 	if err != nil {
 		return nil, fmt.Errorf("get cve evaluation: %w", err)
 	}
@@ -84,18 +86,19 @@ type UpdatePostureAdapter struct {
 }
 
 // UpdatesByContainer lists the pending updates once and keeps those of the given containers.
-func (a *UpdatePostureAdapter) UpdatesByContainer(ctx context.Context, containerExternalIDs []string) (map[string][]security.UpdateInfo, error) {
-	wanted := idSet(containerExternalIDs)
+func (a *UpdatePostureAdapter) UpdatesByContainer(ctx context.Context, containers []security.ContainerInfo) (map[string][]security.UpdateInfo, error) {
+	wanted := containerIDs(containers)
 	updates, err := a.Store.ListImageUpdates(ctx, update.ListImageUpdatesOpts{})
 	if err != nil {
 		return nil, fmt.Errorf("list image updates: %w", err)
 	}
 	result := make(map[string][]security.UpdateInfo)
 	for _, u := range updates {
-		if !wanted[u.ContainerID] {
+		id, ok := wanted[hostedContainer{uid.Agent(u.AgentID), u.ContainerID}]
+		if !ok {
 			continue
 		}
-		result[u.ContainerID] = append(result[u.ContainerID], security.UpdateInfo{
+		result[id] = append(result[id], security.UpdateInfo{
 			UpdateType:  string(u.UpdateType),
 			PublishedAt: u.PublishedAt,
 		})
@@ -103,10 +106,12 @@ func (a *UpdatePostureAdapter) UpdatesByContainer(ctx context.Context, container
 	return result, nil
 }
 
-func idSet(ids []string) map[string]bool {
-	set := make(map[string]bool, len(ids))
-	for _, id := range ids {
-		set[id] = true
+type hostedContainer struct{ agentID, externalID string }
+
+func containerIDs(containers []security.ContainerInfo) map[hostedContainer]string {
+	ids := make(map[hostedContainer]string, len(containers))
+	for _, c := range containers {
+		ids[hostedContainer{uid.Agent(c.AgentID), c.ExternalID}] = c.ID
 	}
-	return set
+	return ids
 }

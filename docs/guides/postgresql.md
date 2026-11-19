@@ -260,7 +260,8 @@ before writing anything:
 - **An alert active before the copy does not travel.** If its cause persists, it
   is raised again, unacknowledged, so an acknowledgement has to be redone. The
   alert locks of the carried monitors are reset for that: endpoints, heartbeats,
-  certificate reminders and resource thresholds start from a clean state.
+  certificate reminders and resource thresholds start from a clean state, and an
+  unhealthy container arrives without a health until the next reconcile reads it.
 - **Curves start from zero**: resource, uptime and check history, daily uptime
   aggregates included (the 365-day history of endpoints, heartbeats and
   containers). Aggregates rebuild at their usual intervals.

@@ -373,7 +373,7 @@ onUnmounted(() => {
 
     <!-- Detail Panel -->
     <SlideOverPanel v-model:open="slideOpen" :title="selectedUpdate?.container_name || ''">
-      <UpdateDetailPanel v-if="selectedUpdate" :container-id="selectedUpdate.container_id" />
+      <UpdateDetailPanel v-if="selectedUpdate" :container-id="selectedUpdate.container_id" :agent-id="selectedUpdate.agent_id" />
     </SlideOverPanel>
   </div>
 </template>

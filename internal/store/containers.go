@@ -174,8 +174,8 @@ func (s *ContainerStore) DeleteContainerByID(ctx context.Context, id string) err
 	// Look up the external_id for cleaning up tables keyed by it (soft refs,
 	// no FK). The FK-constrained children (transitions, snapshots, alert configs)
 	// are removed automatically by ON DELETE CASCADE.
-	var externalID string
-	err := s.db.QueryRowContext(ctx, `SELECT external_id FROM containers WHERE id = ?`, id).Scan(&externalID)
+	var agentID, externalID string
+	err := s.db.QueryRowContext(ctx, `SELECT agent_id, external_id FROM containers WHERE id = ?`, id).Scan(&agentID, &externalID)
 	if err != nil {
 		return fmt.Errorf("get container external_id: %w", err)
 	}
@@ -184,12 +184,12 @@ func (s *ContainerStore) DeleteContainerByID(ctx context.Context, id string) err
 		sql  string
 		desc string
 	}{
-		{`DELETE FROM image_updates WHERE container_id = ?`, "image updates"},
-		{`DELETE FROM container_cves WHERE container_id = ?`, "container cves"},
-		{`DELETE FROM version_pins WHERE container_id = ?`, "version pins"},
-		{`DELETE FROM risk_score_history WHERE container_id = ?`, "risk score history"},
+		{`DELETE FROM image_updates WHERE agent_id = ? AND container_id = ?`, "image updates"},
+		{`DELETE FROM container_cves WHERE agent_id = ? AND container_id = ?`, "container cves"},
+		{`DELETE FROM version_pins WHERE agent_id = ? AND container_id = ?`, "version pins"},
+		{`DELETE FROM risk_score_history WHERE agent_id = ? AND container_id = ?`, "risk score history"},
 	} {
-		if _, err := s.writer.Exec(ctx, q.sql, externalID); err != nil {
+		if _, err := s.writer.Exec(ctx, q.sql, agentID, externalID); err != nil {
 			return fmt.Errorf("delete container %s: %w", q.desc, err)
 		}
 	}
@@ -352,14 +352,18 @@ func (s *ContainerStore) DeleteArchivedContainersBefore(ctx context.Context, bef
 		sql  string
 		desc string
 	}{
-		{`DELETE FROM image_updates WHERE container_id IN (
-			SELECT external_id FROM containers WHERE archived=1 AND archived_at<? AND archived_at IS NOT NULL)`, "image updates"},
-		{`DELETE FROM container_cves WHERE container_id IN (
-			SELECT external_id FROM containers WHERE archived=1 AND archived_at<? AND archived_at IS NOT NULL)`, "container cves"},
-		{`DELETE FROM version_pins WHERE container_id IN (
-			SELECT external_id FROM containers WHERE archived=1 AND archived_at<? AND archived_at IS NOT NULL)`, "version pins"},
-		{`DELETE FROM risk_score_history WHERE container_id IN (
-			SELECT external_id FROM containers WHERE archived=1 AND archived_at<? AND archived_at IS NOT NULL)`, "risk score history"},
+		{`DELETE FROM image_updates WHERE EXISTS (SELECT 1 FROM containers c
+			WHERE c.agent_id = image_updates.agent_id AND c.external_id = image_updates.container_id
+			AND c.archived=1 AND c.archived_at<? AND c.archived_at IS NOT NULL)`, "image updates"},
+		{`DELETE FROM container_cves WHERE EXISTS (SELECT 1 FROM containers c
+			WHERE c.agent_id = container_cves.agent_id AND c.external_id = container_cves.container_id
+			AND c.archived=1 AND c.archived_at<? AND c.archived_at IS NOT NULL)`, "container cves"},
+		{`DELETE FROM version_pins WHERE EXISTS (SELECT 1 FROM containers c
+			WHERE c.agent_id = version_pins.agent_id AND c.external_id = version_pins.container_id
+			AND c.archived=1 AND c.archived_at<? AND c.archived_at IS NOT NULL)`, "version pins"},
+		{`DELETE FROM risk_score_history WHERE EXISTS (SELECT 1 FROM containers c
+			WHERE c.agent_id = risk_score_history.agent_id AND c.external_id = risk_score_history.container_id
+			AND c.archived=1 AND c.archived_at<? AND c.archived_at IS NOT NULL)`, "risk score history"},
 	} {
 		if _, err := s.writer.Exec(ctx, q.sql, cutoff); err != nil {
 			return 0, fmt.Errorf("delete archived containers %s: %w", q.desc, err)

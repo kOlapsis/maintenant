@@ -181,9 +181,9 @@ func (s *Service) GetUpdateSummary(ctx context.Context) (*UpdateSummary, error) 
 	return s.store.GetUpdateSummary(ctx)
 }
 
-// GetImageUpdateByContainer returns the latest update for a container.
-func (s *Service) GetImageUpdateByContainer(ctx context.Context, containerID string) (*ImageUpdate, error) {
-	return s.store.GetImageUpdateByContainer(ctx, containerID)
+// GetAgentImageUpdate returns the latest update for the container containerID runs on agentID.
+func (s *Service) GetAgentImageUpdate(ctx context.Context, agentID, containerID string) (*ImageUpdate, error) {
+	return s.store.GetAgentImageUpdate(ctx, agentID, containerID)
 }
 
 // ListImageUpdates returns filtered updates.
@@ -437,7 +437,7 @@ func (s *Service) runScan(ctx context.Context) {
 	// Build container lookup for command generation
 	containerByID := make(map[string]ContainerInfo, len(containers))
 	for _, c := range containers {
-		containerByID[c.ExternalID] = c
+		containerByID[uid.Container(uid.Agent(c.AgentID), c.ExternalID)] = c
 	}
 
 	// A container whose scan failed keeps its pending update until a scan reaches its registry.
@@ -467,7 +467,7 @@ func (s *Service) runScan(ctx context.Context) {
 		u := &ImageUpdate{
 			ScanID:         scanID,
 			ContainerID:    r.ContainerID,
-			AgentID:        containerByID[r.ContainerID].AgentID,
+			AgentID:        r.AgentID,
 			ContainerName:  r.ContainerName,
 			Image:          r.Image,
 			CurrentTag:     r.CurrentTag,
@@ -491,9 +491,9 @@ func (s *Service) runScan(ctx context.Context) {
 
 		eventData := map[string]interface{}{
 			"container_id":   r.ContainerID,
-			"container_uid":  containerByID[r.ContainerID].UID,
+			"container_uid":  r.ContainerUID,
 			"container_name": r.ContainerName,
-			"agent_id":       containerByID[r.ContainerID].AgentID,
+			"agent_id":       r.AgentID,
 			"image":          r.Image,
 			"current_tag":    r.CurrentTag,
 			"latest_tag":     r.LatestTag,
@@ -502,7 +502,7 @@ func (s *Service) runScan(ctx context.Context) {
 			"alert_on":       r.AlertOn,
 		}
 
-		if ci, ok := containerByID[r.ContainerID]; ok {
+		if ci, ok := containerByID[uid.Container(r.AgentID, r.ContainerID)]; ok {
 			eventData["update_command"] = s.GenerateUpdateCommand(ci, r.LatestTag, r.LatestDigest)
 			if cmd := s.GenerateRollbackCommand(ci, u); cmd != "" {
 				eventData["rollback_command"] = cmd
@@ -558,16 +558,13 @@ func (s *Service) runScan(ctx context.Context) {
 	}
 
 	for _, su := range staleUpdates {
-		agentID := su.AgentID
-		if agentID == "" {
-			agentID = containerByID[su.ContainerID].AgentID
-		}
+		agentID := uid.Agent(su.AgentID)
 		containerUID := su.ContainerUID
 		if containerUID == "" {
-			containerUID = containerByID[su.ContainerID].UID
+			containerUID = containerByID[uid.Container(agentID, su.ContainerID)].UID
 		}
 		if containerUID == "" {
-			containerUID = uid.Container(uid.Agent(agentID), su.ContainerID)
+			containerUID = uid.Container(agentID, su.ContainerID)
 		}
 		s.emitEvent(event.UpdateResolved, map[string]interface{}{
 			"container_id":   su.ContainerID,
@@ -584,11 +581,11 @@ func (s *Service) runScan(ctx context.Context) {
 func enrichmentTargets(containers []ContainerInfo, results []UpdateResult) []UpdateResult {
 	covered := make(map[string]bool, len(results))
 	for _, r := range results {
-		covered[r.ContainerID] = true
+		covered[uid.Container(uid.Agent(r.AgentID), r.ContainerID)] = true
 	}
 	targets := append(make([]UpdateResult, 0, len(containers)), results...)
 	for _, c := range containers {
-		if !covered[c.ExternalID] {
+		if !covered[uid.Container(uid.Agent(c.AgentID), c.ExternalID)] {
 			targets = append(targets, runningImage(c))
 		}
 	}

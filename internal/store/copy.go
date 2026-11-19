@@ -122,7 +122,7 @@ var leftBehindGroups = []leftBehindGroup{
 	{"State history", []string{"state_transitions"}, "same"},
 	{"Alerts and deliveries", []string{"alerts", "notification_deliveries",
 		"escalation_runs", "escalation_deliveries"},
-		"alerts do not travel; the alert locks of the carried monitors are reset, so a monitor still failing alerts again"},
+		"alerts do not travel; the alert locks of the carried monitors and the health of unhealthy containers are reset, so a monitor still failing or a container still unhealthy alerts again"},
 	{"Intelligence", []string{"image_updates", "image_update_scans", "container_cves",
 		"cve_cache", "risk_score_history", "digest_baselines"}, "recomputed on the next scan"},
 	{"Ephemeral tokens", []string{"mcp_oauth_codes", "mcp_oauth_tokens"},
@@ -265,7 +265,7 @@ func Copy(ctx context.Context, src, dst *sql.DB, out io.Writer, confirm func(Pla
 	return report, nil
 }
 
-// A down heartbeat goes back to up with its deadline kept: only an overdue deadline raises it again.
+// neutralizeAlertLocks clears the alert locks of the carried monitors and the health of unhealthy containers, so a failure still present alerts again.
 func neutralizeAlertLocks(ctx context.Context, tx *sql.Tx) error {
 	for _, q := range []string{
 		`UPDATE endpoints SET alert_state='normal', consecutive_failures=0, consecutive_successes=0
@@ -274,6 +274,7 @@ func neutralizeAlertLocks(ctx context.Context, tx *sql.Tx) error {
 		`UPDATE heartbeats SET alert_state='normal' WHERE alert_state<>'normal'`,
 		`UPDATE cert_monitors SET last_alerted_threshold=NULL WHERE last_alerted_threshold IS NOT NULL`,
 		`UPDATE resource_alert_configs SET alert_state='normal' WHERE alert_state<>'normal'`,
+		`UPDATE containers SET health_status=NULL WHERE health_status='unhealthy'`,
 	} {
 		if _, err := tx.ExecContext(ctx, q); err != nil {
 			return fmt.Errorf("reset alert locks: %w", err)

@@ -27,6 +27,7 @@ import {
   type Exclusion,
 } from '@/services/updateApi'
 import { sseBus } from '@/services/sseBus'
+import { isLocalAgent } from '@/services/apiFetch'
 import { useEdition } from '@/composables/useEdition'
 
 export const useUpdatesStore = defineStore('updates', () => {
@@ -213,9 +214,9 @@ export const useUpdatesStore = defineStore('updates', () => {
     }
   }
 
-  async function fetchContainerCvesAction(containerId: string) {
+  async function fetchContainerCvesAction(containerId: string, agentId?: string | null) {
     if (!hasFeature('cve_enrichment')) return
-    const data = await fetchContainerCves(containerId)
+    const data = await fetchContainerCves(containerId, agentId)
     containerCves.value[containerId] = data.cves || []
   }
 
@@ -224,17 +225,22 @@ export const useUpdatesStore = defineStore('updates', () => {
     riskScores.value = await fetchRiskScores()
   }
 
-  async function pinVersionAction(containerId: string, reason?: string) {
-    await apiPinVersion(containerId, reason)
-    const idx = updates.value.findIndex(u => u.container_id === containerId)
+  function entryIndex(containerId: string, agentId?: string | null) {
+    return updates.value.findIndex(u => u.container_id === containerId &&
+      (isLocalAgent(u.agent_id) ? isLocalAgent(agentId) : u.agent_id === agentId))
+  }
+
+  async function pinVersionAction(containerId: string, reason?: string, agentId?: string | null) {
+    await apiPinVersion(containerId, reason, agentId)
+    const idx = entryIndex(containerId, agentId)
     const pinItem = updates.value[idx]
     if (pinItem) pinItem.status = 'pinned'
     await fetchSummary()
   }
 
-  async function unpinVersionAction(containerId: string) {
-    await apiUnpinVersion(containerId)
-    const idx = updates.value.findIndex(u => u.container_id === containerId)
+  async function unpinVersionAction(containerId: string, agentId?: string | null) {
+    await apiUnpinVersion(containerId, agentId)
+    const idx = entryIndex(containerId, agentId)
     const unpinItem = updates.value[idx]
     if (unpinItem) unpinItem.status = 'available'
     await fetchSummary()

@@ -23,6 +23,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/status"
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/store/storetest"
+	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/kolapsis/maintenant/internal/update"
 	"github.com/kolapsis/maintenant/internal/webhook"
 )
@@ -181,14 +182,15 @@ type pinStore struct {
 	deleteErr error
 }
 
-func (pinStore) GetImageUpdateByContainer(context.Context, string) (*update.ImageUpdate, error) {
+func (pinStore) GetAgentImageUpdate(context.Context, string, string) (*update.ImageUpdate, error) {
 	return &update.ImageUpdate{ContainerID: "c1", Image: "nginx", CurrentTag: "1.0"}, nil
 }
+func (pinStore) ContainerAgent(context.Context, string) (string, error) { return uid.LocalAgent, nil }
 func (pinStore) InsertVersionPin(context.Context, *update.VersionPin) (string, error) {
 	return "p", nil
 }
 func (p pinStore) UpdateImageUpdate(context.Context, *update.ImageUpdate) error { return p.updateErr }
-func (p pinStore) DeleteVersionPin(context.Context, string) error               { return p.deleteErr }
+func (p pinStore) DeleteVersionPin(context.Context, string, string) error       { return p.deleteErr }
 
 func TestUpdates_PinAndUnpinReportAFailedStatusWrite(t *testing.T) {
 	h := NewUpdateHandler(nil, pinStore{updateErr: errSQL}, nil)

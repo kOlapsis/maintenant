@@ -154,7 +154,7 @@ func TestContainerServiceAdapter_AgentContainersUseWhatTheAgentReported(t *testi
 	assert.Empty(t, errs)
 	assert.Empty(t, results, "maintenant.update.enabled=false applies to an agent container")
 
-	info, err := adapter.GetContainerInfo(context.Background(), "reported")
+	info, err := adapter.GetContainerInfo(context.Background(), agentID, "reported")
 	require.NoError(t, err)
 	assert.Equal(t, "false", info.Labels["maintenant.update.enabled"])
 }

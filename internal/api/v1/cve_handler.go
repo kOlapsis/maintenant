@@ -31,6 +31,14 @@ func (h *CVEHandler) HandleListCVEs(w http.ResponseWriter, r *http.Request) {
 		Severity:    r.URL.Query().Get("severity"),
 		ContainerID: r.URL.Query().Get("container_id"),
 	}
+	if opts.ContainerID != "" {
+		agentID, err := requestAgent(r, h.store, opts.ContainerID)
+		if err != nil {
+			writeAgentError(w, err, "INTERNAL_ERROR", "Failed to list CVEs")
+			return
+		}
+		opts.AgentID = agentID
+	}
 
 	cves, err := h.store.ListAllActiveCVEs(r.Context(), opts)
 	if err != nil {
@@ -41,6 +49,7 @@ func (h *CVEHandler) HandleListCVEs(w http.ResponseWriter, r *http.Request) {
 	// Group by CVE ID for the response format
 	type affectedContainer struct {
 		ContainerID string `json:"container_id"`
+		AgentID     string `json:"agent_id,omitempty"`
 		FixedIn     string `json:"fixed_in,omitempty"`
 	}
 
@@ -49,12 +58,13 @@ func (h *CVEHandler) HandleListCVEs(w http.ResponseWriter, r *http.Request) {
 
 	for _, c := range cves {
 		bySeverity[string(c.Severity)]++
+		ac := affectedContainer{ContainerID: c.ContainerID, FixedIn: c.FixedIn}
+		if isRemoteScope(c.AgentID) {
+			ac.AgentID = c.AgentID
+		}
 		if existing, ok := cveMap[c.CVEID]; ok {
 			affected := existing["affected_containers"].([]affectedContainer)
-			existing["affected_containers"] = append(affected, affectedContainer{
-				ContainerID: c.ContainerID,
-				FixedIn:     c.FixedIn,
-			})
+			existing["affected_containers"] = append(affected, ac)
 		} else {
 			cveMap[c.CVEID] = map[string]interface{}{
 				"cve_id":              c.CVEID,
@@ -62,7 +72,7 @@ func (h *CVEHandler) HandleListCVEs(w http.ResponseWriter, r *http.Request) {
 				"severity":            string(c.Severity),
 				"summary":             c.Summary,
 				"first_detected_at":   c.FirstDetectedAt,
-				"affected_containers": []affectedContainer{{ContainerID: c.ContainerID, FixedIn: c.FixedIn}},
+				"affected_containers": []affectedContainer{ac},
 			}
 		}
 	}
@@ -92,7 +102,12 @@ func (h *CVEHandler) HandleGetContainerCVEs(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	cves, err := h.store.ListContainerCVEs(r.Context(), containerID)
+	agentID, err := requestAgent(r, h.store, containerID)
+	if err != nil {
+		writeAgentError(w, err, "INTERNAL_ERROR", "Failed to get container CVEs")
+		return
+	}
+	cves, err := h.store.ListContainerCVEs(r.Context(), agentID, containerID)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get container CVEs")
 		return

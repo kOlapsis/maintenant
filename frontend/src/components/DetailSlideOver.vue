@@ -65,12 +65,13 @@ const panelWidth = computed(() => {
 
 // Update alerts carry the container UUID as entity id; UpdateDetailPanel is keyed
 // by the runtime ExternalID, so resolve it from the containers store.
-const updateExternalId = computed(() => {
-  if (detail.entityType.value !== 'update') return ''
+const updateContainer = computed(() => {
+  if (detail.entityType.value !== 'update') return undefined
   const id = detail.entityId.value
-  if (!id) return ''
-  return containersStore.allContainers.find(c => c.id === id)?.external_id ?? ''
+  if (!id) return undefined
+  return containersStore.allContainers.find(c => c.id === id)
 })
+const updateExternalId = computed(() => updateContainer.value?.external_id ?? '')
 
 function resolveTitle(type: EntityType, id: string): string {
   switch (type) {
@@ -149,6 +150,7 @@ function handleEndpointDeleted() {
     <UpdateDetailPanel
       v-if="detail.entityType.value === 'update' && updateExternalId"
       :container-id="updateExternalId"
+      :agent-id="updateContainer?.agent_id"
     />
     <SwarmServiceDetail
       v-if="detail.entityType.value === 'swarm-service' && typeof detail.entityId.value === 'string' && detail.entityId.value"

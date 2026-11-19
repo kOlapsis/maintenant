@@ -84,13 +84,13 @@ func (s *UpdateStore) GetLatestScanRecord(ctx context.Context) (*update.ScanReco
 // pre-upgrade finding on the Updates page for good.
 const liveContainerFilter = `EXISTS (
 		SELECT 1 FROM containers c
-		WHERE c.external_id = image_updates.container_id AND c.archived = 0)`
+		WHERE c.external_id = image_updates.container_id AND c.agent_id = image_updates.agent_id AND c.archived = 0)`
 
 // liveContainerCVEFilter is the same guard for the CVE findings, which the
 // Updates page counts alongside the image updates.
 const liveContainerCVEFilter = `EXISTS (
 		SELECT 1 FROM containers c
-		WHERE c.external_id = container_cves.container_id AND c.archived = 0)`
+		WHERE c.external_id = container_cves.container_id AND c.agent_id = container_cves.agent_id AND c.archived = 0)`
 
 func (s *UpdateStore) InsertImageUpdate(ctx context.Context, u *update.ImageUpdate) (string, error) {
 	var publishedAt *int64
@@ -173,6 +173,18 @@ func (s *UpdateStore) GetImageUpdateByContainer(ctx context.Context, containerID
 		 changelog_url, changelog_summary, has_breaking_changes, previous_digest, source_url,
 		 status, detected_at, agent_id
 		FROM image_updates WHERE container_id = ? ORDER BY detected_at DESC LIMIT 1`, containerID)
+	return scanImageUpdate(row)
+}
+
+// GetAgentImageUpdate returns the latest update recorded for containerID on agentID.
+func (s *UpdateStore) GetAgentImageUpdate(ctx context.Context, agentID, containerID string) (*update.ImageUpdate, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, scan_id, container_id, container_name, image, current_tag, current_digest, registry,
+		 latest_tag, latest_digest, update_type, risk_score, published_at,
+		 changelog_url, changelog_summary, has_breaking_changes, previous_digest, source_url,
+		 status, detected_at, agent_id
+		FROM image_updates WHERE agent_id = ? AND container_id = ? ORDER BY detected_at DESC LIMIT 1`,
+		uid.Agent(agentID), containerID)
 	return scanImageUpdate(row)
 }
 
@@ -264,14 +276,6 @@ func (s *UpdateStore) GetUpdateSummary(ctx context.Context) (*update.UpdateSumma
 	return summary, nil
 }
 
-func (s *UpdateStore) DeleteImageUpdatesByContainer(ctx context.Context, containerID string) error {
-	_, err := s.writer.Exec(ctx, `DELETE FROM image_updates WHERE container_id = ?`, containerID)
-	if err != nil {
-		return fmt.Errorf("delete image updates by container: %w", err)
-	}
-	return nil
-}
-
 func (s *UpdateStore) DeleteStaleImageUpdates(ctx context.Context, scanID string, agentIDs, scannedContainerNames []string) (int64, error) {
 	if len(agentIDs) == 0 || len(scannedContainerNames) == 0 {
 		return 0, nil
@@ -329,7 +333,7 @@ func (s *UpdateStore) ListOrphanImageUpdates(ctx context.Context) ([]update.Stal
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT DISTINCT container_id, container_name, agent_id,
 			COALESCE((SELECT c.id FROM containers c
-				WHERE c.external_id = image_updates.container_id LIMIT 1), '')
+				WHERE c.external_id = image_updates.container_id AND c.agent_id = image_updates.agent_id), '')
 		FROM image_updates WHERE NOT `+liveContainerFilter)
 	if err != nil {
 		return nil, fmt.Errorf("list orphan image updates: %w", err)
@@ -425,12 +429,12 @@ func (s *UpdateStore) IsCVECacheFresh(ctx context.Context, ecosystem, packageNam
 func (s *UpdateStore) UpsertContainerCVE(ctx context.Context, c *update.ContainerCVE) error {
 	c.ID = uid.New()
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO container_cves (id, container_id, cve_id, severity, cvss_score, summary, fixed_in, first_detected_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(container_id, cve_id) DO UPDATE SET
+		`INSERT INTO container_cves (id, agent_id, container_id, cve_id, severity, cvss_score, summary, fixed_in, first_detected_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(agent_id, container_id, cve_id) DO UPDATE SET
 			severity=excluded.severity, cvss_score=excluded.cvss_score,
 			summary=excluded.summary, fixed_in=excluded.fixed_in`,
-		c.ID, c.ContainerID, c.CVEID, string(c.Severity), c.CVSSScore, c.Summary, c.FixedIn,
+		c.ID, uid.Agent(c.AgentID), c.ContainerID, c.CVEID, string(c.Severity), c.CVSSScore, c.Summary, c.FixedIn,
 		c.FirstDetectedAt.Unix(),
 	)
 	if err != nil {
@@ -439,10 +443,11 @@ func (s *UpdateStore) UpsertContainerCVE(ctx context.Context, c *update.Containe
 	return nil
 }
 
-func (s *UpdateStore) ListContainerCVEs(ctx context.Context, containerID string) ([]*update.ContainerCVE, error) {
+func (s *UpdateStore) ListContainerCVEs(ctx context.Context, agentID, containerID string) ([]*update.ContainerCVE, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, container_id, cve_id, severity, cvss_score, summary, fixed_in, first_detected_at, resolved_at
-		FROM container_cves WHERE container_id = ? AND resolved_at IS NULL ORDER BY cvss_score DESC`, containerID)
+		`SELECT `+containerCVEColumns+`
+		FROM container_cves WHERE agent_id = ? AND container_id = ? AND resolved_at IS NULL ORDER BY cvss_score DESC`,
+		uid.Agent(agentID), containerID)
 	if err != nil {
 		return nil, fmt.Errorf("list container cves: %w", err)
 	}
@@ -453,7 +458,7 @@ func (s *UpdateStore) ListContainerCVEs(ctx context.Context, containerID string)
 }
 
 func (s *UpdateStore) ListAllActiveCVEs(ctx context.Context, opts update.ListCVEsOpts) ([]*update.ContainerCVE, error) {
-	query := `SELECT id, container_id, cve_id, severity, cvss_score, summary, fixed_in, first_detected_at, resolved_at
+	query := `SELECT ` + containerCVEColumns + `
 		FROM container_cves WHERE resolved_at IS NULL AND ` + liveContainerCVEFilter
 	var args []interface{}
 
@@ -465,6 +470,10 @@ func (s *UpdateStore) ListAllActiveCVEs(ctx context.Context, opts update.ListCVE
 		query += " AND container_id = ?"
 		args = append(args, opts.ContainerID)
 	}
+	if opts.AgentID != "" {
+		query += " AND agent_id = ?"
+		args = append(args, opts.AgentID)
+	}
 	query += " ORDER BY cvss_score DESC"
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -475,25 +484,6 @@ func (s *UpdateStore) ListAllActiveCVEs(ctx context.Context, opts update.ListCVE
 		_ = rows.Close()
 	}(rows)
 	return collectContainerCVEs(rows)
-}
-
-func (s *UpdateStore) ResolveContainerCVE(ctx context.Context, containerID, cveID string) error {
-	_, err := s.writer.Exec(ctx,
-		`UPDATE container_cves SET resolved_at = ? WHERE container_id = ? AND cve_id = ? AND resolved_at IS NULL`,
-		time.Now().Unix(), containerID, cveID,
-	)
-	if err != nil {
-		return fmt.Errorf("resolve container cve: %w", err)
-	}
-	return nil
-}
-
-func (s *UpdateStore) DeleteContainerCVEs(ctx context.Context, containerID string) error {
-	_, err := s.writer.Exec(ctx, `DELETE FROM container_cves WHERE container_id = ?`, containerID)
-	if err != nil {
-		return fmt.Errorf("delete container cves: %w", err)
-	}
-	return nil
 }
 
 func (s *UpdateStore) GetCVESummaryCounts(ctx context.Context) (map[string]int, error) {
@@ -523,13 +513,13 @@ func (s *UpdateStore) GetCVESummaryCounts(ctx context.Context) (map[string]int, 
 
 func (s *UpdateStore) UpsertCVEEvaluation(ctx context.Context, e *update.CVEEvaluation) error {
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO cve_evaluations (container_id, status, evaluated_at, ecosystem, package_name, package_version, error)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(container_id) DO UPDATE SET
+		`INSERT INTO cve_evaluations (agent_id, container_id, status, evaluated_at, ecosystem, package_name, package_version, error)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(agent_id, container_id) DO UPDATE SET
 			status = excluded.status, evaluated_at = excluded.evaluated_at,
 			ecosystem = excluded.ecosystem, package_name = excluded.package_name,
 			package_version = excluded.package_version, error = excluded.error`,
-		e.ContainerID, string(e.Status), e.EvaluatedAt.Unix(), e.Ecosystem, e.PackageName, e.PackageVersion, e.Error,
+		uid.Agent(e.AgentID), e.ContainerID, string(e.Status), e.EvaluatedAt.Unix(), e.Ecosystem, e.PackageName, e.PackageVersion, e.Error,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert cve evaluation: %w", err)
@@ -537,16 +527,16 @@ func (s *UpdateStore) UpsertCVEEvaluation(ctx context.Context, e *update.CVEEval
 	return nil
 }
 
-func (s *UpdateStore) GetCVEEvaluation(ctx context.Context, containerID string) (*update.CVEEvaluation, error) {
+func (s *UpdateStore) GetCVEEvaluation(ctx context.Context, agentID, containerID string) (*update.CVEEvaluation, error) {
 	var e update.CVEEvaluation
 	var status string
 	var evaluatedAt int64
 	var ecosystem, packageName, packageVersion, evalErr sql.NullString
 
 	err := s.db.QueryRowContext(ctx,
-		`SELECT container_id, status, evaluated_at, ecosystem, package_name, package_version, error
-		FROM cve_evaluations WHERE container_id = ?`, containerID).
-		Scan(&e.ContainerID, &status, &evaluatedAt, &ecosystem, &packageName, &packageVersion, &evalErr)
+		`SELECT agent_id, container_id, status, evaluated_at, ecosystem, package_name, package_version, error
+		FROM cve_evaluations WHERE agent_id = ? AND container_id = ?`, uid.Agent(agentID), containerID).
+		Scan(&e.AgentID, &e.ContainerID, &status, &evaluatedAt, &ecosystem, &packageName, &packageVersion, &evalErr)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -571,28 +561,20 @@ func (s *UpdateStore) GetCVEEvaluation(ctx context.Context, containerID string) 
 	return &e, nil
 }
 
-func (s *UpdateStore) DeleteCVEEvaluation(ctx context.Context, containerID string) error {
-	_, err := s.writer.Exec(ctx, `DELETE FROM cve_evaluations WHERE container_id = ?`, containerID)
-	if err != nil {
-		return fmt.Errorf("delete cve evaluation: %w", err)
-	}
-	return nil
-}
-
 // --- Version pins ---
 
 func (s *UpdateStore) InsertVersionPin(ctx context.Context, p *update.VersionPin) (string, error) {
 	p.ID = uid.New()
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO version_pins (id, container_id, image, pinned_tag, pinned_digest, reason, pinned_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(container_id) DO UPDATE SET
+		`INSERT INTO version_pins (id, agent_id, container_id, image, pinned_tag, pinned_digest, reason, pinned_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(agent_id, container_id) DO UPDATE SET
 			image=excluded.image,
 			pinned_tag=excluded.pinned_tag,
 			pinned_digest=excluded.pinned_digest,
 			reason=excluded.reason,
 			pinned_at=excluded.pinned_at`,
-		p.ID, p.ContainerID, p.Image, p.PinnedTag, p.PinnedDigest, p.Reason, p.PinnedAt.Unix(),
+		p.ID, uid.Agent(p.AgentID), p.ContainerID, p.Image, p.PinnedTag, p.PinnedDigest, p.Reason, p.PinnedAt.Unix(),
 	)
 	if err != nil {
 		return "", fmt.Errorf("insert version pin: %w", err)
@@ -600,15 +582,16 @@ func (s *UpdateStore) InsertVersionPin(ctx context.Context, p *update.VersionPin
 	return p.ID, nil
 }
 
-func (s *UpdateStore) GetVersionPin(ctx context.Context, containerID string) (*update.VersionPin, error) {
+func (s *UpdateStore) GetVersionPin(ctx context.Context, agentID, containerID string) (*update.VersionPin, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, container_id, image, pinned_tag, pinned_digest, reason, pinned_at
-		FROM version_pins WHERE container_id = ?`, containerID)
+		`SELECT id, agent_id, container_id, image, pinned_tag, pinned_digest, reason, pinned_at
+		FROM version_pins WHERE agent_id = ? AND container_id = ?`, uid.Agent(agentID), containerID)
 	return scanVersionPin(row)
 }
 
-func (s *UpdateStore) DeleteVersionPin(ctx context.Context, containerID string) error {
-	_, err := s.writer.Exec(ctx, `DELETE FROM version_pins WHERE container_id = ?`, containerID)
+func (s *UpdateStore) DeleteVersionPin(ctx context.Context, agentID, containerID string) error {
+	_, err := s.writer.Exec(ctx, `DELETE FROM version_pins WHERE agent_id = ? AND container_id = ?`,
+		uid.Agent(agentID), containerID)
 	if err != nil {
 		return fmt.Errorf("delete version pin: %w", err)
 	}
@@ -690,9 +673,9 @@ func (s *UpdateStore) DeleteExclusion(ctx context.Context, id string) error {
 func (s *UpdateStore) InsertRiskScoreRecord(ctx context.Context, r *update.RiskScoreRecord) (string, error) {
 	r.ID = uid.New()
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO risk_score_history (id, container_id, score, factors_json, recorded_at)
-		VALUES (?, ?, ?, ?, ?)`,
-		r.ID, r.ContainerID, r.Score, r.FactorsJSON, r.RecordedAt.Unix(),
+		`INSERT INTO risk_score_history (id, agent_id, container_id, score, factors_json, recorded_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		r.ID, uid.Agent(r.AgentID), r.ContainerID, r.Score, r.FactorsJSON, r.RecordedAt.Unix(),
 	)
 	if err != nil {
 		return "", fmt.Errorf("insert risk score record: %w", err)
@@ -700,13 +683,13 @@ func (s *UpdateStore) InsertRiskScoreRecord(ctx context.Context, r *update.RiskS
 	return r.ID, nil
 }
 
-func (s *UpdateStore) ListRiskScoreHistory(ctx context.Context, containerID string, from, to time.Time) ([]*update.RiskScoreRecord, error) {
+func (s *UpdateStore) ListRiskScoreHistory(ctx context.Context, agentID, containerID string, from, to time.Time) ([]*update.RiskScoreRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, container_id, score, factors_json, recorded_at
+		`SELECT id, agent_id, container_id, score, factors_json, recorded_at
 		FROM risk_score_history
-		WHERE container_id = ? AND recorded_at >= ? AND recorded_at <= ?
+		WHERE agent_id = ? AND container_id = ? AND recorded_at >= ? AND recorded_at <= ?
 		ORDER BY recorded_at ASC`,
-		containerID, from.Unix(), to.Unix(),
+		uid.Agent(agentID), containerID, from.Unix(), to.Unix(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list risk score history: %w", err)
@@ -719,13 +702,41 @@ func (s *UpdateStore) ListRiskScoreHistory(ctx context.Context, containerID stri
 	for rows.Next() {
 		var r update.RiskScoreRecord
 		var recordedAt int64
-		if err := rows.Scan(&r.ID, &r.ContainerID, &r.Score, &r.FactorsJSON, &recordedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.AgentID, &r.ContainerID, &r.Score, &r.FactorsJSON, &recordedAt); err != nil {
 			return nil, err
 		}
 		r.RecordedAt = time.Unix(recordedAt, 0)
 		result = append(result, &r)
 	}
 	return result, rows.Err()
+}
+
+// ContainerAgent returns the agent a call naming only externalID acts on: the local runtime when it runs it or nothing does, else the only agent that runs it.
+func (s *UpdateStore) ContainerAgent(ctx context.Context, externalID string) (string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT agent_id FROM containers WHERE external_id = ?`, externalID)
+	if err != nil {
+		return "", fmt.Errorf("container agent: %w", err)
+	}
+	defer func(rows *sql.Rows) { _ = rows.Close() }(rows)
+	var agents []string
+	for rows.Next() {
+		var a string
+		if err := rows.Scan(&a); err != nil {
+			return "", err
+		}
+		agents = append(agents, a)
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	switch {
+	case len(agents) == 0 || slices.Contains(agents, uid.LocalAgent):
+		return uid.LocalAgent, nil
+	case len(agents) == 1:
+		return agents[0], nil
+	}
+	return "", fmt.Errorf("%w: %s", update.ErrAmbiguousAgent, externalID)
 }
 
 // --- Retention cleanup ---
@@ -754,7 +765,8 @@ func (s *UpdateStore) CleanupExpired(ctx context.Context, olderThan time.Time) (
 	res, err = s.writer.Exec(ctx,
 		`DELETE FROM digest_baselines WHERE NOT EXISTS (
 			SELECT 1 FROM containers c
-			WHERE c.external_id = digest_baselines.container_id AND c.archived = 0)`)
+			WHERE c.external_id = digest_baselines.container_id AND c.agent_id = digest_baselines.agent_id
+			AND c.archived = 0)`)
 	if err != nil {
 		return totalDeleted, fmt.Errorf("cleanup digest baselines: %w", err)
 	}
@@ -764,6 +776,8 @@ func (s *UpdateStore) CleanupExpired(ctx context.Context, olderThan time.Time) (
 }
 
 // --- Row scanners ---
+
+const containerCVEColumns = `id, agent_id, container_id, cve_id, severity, cvss_score, summary, fixed_in, first_detected_at, resolved_at`
 
 func scanScanRecord(row rowScanner) (*update.ScanRecord, error) {
 	var r update.ScanRecord
@@ -903,7 +917,7 @@ func scanContainerCVE(row rowScanner) (*update.ContainerCVE, error) {
 	var summary, fixedIn sql.NullString
 
 	err := row.Scan(
-		&c.ID, &c.ContainerID, &c.CVEID, &c.Severity,
+		&c.ID, &c.AgentID, &c.ContainerID, &c.CVEID, &c.Severity,
 		&cvssScore, &summary, &fixedIn, &firstDetectedAt, &resolvedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -947,7 +961,7 @@ func scanVersionPin(row rowScanner) (*update.VersionPin, error) {
 	var pinnedAt int64
 	var reason sql.NullString
 
-	err := row.Scan(&p.ID, &p.ContainerID, &p.Image, &p.PinnedTag, &p.PinnedDigest, &reason, &pinnedAt)
+	err := row.Scan(&p.ID, &p.AgentID, &p.ContainerID, &p.Image, &p.PinnedTag, &p.PinnedDigest, &reason, &pinnedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -965,25 +979,25 @@ func scanVersionPin(row rowScanner) (*update.VersionPin, error) {
 // UpsertDigestBaseline inserts or updates the digest baseline for a container.
 func (s *UpdateStore) UpsertDigestBaseline(ctx context.Context, b *update.DigestBaseline) error {
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO digest_baselines (container_id, image, tag, remote_digest, checked_at)
-		 VALUES (?, ?, ?, ?, ?)
-		 ON CONFLICT(container_id) DO UPDATE SET
+		`INSERT INTO digest_baselines (agent_id, container_id, image, tag, remote_digest, checked_at)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(agent_id, container_id) DO UPDATE SET
 		   image = excluded.image,
 		   tag = excluded.tag,
 		   remote_digest = excluded.remote_digest,
 		   checked_at = excluded.checked_at`,
-		b.ContainerID, b.Image, b.Tag, b.RemoteDigest, b.CheckedAt.Unix())
+		uid.Agent(b.AgentID), b.ContainerID, b.Image, b.Tag, b.RemoteDigest, b.CheckedAt.Unix())
 	return err
 }
 
 // GetDigestBaseline returns the stored digest baseline for a container.
-func (s *UpdateStore) GetDigestBaseline(ctx context.Context, containerID string) (*update.DigestBaseline, error) {
+func (s *UpdateStore) GetDigestBaseline(ctx context.Context, agentID, containerID string) (*update.DigestBaseline, error) {
 	var b update.DigestBaseline
 	var checkedAt int64
 	err := s.db.QueryRowContext(ctx,
-		`SELECT container_id, image, tag, remote_digest, checked_at
-		 FROM digest_baselines WHERE container_id = ?`, containerID).
-		Scan(&b.ContainerID, &b.Image, &b.Tag, &b.RemoteDigest, &checkedAt)
+		`SELECT agent_id, container_id, image, tag, remote_digest, checked_at
+		 FROM digest_baselines WHERE agent_id = ? AND container_id = ?`, uid.Agent(agentID), containerID).
+		Scan(&b.AgentID, &b.ContainerID, &b.Image, &b.Tag, &b.RemoteDigest, &checkedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

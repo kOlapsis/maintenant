@@ -86,7 +86,12 @@ func (h *RiskHandler) HandleGetContainerRisk(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	u, err := h.store.GetImageUpdateByContainer(r.Context(), containerID)
+	agentID, err := requestAgent(r, h.store, containerID)
+	if err != nil {
+		writeAgentError(w, err, "internal", "Failed to get risk data")
+		return
+	}
+	u, err := h.store.GetAgentImageUpdate(r.Context(), agentID, containerID)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "internal", "Failed to get risk data")
 		return
@@ -119,7 +124,12 @@ func (h *RiskHandler) handleRiskHistory(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	history, err := h.store.ListRiskScoreHistory(r.Context(), containerID, from, now)
+	agentID, err := requestAgent(r, h.store, containerID)
+	if err != nil {
+		writeAgentError(w, err, "internal", "Failed to get risk history")
+		return
+	}
+	history, err := h.store.ListRiskScoreHistory(r.Context(), agentID, containerID, from, now)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "internal", "Failed to get risk history")
 		return

@@ -30,9 +30,9 @@ func NewAcknowledgmentStore(d *DB) *AcknowledgmentStoreImpl {
 func (s *AcknowledgmentStoreImpl) InsertAcknowledgment(ctx context.Context, ack *security.RiskAcknowledgment) (string, error) {
 	ack.ID = uid.New()
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO risk_acknowledgments (id, container_external_id, finding_type, finding_key, acknowledged_by, reason, acknowledged_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		ack.ID, ack.ContainerExternalID, ack.FindingType, ack.FindingKey,
+		`INSERT INTO risk_acknowledgments (id, agent_id, container_external_id, finding_type, finding_key, acknowledged_by, reason, acknowledged_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		ack.ID, uid.Agent(ack.AgentID), ack.ContainerExternalID, ack.FindingType, ack.FindingKey,
 		ack.AcknowledgedBy, ack.Reason, ack.AcknowledgedAt.Unix(),
 	)
 	if err != nil {
@@ -51,14 +51,13 @@ func (s *AcknowledgmentStoreImpl) DeleteAcknowledgment(ctx context.Context, id s
 	return nil
 }
 
-func (s *AcknowledgmentStoreImpl) ListAcknowledgments(ctx context.Context, containerExternalID string) ([]*security.RiskAcknowledgment, error) {
-	query := `SELECT id, container_external_id, finding_type, finding_key, acknowledged_by, reason, acknowledged_at
-		FROM risk_acknowledgments`
+func (s *AcknowledgmentStoreImpl) ListAcknowledgments(ctx context.Context, agentID, containerExternalID string) ([]*security.RiskAcknowledgment, error) {
+	query := `SELECT ` + acknowledgmentColumns + ` FROM risk_acknowledgments`
 	var args []interface{}
 
 	if containerExternalID != "" {
-		query += ` WHERE container_external_id = ?`
-		args = append(args, containerExternalID)
+		query += ` WHERE agent_id = ? AND container_external_id = ?`
+		args = append(args, uid.Agent(agentID), containerExternalID)
 	}
 	query += ` ORDER BY acknowledged_at DESC`
 
@@ -81,12 +80,11 @@ func (s *AcknowledgmentStoreImpl) ListAcknowledgments(ctx context.Context, conta
 
 func (s *AcknowledgmentStoreImpl) GetAcknowledgment(ctx context.Context, id string) (*security.RiskAcknowledgment, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, container_external_id, finding_type, finding_key, acknowledged_by, reason, acknowledged_at
-		FROM risk_acknowledgments WHERE id = ?`, id)
+		`SELECT `+acknowledgmentColumns+` FROM risk_acknowledgments WHERE id = ?`, id)
 
 	ack := &security.RiskAcknowledgment{}
 	var ackedAt int64
-	err := row.Scan(&ack.ID, &ack.ContainerExternalID, &ack.FindingType, &ack.FindingKey,
+	err := row.Scan(&ack.ID, &ack.AgentID, &ack.ContainerExternalID, &ack.FindingType, &ack.FindingKey,
 		&ack.AcknowledgedBy, &ack.Reason, &ackedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -98,11 +96,12 @@ func (s *AcknowledgmentStoreImpl) GetAcknowledgment(ctx context.Context, id stri
 	return ack, nil
 }
 
-func (s *AcknowledgmentStoreImpl) IsAcknowledged(ctx context.Context, containerExternalID, findingType, findingKey string) (bool, error) {
+func (s *AcknowledgmentStoreImpl) IsAcknowledged(ctx context.Context, agentID, containerExternalID, findingType, findingKey string) (bool, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM risk_acknowledgments WHERE container_external_id = ? AND finding_type = ? AND finding_key = ?`,
-		containerExternalID, findingType, findingKey,
+		`SELECT COUNT(*) FROM risk_acknowledgments
+		WHERE agent_id = ? AND container_external_id = ? AND finding_type = ? AND finding_key = ?`,
+		uid.Agent(agentID), containerExternalID, findingType, findingKey,
 	).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("check acknowledgment: %w", err)
@@ -110,10 +109,12 @@ func (s *AcknowledgmentStoreImpl) IsAcknowledged(ctx context.Context, containerE
 	return count > 0, nil
 }
 
+const acknowledgmentColumns = `id, agent_id, container_external_id, finding_type, finding_key, acknowledged_by, reason, acknowledged_at`
+
 func scanAcknowledgmentRow(rows *sql.Rows) (*security.RiskAcknowledgment, error) {
 	ack := &security.RiskAcknowledgment{}
 	var ackedAt int64
-	err := rows.Scan(&ack.ID, &ack.ContainerExternalID, &ack.FindingType, &ack.FindingKey,
+	err := rows.Scan(&ack.ID, &ack.AgentID, &ack.ContainerExternalID, &ack.FindingType, &ack.FindingKey,
 		&ack.AcknowledgedBy, &ack.Reason, &ackedAt)
 	if err != nil {
 		return nil, fmt.Errorf("scan acknowledgment row: %w", err)

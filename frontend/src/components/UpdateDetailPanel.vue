@@ -27,6 +27,7 @@ const { hasFeature } = useEdition()
 
 const props = defineProps<{
   containerId: string
+  agentId?: string | null
 }>()
 
 const updates = useUpdatesStore()
@@ -68,7 +69,7 @@ async function loadDetail() {
   loading.value = true
   error.value = ''
   try {
-    detail.value = await fetchContainerUpdate(props.containerId)
+    detail.value = await fetchContainerUpdate(props.containerId, props.agentId)
     // Les alertes actives sont déjà chargées et tenues à jour app-wide
     // (AppHeader → dashboard.fetchAll + SSE). On ne refetch QUE si le store est
     // vide : sinon un refetch (snapshot pré-ack) écraserait la mise à jour
@@ -78,7 +79,7 @@ async function loadDetail() {
       void alertsStore.fetchActiveAlerts()
     }
     if (hasFeature('cve_enrichment')) {
-      await updates.fetchContainerCves(props.containerId)
+      await updates.fetchContainerCves(props.containerId, props.agentId)
     }
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load update details'
@@ -123,9 +124,9 @@ async function handlePin() {
   error.value = ''
   try {
     if (detail.value?.pinned) {
-      await updates.unpinVersion(props.containerId)
+      await updates.unpinVersion(props.containerId, props.agentId)
     } else {
-      await updates.pinVersion(props.containerId, pinReason.value)
+      await updates.pinVersion(props.containerId, pinReason.value, props.agentId)
       showPinInput.value = false
       pinReason.value = ''
     }

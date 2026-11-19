@@ -75,7 +75,7 @@ func TestPostureAdapters_ReadOncePerPass(t *testing.T) {
 
 	byName := map[string]*security.SecurityScore{}
 	for _, c := range containers {
-		s, err := scorer.ScoreContainer(context.Background(), c.ID, c.ExternalID, c.Name)
+		s, err := scorer.ScoreContainer(context.Background(), c)
 		require.NoError(t, err)
 		byName[c.Name] = s
 	}

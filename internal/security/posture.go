@@ -60,6 +60,7 @@ type ContainerRisk struct {
 type RiskAcknowledgment struct {
 	ID                  string    `json:"id"`
 	ContainerExternalID string    `json:"container_external_id"`
+	AgentID             string    `json:"agent_id"`
 	FindingType         string    `json:"finding_type"`
 	FindingKey          string    `json:"finding_key"`
 	AcknowledgedBy      string    `json:"acknowledged_by"`

@@ -217,6 +217,7 @@ func TestRunScan_RunsTheCVEPassOnEveryContainer(t *testing.T) {
 
 	assert.Equal(t, UpdateResult{
 		ContainerID:   "ctr-cache",
+		AgentID:       uid.LocalAgent,
 		ContainerName: "cache",
 		Image:         "redis:7.2.4",
 		CurrentTag:    "7.2.4",
