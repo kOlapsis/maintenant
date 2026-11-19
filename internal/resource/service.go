@@ -333,15 +333,20 @@ func (s *Service) GetTopConsumersByPeriod(ctx context.Context, metric, period st
 }
 
 func (s *Service) processSnapshot(snap *ResourceSnapshot) {
+	if err := s.handleSnapshot(snap); err != nil {
+		s.logger.Error("resource: persist snapshot", "container_id", snap.ContainerID, "error", err)
+	}
+}
+
+func (s *Service) handleSnapshot(snap *ResourceSnapshot) error {
 	ctx := context.Background()
 
 	if _, err := s.store.InsertSnapshot(ctx, snap); err != nil {
-		s.logger.Error("resource: persist snapshot", "container_id", snap.ContainerID, "error", err)
-		return
+		return err
 	}
 
 	if snap.Replayed {
-		return
+		return nil
 	}
 
 	if s.eventCallback != nil {
@@ -365,6 +370,7 @@ func (s *Service) processSnapshot(snap *ResourceSnapshot) {
 	}
 
 	s.evaluateAlerts(ctx, snap)
+	return nil
 }
 
 func (s *Service) evaluateAlerts(ctx context.Context, snap *ResourceSnapshot) {

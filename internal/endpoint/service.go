@@ -360,13 +360,22 @@ func (s *Service) CheckNow(ctx context.Context, endpointID string) (*Endpoint, e
 
 // ProcessCheckResult handles a check result: updates the endpoint state and persists the result.
 func (s *Service) ProcessCheckResult(ctx context.Context, endpointID string, result CheckResult) {
+	if err := s.applyCheckResult(ctx, endpointID, result); err != nil {
+		s.logger.Error("process check result", "endpoint_id", endpointID, "error", err)
+	}
+}
+
+func (s *Service) applyCheckResult(ctx context.Context, endpointID string, result CheckResult) error {
 	ep, err := s.store.GetEndpointByID(ctx, endpointID)
-	if err != nil || ep == nil {
-		s.logger.Error("get endpoint for check result", "endpoint_id", endpointID, "error", err)
-		return
+	if err != nil {
+		return fmt.Errorf("get endpoint for check result: %w", err)
+	}
+	if ep == nil {
+		s.logger.Error("get endpoint for check result", "endpoint_id", endpointID, "error", "not found")
+		return nil
 	}
 	if ep.Limited {
-		return
+		return nil
 	}
 
 	// A replayed probe is history: it feeds uptime, but the live status, the
@@ -376,9 +385,9 @@ func (s *Service) ProcessCheckResult(ctx context.Context, endpointID string, res
 	// broken stream.
 	if result.Replayed {
 		if _, err := s.store.InsertCheckResult(ctx, &result); err != nil {
-			s.logger.Error("insert replayed check result", "endpoint_id", endpointID, "error", err)
+			return fmt.Errorf("insert replayed check result: %w", err)
 		}
-		return
+		return nil
 	}
 
 	previousStatus := ep.Status
@@ -392,14 +401,15 @@ func (s *Service) ProcessCheckResult(ctx context.Context, endpointID string, res
 		ep.ConsecutiveSuccesses = 0
 	}
 
+	var storeErr error
 	if err := s.store.UpdateCheckResult(ctx, endpointID, newStatus, ep.AlertState,
 		ep.ConsecutiveFailures, ep.ConsecutiveSuccesses,
 		result.ResponseTimeMs, result.HTTPStatus, result.ErrorMessage); err != nil {
-		s.logger.Error("update check result on endpoint", "endpoint_id", endpointID, "error", err)
+		storeErr = errors.Join(storeErr, fmt.Errorf("update check result on endpoint: %w", err))
 	}
 
 	if _, err := s.store.InsertCheckResult(ctx, &result); err != nil {
-		s.logger.Error("insert check result", "endpoint_id", endpointID, "error", err)
+		storeErr = errors.Join(storeErr, fmt.Errorf("insert check result: %w", err))
 	}
 
 	s.logger.Debug("endpoint: check result processed", "endpoint_id", endpointID, "target", ep.Target, "success", result.Success, "response_time_ms", result.ResponseTimeMs, "status", string(newStatus))
@@ -444,6 +454,7 @@ func (s *Service) ProcessCheckResult(ctx context.Context, endpointID string, res
 			}
 		}
 	}
+	return storeErr
 }
 
 // HandleContainerStop pauses checks and sets endpoints to unknown for a stopped container.

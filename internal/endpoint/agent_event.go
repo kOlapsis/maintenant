@@ -47,6 +47,5 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	if meta.EventID != "" {
 		result.ID = uid.EventRecord(agentID, meta.EventID, "check_result")
 	}
-	s.ProcessCheckResult(ctx, ep.ID, result)
-	return nil
+	return s.applyCheckResult(ctx, ep.ID, result)
 }

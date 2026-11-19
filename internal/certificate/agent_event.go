@@ -48,8 +48,8 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		return nil
 	}
 
-	s.processCheckResult(ctx, monitor, agentCertToRaw(ev), true)
-	return nil
+	_, err = s.applyCheckResult(ctx, monitor, agentCertToRaw(ev), true)
+	return err
 }
 
 // agentCertToRaw adapts a pushed CertificateInfo into the raw scan-result shape

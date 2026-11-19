@@ -279,19 +279,7 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 
 	now := time.Now()
 
-	// Record ping
 	storedPayload := s.filterPayload(payload)
-	ping := &HeartbeatPing{
-		HeartbeatID: h.ID,
-		PingType:    PingSuccess,
-		SourceIP:    sourceIP,
-		HTTPMethod:  httpMethod,
-		Payload:     storedPayload,
-		Timestamp:   now,
-	}
-	if _, err := s.store.InsertPing(ctx, ping); err != nil {
-		s.logger.Error("insert ping", "heartbeat_id", h.ID, "error", err)
-	}
 
 	// State transition
 	newStatus := StatusUp
@@ -325,6 +313,19 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// Record ping
+	ping := &HeartbeatPing{
+		HeartbeatID: h.ID,
+		PingType:    PingSuccess,
+		SourceIP:    sourceIP,
+		HTTPMethod:  httpMethod,
+		Payload:     storedPayload,
+		Timestamp:   now,
+	}
+	if _, err := s.store.InsertPing(ctx, ping); err != nil {
+		s.logger.Error("insert ping", "heartbeat_id", h.ID, "error", err)
 	}
 
 	if runDuration != nil {

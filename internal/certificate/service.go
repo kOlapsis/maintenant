@@ -658,6 +658,14 @@ func (s *Service) CheckNow(ctx context.Context, monitorID string) (*CertMonitor,
 
 // A pushed scan (endpoint probe, agent) comes far more often than the monitor's interval: it is stored once per interval or when its outcome changes.
 func (s *Service) processCheckResult(ctx context.Context, monitor *CertMonitor, raw *CheckCertificateResult, pushed bool) *CertCheckResult {
+	result, err := s.applyCheckResult(ctx, monitor, raw, pushed)
+	if err != nil {
+		s.logger.Error("process cert check result", "error", err, "monitor_id", monitor.ID)
+	}
+	return result
+}
+
+func (s *Service) applyCheckResult(ctx context.Context, monitor *CertMonitor, raw *CheckCertificateResult, pushed bool) (*CertCheckResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -667,6 +675,9 @@ func (s *Service) processCheckResult(ctx context.Context, monitor *CertMonitor, 
 
 	previous, err := s.store.GetLatestCheckResult(ctx, monitor.ID)
 	if err != nil {
+		if pushed {
+			return nil, fmt.Errorf("read latest cert check result: %w", err)
+		}
 		s.logger.Error("read latest cert check result", "error", err, "monitor_id", monitor.ID)
 	}
 
@@ -717,9 +728,12 @@ func (s *Service) processCheckResult(ctx context.Context, monitor *CertMonitor, 
 		monitor.NextCheckAt = &next
 	}
 
+	var storeErr error
 	interval := time.Duration(monitor.CheckIntervalSeconds) * time.Second
 	if !pushed || previous == nil || now.Sub(previous.CheckedAt) >= interval || !sameOutcome(previous, result) {
-		s.recordCheckResult(ctx, monitor, result, raw)
+		if err := s.recordCheckResult(ctx, monitor, result, raw); err != nil {
+			storeErr = errors.Join(storeErr, err)
+		}
 	}
 
 	// Evaluate alerts (US3)
@@ -727,7 +741,7 @@ func (s *Service) processCheckResult(ctx context.Context, monitor *CertMonitor, 
 
 	// Update monitor in DB
 	if err := s.store.UpdateMonitor(ctx, monitor); err != nil {
-		s.logger.Error("update cert monitor", "error", err, "monitor_id", monitor.ID)
+		storeErr = errors.Join(storeErr, fmt.Errorf("update cert monitor: %w", err))
 	}
 
 	s.logger.Debug("certificate: check result", "monitor_id", monitor.ID, "hostname", monitor.Hostname, "status", string(monitor.Status), "days_remaining", result.DaysRemaining())
@@ -746,17 +760,16 @@ func (s *Service) processCheckResult(ctx context.Context, monitor *CertMonitor, 
 		})
 	}
 
-	return result
+	return result, storeErr
 }
 
-func (s *Service) recordCheckResult(ctx context.Context, monitor *CertMonitor, result *CertCheckResult, raw *CheckCertificateResult) {
+func (s *Service) recordCheckResult(ctx context.Context, monitor *CertMonitor, result *CertCheckResult, raw *CheckCertificateResult) error {
 	checkID, err := s.store.InsertCheckResult(ctx, result)
 	if err != nil {
-		s.logger.Error("insert cert check result", "error", err, "monitor_id", monitor.ID)
-		return
+		return fmt.Errorf("insert cert check result: %w", err)
 	}
 	if len(raw.Chain) == 0 {
-		return
+		return nil
 	}
 	entries := make([]*CertChainEntry, len(raw.Chain))
 	for i, c := range raw.Chain {
@@ -772,6 +785,7 @@ func (s *Service) recordCheckResult(ctx context.Context, monitor *CertMonitor, r
 	if err := s.store.InsertChainEntries(ctx, entries); err != nil {
 		s.logger.Error("insert chain entries", "error", err, "monitor_id", monitor.ID)
 	}
+	return nil
 }
 
 // sameOutcome reports whether two scans saw the same certificate in the same state, at the second precision the store keeps.
