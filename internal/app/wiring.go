@@ -179,7 +179,7 @@ func restartRecoveryEvent(m map[string]any) alert.Event {
 	}
 }
 
-// containerHealthEvent builds the alert of a healthy/unhealthy transition, false for any other change. Caller sets Timestamp.
+// containerHealthEvent builds the alert of a change to unhealthy, or the recovery of a change to healthy, false for any other change. Caller sets Timestamp.
 func containerHealthEvent(m map[string]any) (alert.Event, bool) {
 	prev, _ := m["previous_health"].(*container.HealthStatus)
 	newH, _ := m["health_status"].(container.HealthStatus)
@@ -193,10 +193,10 @@ func containerHealthEvent(m map[string]any) (alert.Event, bool) {
 		Details:    m,
 	}
 	switch {
-	case prev != nil && *prev == container.HealthHealthy && newH == container.HealthUnhealthy:
+	case newH == container.HealthUnhealthy && (prev == nil || *prev != container.HealthUnhealthy):
 		evt.Severity = alert.SeverityWarning
 		evt.Message = "Container became unhealthy"
-	case prev != nil && *prev == container.HealthUnhealthy && newH == container.HealthHealthy:
+	case newH == container.HealthHealthy:
 		evt.Severity = alert.SeverityInfo
 		evt.IsRecover = true
 		evt.Message = "Container recovered to healthy"

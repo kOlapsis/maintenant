@@ -257,9 +257,10 @@ deliveries, CVE and image-update intelligence, ephemeral OAuth tokens.
 Two effects are worth knowing **before** you start, and the command says them
 before writing anything:
 
-- **An alert acknowledged before the copy comes back unacknowledged** if it is
-  still active. The acknowledgement lives on the alert row, which does not
-  travel. One click to redo, but it should not surprise you.
+- **An alert active before the copy does not travel.** If its cause persists, it
+  is raised again, unacknowledged, so an acknowledgement has to be redone. The
+  alert locks of the carried monitors are reset for that: endpoints, heartbeats,
+  certificate reminders and resource thresholds start from a clean state.
 - **Curves start from zero**: resource, uptime and check history, daily uptime
   aggregates included (the 365-day history of endpoints, heartbeats and
   containers). Aggregates rebuild at their usual intervals.
