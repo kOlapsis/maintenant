@@ -122,7 +122,7 @@ var leftBehindGroups = []leftBehindGroup{
 	{"State history", []string{"state_transitions"}, "same"},
 	{"Alerts and deliveries", []string{"alerts", "notification_deliveries",
 		"escalation_runs", "escalation_deliveries"},
-		"an alert still active is re-evaluated and crosses its threshold again"},
+		"alerts do not travel; the alert locks of the carried monitors are reset, so a monitor still failing alerts again"},
 	{"Intelligence", []string{"image_updates", "image_update_scans", "container_cves",
 		"cve_cache", "risk_score_history", "digest_baselines"}, "recomputed on the next scan"},
 	{"Ephemeral tokens", []string{"mcp_oauth_codes", "mcp_oauth_tokens"},
@@ -134,8 +134,8 @@ var leftBehindGroups = []leftBehindGroup{
 // visibleConsequences are the two effects an operator would otherwise discover
 // afterwards. FR-026 requires saying them before writing, not after.
 var visibleConsequences = []string{
-	"An alert acknowledged before the copy comes back unacknowledged if it is still active: " +
-		"the acknowledgement lives on the alert row, which does not travel. One click to redo, but you should know.",
+	"An alert active before the copy does not travel: if its cause persists it is raised again, unacknowledged, " +
+		"so an acknowledgement has to be redone. One click, but you should know.",
 	"Curves start from zero: resource, uptime and check history. Aggregates rebuild at their usual intervals.",
 }
 
@@ -237,6 +237,10 @@ func Copy(ctx context.Context, src, dst *sql.DB, out io.Writer, confirm func(Pla
 		copied = append(copied, TableCount{Table: t.Table, Reason: t.Reason, Rows: n})
 	}
 
+	if err := neutralizeAlertLocks(ctx, tx); err != nil {
+		return report, err
+	}
+
 	// Read the counts back from the target inside the same transaction: what
 	// the report claims is what the database holds, not what we sent.
 	for i, c := range copied {
@@ -259,6 +263,23 @@ func Copy(ctx context.Context, src, dst *sql.DB, out io.Writer, confirm func(Pla
 	report.Copied = copied
 	report.Verified = true
 	return report, nil
+}
+
+// A down heartbeat goes back to up with its deadline kept: only an overdue deadline raises it again.
+func neutralizeAlertLocks(ctx context.Context, tx *sql.Tx) error {
+	for _, q := range []string{
+		`UPDATE endpoints SET alert_state='normal', consecutive_failures=0, consecutive_successes=0
+			WHERE alert_state<>'normal' OR consecutive_failures<>0 OR consecutive_successes<>0`,
+		`UPDATE heartbeats SET status='up' WHERE status='down'`,
+		`UPDATE heartbeats SET alert_state='normal' WHERE alert_state<>'normal'`,
+		`UPDATE cert_monitors SET last_alerted_threshold=NULL WHERE last_alerted_threshold IS NOT NULL`,
+		`UPDATE resource_alert_configs SET alert_state='normal' WHERE alert_state<>'normal'`,
+	} {
+		if _, err := tx.ExecContext(ctx, q); err != nil {
+			return fmt.Errorf("reset alert locks: %w", err)
+		}
+	}
+	return nil
 }
 
 // checkSourceAtHead refuses a source that has not been migrated to the head:
