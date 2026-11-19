@@ -103,7 +103,6 @@ func control(_, address string, _ syscall.RawConn) error {
 // NewHTTPClient returns an http.Client whose dialer blocks connections to
 // internal/private IPs on every hop, including redirects. When allowPrivate is
 // true (dev only, via MAINTENANT_ALLOW_PRIVATE_WEBHOOKS) the guard is disabled.
-// A guarded client never uses the environment proxy.
 func NewHTTPClient(timeout time.Duration, allowPrivate bool) *http.Client {
 	transport := trust.HTTPTransport()
 	if !allowPrivate {

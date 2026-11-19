@@ -44,8 +44,7 @@ func New(rate float64, burst int, resolver *ClientIPResolver) *Limiter {
 	}
 }
 
-// Allow consumes one token for the given key and reports whether the request is allowed.
-// Once the table is full of non-idle keys, a key it has never seen is refused.
+// Allow consumes one token for the given key and reports whether the request is allowed; a new key is refused while the table is full.
 func (l *Limiter) Allow(ip string) bool {
 	now := time.Now()
 
