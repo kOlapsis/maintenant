@@ -139,6 +139,7 @@ func (f *silenceFixture) barrier(t *testing.T) {
 		a, err := f.alerts.GetActiveAlert(f.ctx, sentinelSource, "barrier", "sentinel", id)
 		return err == nil && a != nil
 	}, 10*time.Second, 5*time.Millisecond, "the engine must get past the events sent before the barrier")
+	f.engine.Settle()
 }
 
 func (f *silenceFixture) silence(t *testing.T, rule alert.SilenceRule) {
@@ -222,6 +223,12 @@ func (f *silenceFixture) deliveries(t *testing.T, alertID string) int {
 	return len(ds)
 }
 
+// A Never condition may still run after the test closed the database: it must not fail on a store error.
+func (f *silenceFixture) deliveriesNow(alertID string) int {
+	ds, _ := f.channels.ListDeliveriesByAlert(f.ctx, alertID)
+	return len(ds)
+}
+
 // assertPromotedOnce waits for a held alert to go live, then checks it is notified and escalated exactly once.
 func (f *silenceFixture) assertPromotedOnce(t *testing.T, id string) {
 	t.Helper()
@@ -229,7 +236,7 @@ func (f *silenceFixture) assertPromotedOnce(t *testing.T, id string) {
 		return f.status(t, id) == alert.StatusActive && f.deliveries(t, id) == 1 && f.escalator.count(id) == 1
 	}, 10*time.Second, 5*time.Millisecond, "the held alert must go live, notified and escalated, once the window ends")
 	assert.Never(t, func() bool {
-		return f.deliveries(t, id) > 1 || f.escalator.count(id) > 1
+		return f.deliveriesNow(id) > 1 || f.escalator.count(id) > 1
 	}, 200*time.Millisecond, fastRecheck, "a promoted alert must be notified once")
 	assert.Equal(t, 1, f.engine.AlertCount()-f.sentinels, "the promoted alert must be live in memory")
 }
@@ -237,7 +244,7 @@ func (f *silenceFixture) assertPromotedOnce(t *testing.T, id string) {
 func (f *silenceFixture) assertNeverNotified(t *testing.T, id string) {
 	t.Helper()
 	assert.Never(t, func() bool {
-		return f.deliveries(t, id) > 0 || f.escalator.count(id) > 0
+		return f.deliveriesNow(id) > 0 || f.escalator.count(id) > 0
 	}, 200*time.Millisecond, fastRecheck, "the alert must never be notified")
 }
 
