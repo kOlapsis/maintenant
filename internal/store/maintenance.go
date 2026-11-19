@@ -94,10 +94,11 @@ func (s *MaintenanceStoreImpl) GetMaintenance(ctx context.Context, id string) (*
 	mw.CreatedAt = time.Unix(createdAt, 0).UTC()
 	mw.UpdatedAt = time.Unix(updatedAt, 0).UTC()
 
-	if err := s.loadMaintenanceComponents(ctx, &mw); err != nil {
+	windows := []status.MaintenanceWindow{mw}
+	if err := s.hydrateMaintenanceComponents(ctx, windows); err != nil {
 		return nil, err
 	}
-	return &mw, nil
+	return &windows[0], nil
 }
 
 func (s *MaintenanceStoreImpl) CreateMaintenance(ctx context.Context, mw *status.MaintenanceWindow, componentIDs []string) (string, error) {
@@ -251,20 +252,38 @@ func (s *MaintenanceStoreImpl) scanMaintenanceWindows(ctx context.Context, rows 
 		mw.EndsAt = time.Unix(endsAt, 0).UTC()
 		mw.CreatedAt = time.Unix(createdAt, 0).UTC()
 		mw.UpdatedAt = time.Unix(updatedAt, 0).UTC()
-
-		if err := s.loadMaintenanceComponents(ctx, &mw); err != nil {
-			return nil, err
-		}
 		windows = append(windows, mw)
 	}
-	return windows, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := s.hydrateMaintenanceComponents(ctx, windows); err != nil {
+		return nil, err
+	}
+	return windows, nil
 }
 
-func (s *MaintenanceStoreImpl) loadMaintenanceComponents(ctx context.Context, mw *status.MaintenanceWindow) error {
+// hydrateMaintenanceComponents loads the components of a batch of windows in
+// place with a single query. The caller must have closed its own cursor.
+func (s *MaintenanceStoreImpl) hydrateMaintenanceComponents(ctx context.Context, windows []status.MaintenanceWindow) error {
+	if len(windows) == 0 {
+		return nil
+	}
+	idx := make(map[string]int, len(windows))
+	args := make([]any, len(windows))
+	for i := range windows {
+		idx[windows[i].ID] = i
+		args[i] = windows[i].ID
+	}
+
+	// #nosec G202 -- only generated "?" placeholders are concatenated; ids are bound.
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT sc.id, sc.display_name, sc.visible FROM status_components sc
+		`SELECT mc.maintenance_id, sc.id, sc.display_name, sc.visible FROM status_components sc
 		JOIN maintenance_components mc ON mc.component_id = sc.id
-		WHERE mc.maintenance_id = ?`, mw.ID)
+		WHERE mc.maintenance_id IN (`+placeholderList(len(args))+`)`, args...)
 	if err != nil {
 		return fmt.Errorf("load maintenance components: %w", err)
 	}
@@ -272,21 +291,18 @@ func (s *MaintenanceStoreImpl) loadMaintenanceComponents(ctx context.Context, mw
 		_ = rows.Close()
 	}(rows)
 	for rows.Next() {
+		var maintID string
 		var ref status.IncidentCompRef
 		var visible int
-		if err := rows.Scan(&ref.ID, &ref.Name, &visible); err != nil {
+		if err := rows.Scan(&maintID, &ref.ID, &ref.Name, &visible); err != nil {
 			return fmt.Errorf("scan maintenance component: %w", err)
 		}
 		ref.Visible = visible != 0
-		mw.Components = append(mw.Components, ref)
+		windows[idx[maintID]].Components = append(windows[idx[maintID]].Components, ref)
 	}
 	return rows.Err()
 }
 
-// IsEntitySuppressed returns true (with the matching window ID and end time) if at
-// least one active maintenance window currently covers the given monitor. Active
-// means starts_at ≤ now < ends_at regardless of the window's `active` flag (which
-// controls Status Page display, not suppressor logic).
 func (s *MaintenanceStoreImpl) IsEntitySuppressed(
 	ctx context.Context, monitorType string, monitorID string, now time.Time,
 ) (matched bool, windowID string, endsAt time.Time, err error) {
