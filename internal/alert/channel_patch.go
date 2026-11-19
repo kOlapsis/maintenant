@@ -3,7 +3,10 @@
 
 package alert
 
-import "strings"
+import (
+	"net/url"
+	"strings"
+)
 
 // ChannelPatch is a partial update of a notification channel: a nil field keeps the stored value.
 type ChannelPatch struct {
@@ -55,6 +58,9 @@ func (p *ChannelPatch) Apply(ch *NotificationChannel) error {
 		ch.Type = *p.Type
 	}
 	if p.URL != nil {
+		if p.Headers == nil && !sameHost(ch.URL, *p.URL) {
+			ch.Headers = ""
+		}
 		ch.URL = *p.URL
 	}
 	if p.Headers != nil {
@@ -76,4 +82,13 @@ func (p *ChannelPatch) Apply(ch *NotificationChannel) error {
 		ch.Enabled = *p.Enabled
 	}
 	return nil
+}
+
+func sameHost(a, b string) bool {
+	if a == b {
+		return true
+	}
+	ua, errA := url.Parse(a)
+	ub, errB := url.Parse(b)
+	return errA == nil && errB == nil && ua.Host != "" && strings.EqualFold(ua.Host, ub.Host)
 }
