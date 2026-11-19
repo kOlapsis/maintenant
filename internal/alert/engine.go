@@ -61,6 +61,25 @@ type Engine struct {
 	// In-memory active alert map for recovery linking and dedup
 	activeAlerts map[activeAlertKey]*Alert
 	mu           sync.RWMutex
+	procMu       sync.Mutex // serializes a store write with the map update that follows it
+}
+
+var storeRetryDelays = []time.Duration{100 * time.Millisecond, 500 * time.Millisecond}
+
+func withRetry(ctx context.Context, op func() error) error {
+	err := op()
+	for _, d := range storeRetryDelays {
+		if err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(d):
+		}
+		err = op()
+	}
+	return err
 }
 
 // NewEngine creates a new alert engine.
@@ -186,8 +205,11 @@ func (e *Engine) runEscalationEvaluator(ctx context.Context) {
 }
 
 func (e *Engine) reloadActiveAlerts(ctx context.Context) error {
-	active, err := e.alertStore.ListActiveAlerts(ctx)
-	if err != nil {
+	var active []*Alert
+	if err := withRetry(ctx, func() (err error) {
+		active, err = e.alertStore.ListActiveAlerts(ctx)
+		return err
+	}); err != nil {
 		return err
 	}
 
@@ -209,6 +231,9 @@ func (e *Engine) reloadActiveAlerts(ctx context.Context) error {
 }
 
 func (e *Engine) processEvent(ctx context.Context, evt Event) {
+	e.procMu.Lock()
+	defer e.procMu.Unlock()
+
 	if evt.IsRecover {
 		e.processRecovery(ctx, evt)
 		return
@@ -291,8 +316,11 @@ func (e *Engine) processEvent(ctx context.Context, evt Event) {
 	}
 
 	// Persist the alert
-	id, err := e.alertStore.InsertAlert(ctx, a)
-	if err != nil {
+	var id string
+	if err := withRetry(ctx, func() (err error) {
+		id, err = e.alertStore.InsertAlert(ctx, a)
+		return err
+	}); err != nil {
 		e.logger.Error("alert engine: persist alert", "error", err)
 		return
 	}
@@ -335,30 +363,22 @@ func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) 
 			detailsJSON = string(b)
 		}
 	}
+	if err := withRetry(ctx, func() error {
+		return e.alertStore.UpdateAlertOnEscalation(ctx, existing.ID, evt.Severity, evt.Message, evt.EntityName, detailsJSON)
+	}); err != nil {
+		e.logger.Error("alert engine: escalate", "error", err, "alert_id", existing.ID)
+		return
+	}
 	existing.Severity = evt.Severity
 	existing.Message = evt.Message
 	existing.EntityName = evt.EntityName
 	existing.Details = detailsJSON
 
-	if err := e.alertStore.UpdateAlertOnEscalation(ctx, existing.ID, evt.Severity, evt.Message, evt.EntityName, detailsJSON); err != nil {
-		e.logger.Error("alert engine: escalate", "error", err, "alert_id", existing.ID)
-		return
-	}
 	if stored, err := e.alertStore.GetAlert(ctx, existing.ID); err != nil {
 		e.logger.Error("alert engine: reload escalated alert", "error", err, "alert_id", existing.ID)
 	} else if stored != nil {
 		existing.AcknowledgedAt, existing.AcknowledgedBy = stored.AcknowledgedAt, stored.AcknowledgedBy
 	}
-
-	e.mu.Lock()
-	key := activeAlertKey{
-		Source:     existing.Source,
-		AlertType:  existing.AlertType,
-		EntityType: existing.EntityType,
-		EntityID:   existing.EntityID,
-	}
-	e.activeAlerts[key] = existing
-	e.mu.Unlock()
 
 	e.logger.Warn("alert escalated",
 		"alert_id", existing.ID,
@@ -447,13 +467,9 @@ func (e *Engine) processRecovery(ctx context.Context, evt Event) {
 		EntityID:   evt.EntityID,
 	}
 
-	// Find the active alert to resolve
-	e.mu.Lock()
+	e.mu.RLock()
 	activeAlert, exists := e.activeAlerts[key]
-	if exists {
-		delete(e.activeAlerts, key)
-	}
-	e.mu.Unlock()
+	e.mu.RUnlock()
 
 	if !exists {
 		e.logger.Debug("alert: recovery without active alert",
@@ -487,18 +503,28 @@ func (e *Engine) processRecovery(ctx context.Context, evt Event) {
 		FiredAt:    evt.Timestamp,
 	}
 
-	recoveryID, err := e.alertStore.InsertAlert(ctx, recoveryAlert)
-	if err != nil {
-		e.logger.Error("alert engine: persist recovery", "error", err)
+	var recoveryID string
+	if err := withRetry(ctx, func() (err error) {
+		recoveryID, err = e.alertStore.InsertAlert(ctx, recoveryAlert)
+		return err
+	}); err != nil {
+		e.logger.Error("alert engine: persist recovery", "error", err, "alert_id", activeAlert.ID)
 		return
 	}
 	recoveryAlert.ID = recoveryID
 
 	// Resolve the original alert
 	now := evt.Timestamp
-	if err := e.alertStore.UpdateAlertStatus(ctx, activeAlert.ID, StatusResolved, &now, &recoveryID); err != nil {
-		e.logger.Error("alert engine: resolve original alert", "error", err)
+	if err := withRetry(ctx, func() error {
+		return e.alertStore.UpdateAlertStatus(ctx, activeAlert.ID, StatusResolved, &now, &recoveryID)
+	}); err != nil {
+		e.logger.Error("alert engine: resolve original alert", "error", err, "alert_id", activeAlert.ID)
+		return
 	}
+
+	e.mu.Lock()
+	delete(e.activeAlerts, key)
+	e.mu.Unlock()
 
 	if err := e.escalator.OnAlertResolved(ctx, activeAlert.ID, now); err != nil {
 		e.logger.ErrorContext(ctx, "alert engine: OnAlertResolved hook error", "error", err, "alert_id", activeAlert.ID)
@@ -594,9 +620,13 @@ func (e *Engine) dispatchNotifications(ctx context.Context, routeBy *Alert, payl
 
 	// Resolve channels from active alert triggers.
 	if e.triggerStore != nil {
-		triggers, err := e.triggerStore.ListEnabledTriggers(ctx)
-		if err != nil {
-			e.logger.Error("alert engine: list triggers", "error", err)
+		var triggers []*AlertTrigger
+		if err := withRetry(ctx, func() (err error) {
+			triggers, err = e.triggerStore.ListEnabledTriggers(ctx)
+			return err
+		}); err != nil {
+			e.logger.Warn("alert engine: alert not notified, alert triggers unreadable", "error", err, "alert_id", routeBy.ID)
+			return
 		}
 		for _, t := range triggers {
 			if !matchesTrigger(t, routeBy) {
@@ -606,9 +636,12 @@ func (e *Engine) dispatchNotifications(ctx context.Context, routeBy *Alert, payl
 				if dispatched[chID] {
 					continue
 				}
-				ch, chErr := e.channelStore.GetChannel(ctx, chID)
-				if chErr != nil {
-					e.logger.Error("alert engine: get trigger channel", "error", chErr, "channel_id", chID)
+				var ch *NotificationChannel
+				if err := withRetry(ctx, func() (err error) {
+					ch, err = e.channelStore.GetChannel(ctx, chID)
+					return err
+				}); err != nil {
+					e.logger.Warn("alert engine: channel not notified, channel unreadable", "error", err, "alert_id", routeBy.ID, "channel_id", chID)
 					continue
 				}
 				if ch == nil || !ch.Enabled {
@@ -779,23 +812,29 @@ func alertToMap(a *Alert) map[string]interface{} {
 // container is destroyed). This prevents stale alerts from accumulating when
 // containers are recreated with new internal IDs.
 func (e *Engine) ResolveByEntity(ctx context.Context, entityType string, entityID string) {
+	e.procMu.Lock()
+	defer e.procMu.Unlock()
 	now := time.Now()
 
-	e.mu.Lock()
-	var toResolve []*Alert
+	e.mu.RLock()
+	toResolve := make(map[activeAlertKey]*Alert)
 	for key, a := range e.activeAlerts {
 		if key.EntityType == entityType && key.EntityID == entityID {
-			toResolve = append(toResolve, a)
-			delete(e.activeAlerts, key)
+			toResolve[key] = a
 		}
 	}
-	e.mu.Unlock()
+	e.mu.RUnlock()
 
-	for _, a := range toResolve {
-		if err := e.alertStore.UpdateAlertStatus(ctx, a.ID, StatusResolved, &now, nil); err != nil {
+	for key, a := range toResolve {
+		if err := withRetry(ctx, func() error {
+			return e.alertStore.UpdateAlertStatus(ctx, a.ID, StatusResolved, &now, nil)
+		}); err != nil {
 			e.logger.Error("alert engine: resolve on entity removal", "error", err, "alert_id", a.ID)
 			continue
 		}
+		e.mu.Lock()
+		delete(e.activeAlerts, key)
+		e.mu.Unlock()
 		if err := e.escalator.OnAlertResolved(ctx, a.ID, now); err != nil {
 			e.logger.ErrorContext(ctx, "alert engine: OnAlertResolved hook error", "error", err, "alert_id", a.ID)
 		}
