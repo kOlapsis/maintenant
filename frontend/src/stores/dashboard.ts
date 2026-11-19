@@ -330,6 +330,21 @@ export const useDashboardStore = defineStore('dashboard', () => {
     return incidents
   })
 
+  const unavailableLists = computed(() => {
+    const lists: [string, string | null][] = [
+      ['containers', containers.error],
+      ['endpoints', endpoints.error],
+      ['heartbeats', heartbeats.error],
+      ['certificates', certificates.error],
+      ['alerts', alertsStore.activeAlertsError],
+    ]
+    if (kubernetesInScope.value) lists.push(['workloads', kubernetes.error])
+    return {
+      failed: lists.filter(([, err]) => err).map(([name]) => name),
+      total: lists.length,
+    }
+  })
+
   function fetchWorkloadsIfInScope() {
     return kubernetesInScope.value ? kubernetes.fetchWorkloadsList() : Promise.resolve()
   }
@@ -449,6 +464,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     heartbeatSummary,
     certificateSummary,
     activeIncidents,
+    unavailableLists,
     fetchAll,
     refetchForFilter,
     connectAllSSE,

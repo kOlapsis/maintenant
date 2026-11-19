@@ -12,7 +12,11 @@ const props = defineProps<{
   warnings: number
   ok: number
   summary?: string
+  unavailable?: string[]
+  hideCounters?: boolean
 }>()
+
+const isUnavailable = computed(() => (props.unavailable?.length ?? 0) > 0)
 
 const variant = computed<'incident' | 'warning' | 'operational'>(() =>
   props.incidents > 0 ? 'incident' : props.warnings > 0 ? 'warning' : 'operational',
@@ -23,6 +27,7 @@ const severity = computed<Severity>(() =>
 )
 
 const title = computed(() => {
+  if (isUnavailable.value) return 'Data unavailable'
   if (variant.value === 'incident') {
     return `${props.incidents} incident${props.incidents > 1 ? 's' : ''} need${props.incidents > 1 ? '' : 's'} your attention`
   }
@@ -38,31 +43,38 @@ const counters = computed(() => [
   { label: 'OK', value: props.ok, color: severityVar('ok', 'text') },
 ])
 
-const boxStyle = computed(() => ({
-  borderColor: severityVar(severity.value, 'border'),
-  background: severityVar(severity.value, 'bg'),
-}))
+const subtitle = computed(() =>
+  isUnavailable.value ? `Couldn't load ${props.unavailable!.join(', ')}` : props.summary,
+)
+
+const boxStyle = computed(() =>
+  isUnavailable.value
+    ? {}
+    : { borderColor: severityVar(severity.value, 'border'), background: severityVar(severity.value, 'bg') },
+)
 </script>
 
 <template>
   <div
     class="flex items-center gap-4 rounded-2xl border p-4 sm:p-5"
+    :class="isUnavailable ? 'border-mnt-default bg-mnt-surface' : ''"
     :style="boxStyle"
     role="status"
     aria-live="polite"
   >
     <span
       class="relative grid h-11 w-11 shrink-0 place-items-center rounded-xl"
-      :style="{ backgroundColor: severityVar(severity, 'bg'), color: severityVar(severity, 'text') }"
+      :class="isUnavailable ? 'bg-mnt-elevated text-mnt-secondary' : ''"
+      :style="isUnavailable ? {} : { backgroundColor: severityVar(severity, 'bg'), color: severityVar(severity, 'text') }"
     >
       <span
-        v-if="variant === 'incident'"
+        v-if="!isUnavailable && variant === 'incident'"
         class="mnt-ping absolute inset-0 rounded-xl"
         :style="{ backgroundColor: severityVar('incident') }"
         aria-hidden="true"
       />
       <component
-        :is="variant === 'operational' ? CheckCircle2 : AlertTriangle"
+        :is="!isUnavailable && variant === 'operational' ? CheckCircle2 : AlertTriangle"
         :size="22"
         class="relative"
         aria-hidden="true"
@@ -71,10 +83,10 @@ const boxStyle = computed(() => ({
 
     <div class="min-w-0">
       <h1 class="text-base font-semibold tracking-tight text-mnt-primary sm:text-lg">{{ title }}</h1>
-      <p v-if="summary" class="mt-0.5 truncate text-xs text-mnt-muted sm:text-sm">{{ summary }}</p>
+      <p v-if="subtitle" class="mt-0.5 truncate text-xs text-mnt-muted sm:text-sm">{{ subtitle }}</p>
     </div>
 
-    <div class="ml-auto flex shrink-0 gap-2 sm:gap-2.5">
+    <div v-if="!hideCounters" class="ml-auto flex shrink-0 gap-2 sm:gap-2.5">
       <div
         v-for="c in counters"
         :key="c.label"
