@@ -618,7 +618,7 @@ maintenant sends requests to addresses an operator typed in: webhook subscriptio
 - When it is created, the host is resolved and a URL that points at a loopback, private, link-local, carrier-grade NAT (`100.64.0.0/10`), unspecified or multicast address is refused.
 - When a request is sent, the same check runs on the address actually dialled, after DNS resolution and on every redirect. A hostname that starts resolving to an internal address later is refused too.
 
-Outbound heartbeats go through the same guard and have no way to disable it. Discord, Slack and Teams URLs cannot be registered as webhook subscriptions: they need a notification channel.
+Outbound heartbeats go through the same guard and have no way to disable it. These requests never go through the `HTTP_PROXY` / `HTTPS_PROXY` proxy: a proxy would hide the real destination from the second check, so webhooks, channels and outbound heartbeats connect directly (unless `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS=true`, which keeps the proxy for webhooks and channels). Discord, Slack and Teams URLs cannot be registered as webhook subscriptions: they need a notification channel.
 
 `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS=true` turns off both the HTTPS requirement at creation and the address checks for webhooks and channels, for a lab or a receiver on your own network. Leave it unset in production.
 

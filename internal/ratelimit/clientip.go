@@ -63,6 +63,18 @@ func (r *ClientIPResolver) ClientIP(req *http.Request) string {
 	return req.RemoteAddr
 }
 
+// RateKey returns the key a quota is counted under: the client address, with an IPv6 address reduced to its /64.
+func (r *ClientIPResolver) RateKey(req *http.Request) string {
+	addr := r.Resolve(req)
+	if !addr.IsValid() {
+		return req.RemoteAddr
+	}
+	if addr.Is6() {
+		return netip.PrefixFrom(addr.WithZone(""), 64).Masked().String()
+	}
+	return addr.String()
+}
+
 func (r *ClientIPResolver) trusts(addr netip.Addr) bool {
 	if !addr.IsValid() {
 		return false

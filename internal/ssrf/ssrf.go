@@ -108,6 +108,7 @@ func NewHTTPClient(timeout time.Duration, allowPrivate bool) *http.Client {
 	if !allowPrivate {
 		dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: control}
 		transport.DialContext = dialer.DialContext
+		transport.Proxy = nil // the dial guard only sees the proxy's address, never the destination's
 	}
 	return &http.Client{Timeout: timeout, Transport: transport}
 }
