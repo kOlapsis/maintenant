@@ -213,7 +213,9 @@ func (r *Runner) OnAlertAcknowledged(ctx context.Context, alertID string, ack al
 			r.logger.ErrorContext(ctx, "escalation: list notified channels for ack", "error", cErr, "run_id", run.ID)
 			continue
 		}
-		r.dispatchSpecial(ctx, run.ID, specialLevelAck, channelIDs, formatAckAlert(a, ack))
+		if dErr := r.dispatchLevel(ctx, run.ID, specialLevelAck, channelIDs, formatAckAlert(a, ack)); dErr != nil {
+			r.logger.ErrorContext(ctx, "escalation: ack notice", "error", dErr, "run_id", run.ID)
+		}
 	}
 	return nil
 }
@@ -344,14 +346,18 @@ func (r *Runner) processRun(ctx context.Context, run *esc.Run, now time.Time) er
 	if nextLevel >= len(policy.Levels) {
 		if run.LastExecutedLevelIndex >= 0 && run.LastExecutedLevelIndex < len(policy.Levels) {
 			exhAlert := formatExhaustedAlert(a, len(policy.Levels))
-			r.dispatchSpecial(ctx, run.ID, specialLevelExhausted,
-				policy.Levels[run.LastExecutedLevelIndex].ChannelIDs, exhAlert)
+			if err := r.dispatchLevel(ctx, run.ID, specialLevelExhausted,
+				policy.Levels[run.LastExecutedLevelIndex].ChannelIDs, exhAlert); err != nil {
+				return fmt.Errorf("exhaustion notice left due: %w", err)
+			}
 		}
 		return r.store.TerminateRun(ctx, run.ID, esc.RunStatusExhausted, now)
 	}
 
 	level := policy.Levels[nextLevel]
-	r.executeLevel(ctx, run, nextLevel, level.ChannelIDs, a)
+	if err := r.dispatchLevel(ctx, run.ID, nextLevel, level.ChannelIDs, a); err != nil {
+		return fmt.Errorf("level %d left due: %w", nextLevel, err)
+	}
 	if err := r.alertStore.SetEscalatedAt(ctx, a.ID, now); err != nil {
 		r.logger.ErrorContext(ctx, "escalation: set escalated_at", "error", err, "alert_id", a.ID, "run_id", run.ID)
 	}
@@ -375,57 +381,51 @@ func (r *Runner) processRun(ctx context.Context, run *esc.Run, now time.Time) er
 	return nil
 }
 
-func (r *Runner) executeLevel(ctx context.Context, run *esc.Run, levelIndex int, channelIDs []string, a *alert.Alert) {
+// dispatchLevel hands a level to each of its channels and fails when one of them is left to a later attempt.
+func (r *Runner) dispatchLevel(ctx context.Context, runID string, levelIndex int, channelIDs []string, a *alert.Alert) error {
 	now := r.clock()
+	var errs []error
 	for _, chID := range channelIDs {
-		r.dispatchToChannel(ctx, run.ID, levelIndex, chID, a, now)
+		if err := r.dispatchToChannel(ctx, runID, levelIndex, chID, a, now); err != nil {
+			errs = append(errs, err)
+		}
 	}
-}
-
-func (r *Runner) dispatchSpecial(ctx context.Context, runID string, levelIndex int, channelIDs []string, a *alert.Alert) {
-	now := r.clock()
-	for _, chID := range channelIDs {
-		r.dispatchToChannel(ctx, runID, levelIndex, chID, a, now)
-	}
+	return errors.Join(errs...)
 }
 
 // dispatchToChannel reserves a delivery row (UNIQUE constraint catches crash-recovery
 // duplicates, FR-022) and dispatches the send in a goroutine if the channel is enabled.
 // One channel's failure must not block the others.
-func (r *Runner) dispatchToChannel(ctx context.Context, runID string, levelIndex int, chID string, a *alert.Alert, now time.Time) {
+func (r *Runner) dispatchToChannel(ctx context.Context, runID string, levelIndex int, chID string, a *alert.Alert, now time.Time) error {
 	ch, err := r.channelStore.GetChannel(ctx, chID)
 	if err != nil {
-		r.logger.ErrorContext(ctx, "escalation: get channel", "error", err, "channel_id", chID, "run_id", runID)
-		return
+		return fmt.Errorf("read channel %s: %w", chID, err)
 	}
-	if ch == nil {
-		r.logger.WarnContext(ctx, "escalation: channel not found", "channel_id", chID, "run_id", runID)
-		return
-	}
-	chIDCopy := chID
 	delivery := &esc.Delivery{
 		RunID:            runID,
 		LevelIndex:       levelIndex,
-		ChannelID:        &chIDCopy,
+		ChannelID:        &chID,
 		Status:           esc.DeliveryStatusPending,
 		AttemptStartedAt: now,
 	}
+	switch {
+	case ch == nil:
+		r.logger.WarnContext(ctx, "escalation: channel not found", "channel_id", chID, "run_id", runID)
+		delivery.ChannelID = nil // its foreign key would refuse the row
+		delivery.Status, delivery.Error = esc.DeliveryStatusFailed, "channel deleted: "+chID
+	case !ch.Enabled:
+		delivery.Status, delivery.Error = esc.DeliveryStatusFailed, "channel disabled"
+	}
 	if _, err := r.store.InsertDelivery(ctx, delivery); err != nil {
-		if !errors.Is(err, esc.ErrDeliveryDuplicate) {
-			r.logger.ErrorContext(ctx, "escalation: insert delivery", "error", err,
-				"run_id", runID, "level_index", levelIndex, "channel_id", chID)
+		if errors.Is(err, esc.ErrDeliveryDuplicate) {
+			return nil
 		}
-		return
+		return fmt.Errorf("reserve delivery to channel %s: %w", chID, err)
 	}
-	if !ch.Enabled {
-		delivery.Status = esc.DeliveryStatusFailed
-		delivery.Error = "channel disabled"
-		if uErr := r.store.UpdateDelivery(ctx, delivery); uErr != nil {
-			r.logger.ErrorContext(ctx, "escalation: update disabled delivery", "error", uErr, "delivery_id", delivery.ID)
-		}
-		return
+	if delivery.Status == esc.DeliveryStatusPending {
+		go r.deliverAndUpdate(ctx, delivery, a, ch)
 	}
-	go r.deliverAndUpdate(ctx, delivery, a, ch)
+	return nil
 }
 
 // deliverAndUpdate performs the actual network send and persists the outcome.
@@ -454,7 +454,11 @@ func (r *Runner) recoverOrphans(ctx context.Context, now time.Time) error {
 	}
 	for _, d := range orphans {
 		run, err := r.store.SelectRun(ctx, d.RunID)
-		if err != nil || run == nil {
+		if err != nil {
+			r.keepOrphan(ctx, d, err)
+			continue
+		}
+		if run == nil {
 			r.abandonDelivery(ctx, d, "run vanished")
 			continue
 		}
@@ -464,7 +468,11 @@ func (r *Runner) recoverOrphans(ctx context.Context, now time.Time) error {
 			continue
 		}
 		a, err := r.alertStore.GetAlert(ctx, run.AlertID)
-		if err != nil || a == nil || a.Status != alert.StatusActive {
+		if err != nil {
+			r.keepOrphan(ctx, d, err)
+			continue
+		}
+		if a == nil || a.Status != alert.StatusActive {
 			r.abandonDelivery(ctx, d, "alert no longer active")
 			continue
 		}
@@ -473,13 +481,21 @@ func (r *Runner) recoverOrphans(ctx context.Context, now time.Time) error {
 			continue
 		}
 		ch, err := r.channelStore.GetChannel(ctx, *d.ChannelID)
-		if err != nil || ch == nil {
+		if err != nil {
+			r.keepOrphan(ctx, d, err)
+			continue
+		}
+		if ch == nil {
 			r.abandonDelivery(ctx, d, "channel unavailable")
 			continue
 		}
 		go r.deliverAndUpdate(ctx, d, a, ch)
 	}
 	return nil
+}
+
+func (r *Runner) keepOrphan(ctx context.Context, d *esc.Delivery, err error) {
+	r.logger.WarnContext(ctx, "escalation: orphan delivery left for the next cycle", "error", err, "delivery_id", d.ID)
 }
 
 func (r *Runner) abandonDelivery(ctx context.Context, d *esc.Delivery, reason string) {

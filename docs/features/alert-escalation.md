@@ -130,7 +130,9 @@ Escalation exhausted after <N> level(s) without acknowledgment, human action req
 
 ### Disabled or failing channels
 
-A delivery to a disabled channel is recorded as `failed` with the error `channel disabled`, and the run goes on with the next level. A delivery to an enabled channel makes up to three attempts, at once, after 1 second and after 5 seconds, and is recorded as `failed` with the last error if all three fail.
+A delivery to a disabled channel is recorded as `failed` with the error `channel disabled`, and the run goes on with the next level. A channel deleted since the policy was written is recorded the same way, without a channel id and with the error `channel deleted: <id>`. A delivery to an enabled channel makes up to three attempts, at once, after 1 second and after 5 seconds, and is recorded as `failed` with the last error if all three fail.
+
+A level is only counted as sent once each of its channels has a delivery. If the database cannot be read or written while a level goes out, the level stays due and is tried again at the next evaluation, about a minute later: the channels it already reached are not notified a second time.
 
 ---
 
