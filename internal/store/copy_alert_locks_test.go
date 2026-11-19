@@ -21,6 +21,7 @@ func lockSourceMonitors(t *testing.T, src *DB) {
 		`UPDATE heartbeats SET status='down', alert_state='alerting', next_deadline_at=1893456000`,
 		`UPDATE cert_monitors SET last_alerted_threshold=7`,
 		`UPDATE resource_alert_configs SET alert_state='alerting'`,
+		`UPDATE containers SET health_status='unhealthy', has_health_check=1`,
 	} {
 		_, err := src.Reader().ExecContext(ctx, q)
 		require.NoError(t, err, q)
@@ -34,6 +35,7 @@ type alertLocks struct {
 	heartbeatDeadline            int64
 	certThreshold                sql.NullInt64
 	resourceState                string
+	containerHealth              sql.NullString
 }
 
 func readAlertLocks(t *testing.T, db *sql.DB) alertLocks {
@@ -45,6 +47,7 @@ func readAlertLocks(t *testing.T, db *sql.DB) alertLocks {
 		Scan(&l.heartbeatStatus, &l.heartbeatAS, &l.heartbeatDeadline))
 	require.NoError(t, db.QueryRow(`SELECT last_alerted_threshold FROM cert_monitors`).Scan(&l.certThreshold))
 	require.NoError(t, db.QueryRow(`SELECT alert_state FROM resource_alert_configs`).Scan(&l.resourceState))
+	require.NoError(t, db.QueryRow(`SELECT health_status FROM containers`).Scan(&l.containerHealth))
 	return l
 }
 
@@ -57,9 +60,10 @@ func requireNeutralLocks(t *testing.T, l alertLocks) {
 	require.EqualValues(t, lockedDeadline, l.heartbeatDeadline, "the deadline stays, it is what brings a dead heartbeat down again")
 	require.False(t, l.certThreshold.Valid)
 	require.Equal(t, "normal", l.resourceState)
+	require.False(t, l.containerHealth.Valid, "an unhealthy container arrives without a health, the next reconcile raises its alert again")
 }
 
-func TestNeutralizeAlertLocks_ResetsTheFourLocks(t *testing.T) {
+func TestNeutralizeAlertLocks_ResetsTheLocks(t *testing.T) {
 	src, _ := seededSource(t)
 	lockSourceMonitors(t, src)
 	ctx := context.Background()
@@ -76,6 +80,7 @@ func TestNeutralizeAlertLocks_ResetsTheFourLocks(t *testing.T) {
 		Scan(&l.heartbeatStatus, &l.heartbeatAS, &l.heartbeatDeadline))
 	require.NoError(t, tx.QueryRow(`SELECT last_alerted_threshold FROM cert_monitors`).Scan(&l.certThreshold))
 	require.NoError(t, tx.QueryRow(`SELECT alert_state FROM resource_alert_configs`).Scan(&l.resourceState))
+	require.NoError(t, tx.QueryRow(`SELECT health_status FROM containers`).Scan(&l.containerHealth))
 	requireNeutralLocks(t, l)
 }
 
