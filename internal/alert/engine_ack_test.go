@@ -94,7 +94,7 @@ func newAckFixture(t *testing.T, ctx context.Context) ackFixture {
 		broadcaster: &recordingBroadcaster{},
 	}
 	notifier := alert.NewNotifier(f.channels, logger, true)
-	notifier.Start(ctx)
+	notifier.StartUntilCleanup(ctx, t)
 	f.engine = alert.NewEngine(alert.EngineDeps{
 		AlertStore:   f.alerts,
 		ChannelStore: f.channels,

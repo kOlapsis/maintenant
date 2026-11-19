@@ -1159,6 +1159,9 @@ func (a *App) Shutdown() error {
 	}
 
 	a.waitBackground(shutdownCtx)
+	if err := a.notifier.Wait(shutdownCtx); err != nil {
+		a.logger.Warn("alert notifier still sending at shutdown, closing the database anyway")
+	}
 
 	a.stopWriter()
 

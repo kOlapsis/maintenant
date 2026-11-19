@@ -498,7 +498,7 @@ func (e *Engine) fire(ctx context.Context, key activeAlertKey, a *Alert) {
 	}
 
 	if e.notifier != nil {
-		e.dispatchNotifications(ctx, a, a)
+		e.dispatchNotifications(ctx, a, a, EventFired)
 	}
 }
 
@@ -566,10 +566,12 @@ func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) 
 
 	if e.notifier != nil {
 		payload := *existing
+		eventType := EventReminder
 		if raised {
 			payload.Message = fmt.Sprintf("Severity raised from %s to %s: %s", oldSeverity, existing.Severity, existing.Message)
+			eventType = EventSeverityRaised
 		}
-		e.dispatchNotifications(ctx, existing, &payload)
+		e.dispatchNotifications(ctx, existing, &payload, eventType)
 	}
 }
 
@@ -714,7 +716,7 @@ func (e *Engine) processRecovery(ctx context.Context, evt Event) {
 		payload := *activeAlert
 		payload.Message = evt.Message
 		payload.Severity = evt.Severity
-		e.dispatchNotifications(ctx, activeAlert, &payload)
+		e.dispatchNotifications(ctx, activeAlert, &payload, EventResolved)
 	}
 }
 
@@ -789,7 +791,7 @@ func matchesSilenceRule(rule *SilenceRule, evt Event) bool {
 
 // dispatchNotifications matches triggers and the entity router against routeBy,
 // then delivers payload (they differ only for recoveries).
-func (e *Engine) dispatchNotifications(ctx context.Context, routeBy *Alert, payload *Alert) {
+func (e *Engine) dispatchNotifications(ctx context.Context, routeBy *Alert, payload *Alert, eventType string) {
 	if e.channelStore == nil || e.notifier == nil {
 		return
 	}
@@ -826,31 +828,33 @@ func (e *Engine) dispatchNotifications(ctx context.Context, routeBy *Alert, payl
 					continue
 				}
 				dispatched[chID] = true
-				e.enqueueDelivery(ctx, ch, payload)
+				e.enqueueDelivery(ctx, ch, payload, eventType)
 			}
 		}
 	}
 }
 
-func (e *Engine) enqueueDelivery(ctx context.Context, ch *NotificationChannel, a *Alert) {
+func (e *Engine) enqueueDelivery(ctx context.Context, ch *NotificationChannel, a *Alert, eventType string) {
+	snapshot := *a // the engine keeps mutating a (escalation, recovery) while the job waits in the queue
 	delivery := &NotificationDelivery{
 		AlertID:   a.ID,
 		ChannelID: ch.ID,
+		EventType: eventType,
 		Status:    DeliveryPending,
+		Payload:   &snapshot,
 	}
-	deliveryID, err := e.channelStore.InsertDelivery(ctx, delivery)
-	if err != nil {
-		e.logger.Error("alert engine: create delivery", "error", err, "channel_id", ch.ID)
-		return
+	if err := withRetry(ctx, func() (err error) {
+		delivery.ID, err = e.channelStore.InsertDelivery(ctx, delivery)
+		return err
+	}); err != nil {
+		e.logger.Error("alert engine: create delivery, sending it without a record", "error", err, "channel_id", ch.ID, "alert_id", a.ID)
 	}
-	delivery.ID = deliveryID
 
 	e.logger.Debug("alert: dispatching notification",
 		"channel_id", ch.ID,
 		"channel_type", ch.Type,
 		"alert_id", a.ID,
 	)
-	snapshot := *a // the engine keeps mutating a (escalation, recovery) while the job waits in the queue
 	e.notifier.Enqueue(NotificationJob{
 		Delivery: delivery,
 		Channel:  ch,

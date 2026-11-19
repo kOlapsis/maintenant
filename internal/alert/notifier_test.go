@@ -271,9 +271,7 @@ func TestNotifier_ARecoveryNeverOvertakesItsAlert(t *testing.T) {
 	n := NewNotifier(&deliveryRecorder{}, slog.New(slog.NewTextHandler(io.Discard, nil)), true)
 	s := &firstAttemptFails{}
 	n.RegisterChannel("x", s)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	n.Start(ctx)
+	n.StartUntilCleanup(context.Background(), t)
 
 	ch := &NotificationChannel{ID: "c1", Type: "x"}
 	n.Enqueue(NotificationJob{Delivery: &NotificationDelivery{}, Channel: ch, Alert: &Alert{ID: "a1", Status: StatusActive}})

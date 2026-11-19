@@ -139,6 +139,9 @@ func (s *webhookSender) request(ctx context.Context, ch *NotificationChannel, bo
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
+	if id, _ := ctx.Value(deliveryIDKey{}).(string); id != "" {
+		req.Header.Set("X-maintenant-Delivery", id)
+	}
 
 	return req, nil
 }

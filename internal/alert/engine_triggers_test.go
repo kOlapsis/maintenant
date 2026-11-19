@@ -51,7 +51,7 @@ func engineTestSetup(t *testing.T) (
 	triggerStore = store.NewTriggerStore(db)
 	silenceStore := store.NewSilenceStore(db)
 	notifier = alert.NewNotifier(channelStore, logger, true)
-	notifier.Start(ctx)
+	notifier.StartUntilCleanup(ctx, t)
 
 	eng = alert.NewEngine(alert.EngineDeps{
 		AlertStore:   alertStore,

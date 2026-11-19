@@ -45,6 +45,7 @@ func TestNotifier_ADeadWebhookReceiverDoesNotHoldBackAlerts(t *testing.T) {
 		close(release)
 		stuck.Wait()
 		cancel()
+		_ = n.Wait(context.Background())
 	})
 	n.Start(ctx)
 

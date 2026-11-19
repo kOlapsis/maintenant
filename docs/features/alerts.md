@@ -1,6 +1,6 @@
 # Alert Engine
 
-Unified alerts across all monitoring sources. Webhook and Discord channels in every edition, email and Telegram with Personal, Slack and Teams with Pro. Silence rules for planned maintenance. Three delivery attempts per notification.
+Unified alerts across all monitoring sources. Webhook and Discord channels in every edition, email and Telegram with Personal, Slack and Teams with Pro. Silence rules for planned maintenance. Notifications are kept until delivered and retried for up to 24 hours.
 
 ---
 
@@ -160,7 +160,7 @@ POST /api/v1/channels
 
 #### Webhook payload
 
-maintenant sends one `POST` per notification, with `Content-Type: application/json` and the channel's own headers. Any 2xx answer counts as delivered; anything else, or no answer within 10 seconds, is retried as described in [Delivery and Retries](#delivery-and-retries).
+maintenant sends one `POST` per notification, with `Content-Type: application/json`, the channel's own headers and `X-maintenant-Delivery`, the UUID of the delivery, which stays the same from one attempt to the next. Any 2xx answer counts as delivered; a 4xx other than 408 and 429 fails at once; anything else, or no answer within 10 seconds, is retried as described in [Delivery and Retries](#delivery-and-retries).
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -495,13 +495,15 @@ The **Active Alerts** list of the Alerts page has an **Acknowledge** button, whi
 
 ## Delivery and Retries
 
-Notifications are delivered by ten workers, each fed by its own queue of 256 notifications. If a queue is full, the notification is dropped and a warning is logged.
+Each notification is written to the `notification_deliveries` table, then sent at once by one of ten workers, each fed by its own queue of 256 notifications. The table is what keeps it: a notification whose queue is full, or that was waiting when maintenant stopped, stays there and is picked up again within 5 seconds, at startup too.
 
-The notifications of one alert to one channel always go through the same worker, so they reach the channel in order: a recovery never overtakes the alert it resolves, even when the alert is still being retried. Other alerts and other channels are spread over the ten workers.
+The notifications of one alert to one channel reach the channel in order: a recovery waits until the alert it resolves has been delivered or has failed, even when that alert is waiting for a retry. An alert resolved before its notification went out is still notified, as it was when it fired, and its recovery follows. A reminder that has not gone out yet is replaced by the next reminder of the same alert to the same channel, so a destination back after a long outage receives the latest one only. Other alerts and other channels are spread over the ten workers.
 
-A delivery makes up to **three attempts**: one at once, one after 1 second and one after 5 seconds. A sender can lengthen the wait, never shorten it: a Telegram rate limit raises it to the delay Telegram asked for. An HTTP attempt times out after 10 seconds and an email attempt after 30. Every failed attempt is logged with its error. After the third failure the delivery is recorded as `failed` and is not retried later. An email channel with no SMTP server configured fails at once, without retries.
+A failed attempt is retried 5 seconds later, then 10, 20, 40 seconds later and so on, the wait doubling up to one hour. A sender can lengthen the wait, never shorten it: a Telegram rate limit raises it to the delay Telegram asked for. A notification still not delivered 24 hours after it was created is recorded as `failed` and not retried, and one found older than that at startup is closed the same way without being sent. A refusal that will not change, an HTTP 4xx other than 408 and 429, fails at once, as does an email channel with no SMTP server configured. An HTTP attempt times out after 10 seconds and an email attempt after 30. Every failed attempt is logged with its error.
 
-Deliveries are kept in the `notification_deliveries` table, which no API lists. A delivery is `pending`, `delivered`, `failed` or `suspended`, and a channel whose last delivery failed shows `health: failing`.
+An attempt is sent once, even by several instances sharing one PostgreSQL database. If maintenant stops between a successful send and its record, the notification goes out again with the same `X-maintenant-Delivery` id, so a webhook receiver can drop the copy.
+
+Deliveries are kept in the `notification_deliveries` table, which no API lists. A delivery is `pending` (waiting for its first attempt or for a retry), `delivered`, `failed` or `suspended`, and a channel whose last delivery failed, or waits for a retry, shows `health: failing`. Disabling a channel cancels the notifications it still had to send: they are removed, and the channel's health does not change.
 
 ---
 

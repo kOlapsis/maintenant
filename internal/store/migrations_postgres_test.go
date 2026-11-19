@@ -144,6 +144,9 @@ func TestMigratePostgres_ConcurrentCatchUp(t *testing.T) {
 		"ALTER TABLE risk_acknowledgments DROP COLUMN agent_id",                                                   // 46
 		"ALTER TABLE risk_acknowledgments ADD UNIQUE (container_external_id, finding_type, finding_key)",          // 46
 		"ALTER TABLE digest_baselines DROP COLUMN agent_id, ADD PRIMARY KEY (container_id)",                       // 46
+		"DROP INDEX idx_deliveries_due",                                                                           // 47
+		"ALTER TABLE notification_deliveries DROP COLUMN event_type, DROP COLUMN payload",                         // 47
+		"ALTER TABLE notification_deliveries DROP COLUMN next_attempt_at",                                         // 47
 	} {
 		_, err = db.ReadDB().Exec(undo)
 		require.NoError(t, err, undo)

@@ -130,7 +130,7 @@ Escalation exhausted after <N> level(s) without acknowledgment, human action req
 
 ### Disabled or failing channels
 
-A delivery to a disabled channel is recorded as `failed` with the error `channel disabled`, and the run goes on with the next level. A delivery to an enabled channel makes up to three attempts, at once, after 1 second and after 5 seconds, like any [notification](alerts.md#delivery-and-retries), and is recorded as `failed` with the last error if all three fail.
+A delivery to a disabled channel is recorded as `failed` with the error `channel disabled`, and the run goes on with the next level. A delivery to an enabled channel makes up to three attempts, at once, after 1 second and after 5 seconds, and is recorded as `failed` with the last error if all three fail.
 
 ---
 
