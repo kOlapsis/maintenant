@@ -43,7 +43,6 @@ vi.mock('@/services/endpointApi', () => ({ listEndpoints: api.listEndpoints }))
 import { useDashboardStore } from '../dashboard'
 import { useContainersStore } from '../containers'
 import { useAlertsStore } from '../alerts'
-import { useEndpointsStore } from '../endpoints'
 
 const emit = (name: string, payload?: unknown) => FakeEventSource.last.emit(name, payload)
 
@@ -82,5 +81,18 @@ describe('SSE handlers shared between the header and a page', () => {
     } as Alert
     emit('alert.fired', alert)
     expect(alerts.activeAlerts.critical).toHaveLength(1)
+  })
+})
+
+describe('agent connectivity events', () => {
+  it.each(['agent.connected', 'agent.disconnected'])('reloads containers and endpoints on %s', (name) => {
+    useDashboardStore().connectAllSSE()
+    api.listContainers.mockClear()
+    api.listEndpoints.mockClear()
+
+    emit(name, { agent_id: 'ag1' })
+
+    expect(api.listContainers).toHaveBeenCalledTimes(1)
+    expect(api.listEndpoints).toHaveBeenCalledTimes(1)
   })
 })
