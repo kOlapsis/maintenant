@@ -92,6 +92,7 @@ func certificateRecoveryEvent(m map[string]any) alert.Event {
 func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 	if a.downDetector != nil {
 		a.downDetector.SetEmitter(a.emitAlert)
+		a.downDetector.SetSilenced(a.alertEngine.SilencedAlerts)
 	}
 	a.wireContainerEvents()
 	a.wireEndpointEvents(alertDetector)

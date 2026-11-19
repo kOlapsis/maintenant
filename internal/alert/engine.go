@@ -60,9 +60,16 @@ type Engine struct {
 
 	// In-memory active alert map for recovery linking and dedup
 	activeAlerts map[activeAlertKey]*Alert
+	silenced     map[activeAlertKey]*Alert // held back by a silence or a maintenance window, guarded by procMu alone
+	recheckEvery time.Duration
 	mu           sync.RWMutex
 	procMu       sync.Mutex // serializes a store write with the map update that follows it
 }
+
+const (
+	defaultSilenceRecheckInterval = 30 * time.Second
+	silencedReloadMaxAge          = 24 * time.Hour
+)
 
 var storeRetryDelays = []time.Duration{100 * time.Millisecond, 500 * time.Millisecond}
 
@@ -111,6 +118,8 @@ func NewEngine(d EngineDeps) *Engine {
 		escalator:    noopEscalator{},
 		suppressor:   noopSuppressor{},
 		activeAlerts: make(map[activeAlertKey]*Alert),
+		silenced:     make(map[activeAlertKey]*Alert),
+		recheckEvery: defaultSilenceRecheckInterval,
 	}
 }
 
@@ -165,6 +174,9 @@ func (e *Engine) Start(ctx context.Context) {
 	if err := e.reloadActiveAlerts(ctx); err != nil {
 		e.logger.Error("alert engine: failed to reload active alerts", "error", err)
 	}
+	if err := e.reloadSilencedAlerts(ctx); err != nil {
+		e.logger.Error("alert engine: failed to reload silenced alerts", "error", err)
+	}
 
 	go func() {
 		for {
@@ -179,6 +191,8 @@ func (e *Engine) Start(ctx context.Context) {
 			}
 		}
 	}()
+
+	go e.runSilenceRecheck(ctx)
 
 	// Start escalation evaluator only when a real Escalator is injected
 	if _, isNoop := e.escalator.(noopEscalator); !isNoop {
@@ -228,6 +242,119 @@ func (e *Engine) reloadActiveAlerts(ctx context.Context) error {
 
 	e.logger.Info("alert engine: reloaded active alerts", "count", len(active))
 	return nil
+}
+
+// reloadSilencedAlerts holds back again the recent silenced alerts that a silence or a maintenance window still covers.
+func (e *Engine) reloadSilencedAlerts(ctx context.Context) error {
+	var held []*Alert
+	var rules []*SilenceRule
+	if err := withRetry(ctx, func() (err error) {
+		if held, err = e.alertStore.ListSilencedAlertsSince(ctx, time.Now().Add(-silencedReloadMaxAge)); err != nil {
+			return err
+		}
+		rules, err = e.silenceStore.GetActiveSilenceRules(ctx)
+		return err
+	}); err != nil {
+		return err
+	}
+
+	e.procMu.Lock()
+	defer e.procMu.Unlock()
+	seen := make(map[activeAlertKey]bool)
+	for _, a := range held {
+		key := keyOf(a)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		e.mu.RLock()
+		_, active := e.activeAlerts[key]
+		e.mu.RUnlock()
+		if active || !e.covered(ctx, rules, eventOf(a)) {
+			continue
+		}
+		e.silenced[key] = a
+	}
+
+	e.logger.Info("alert engine: reloaded silenced alerts", "count", len(e.silenced))
+	return nil
+}
+
+func (e *Engine) runSilenceRecheck(ctx context.Context) {
+	ticker := time.NewTicker(e.recheckEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			e.promoteUncovered(ctx)
+		}
+	}
+}
+
+// promoteUncovered promotes every held alert that no silence or maintenance window covers anymore.
+func (e *Engine) promoteUncovered(ctx context.Context) {
+	e.procMu.Lock()
+	defer e.procMu.Unlock()
+	if len(e.silenced) == 0 {
+		return
+	}
+	rules, err := e.silenceStore.GetActiveSilenceRules(ctx)
+	if err != nil {
+		e.logger.Error("alert engine: get silence rules", "error", err)
+		return
+	}
+	for key, a := range e.silenced {
+		if !e.covered(ctx, rules, eventOf(a)) {
+			e.promote(ctx, key, a)
+		}
+	}
+}
+
+// promote makes a held alert live, exactly as if it had just fired.
+func (e *Engine) promote(ctx context.Context, key activeAlertKey, a *Alert) {
+	if err := withRetry(ctx, func() error {
+		return e.alertStore.UpdateAlertStatus(ctx, a.ID, StatusActive, nil, nil)
+	}); err != nil {
+		e.logger.Error("alert engine: promote silenced alert", "error", err, "alert_id", a.ID)
+		return
+	}
+	delete(e.silenced, key)
+	a.Status = StatusActive
+	e.logger.Info("silenced alert promoted", "alert_id", a.ID, "entity", a.EntityName)
+	e.fire(ctx, key, a)
+}
+
+// resolveSilenced closes a held alert without notifying anyone, since nothing was ever sent for it.
+func (e *Engine) resolveSilenced(ctx context.Context, key activeAlertKey, a *Alert, at time.Time) {
+	if err := withRetry(ctx, func() error {
+		return e.alertStore.UpdateAlertStatus(ctx, a.ID, StatusResolved, &at, nil)
+	}); err != nil {
+		e.logger.Error("alert engine: resolve silenced alert", "error", err, "alert_id", a.ID)
+		return
+	}
+	delete(e.silenced, key)
+}
+
+// SilencedAlerts returns copies of the alerts a silence or a maintenance window holds back.
+func (e *Engine) SilencedAlerts() []*Alert {
+	e.procMu.Lock()
+	defer e.procMu.Unlock()
+	held := make([]*Alert, 0, len(e.silenced))
+	for _, a := range e.silenced {
+		c := *a
+		held = append(held, &c)
+	}
+	return held
+}
+
+func keyOf(a *Alert) activeAlertKey {
+	return activeAlertKey{Source: a.Source, AlertType: a.AlertType, EntityType: a.EntityType, EntityID: a.EntityID}
+}
+
+func eventOf(a *Alert) Event {
+	return Event{Source: a.Source, AlertType: a.AlertType, EntityType: a.EntityType, EntityID: a.EntityID}
 }
 
 func (e *Engine) processEvent(ctx context.Context, evt Event) {
@@ -281,6 +408,21 @@ func (e *Engine) processEvent(ctx context.Context, evt Event) {
 		return
 	}
 
+	// Check silence rules before persisting
+	silenced := e.checkSilenceRules(ctx, evt)
+
+	if held, ok := e.silenced[key]; ok {
+		if severityRank(evt.Severity) > severityRank(held.Severity) {
+			if err := e.refreshAlert(ctx, held, evt); err != nil {
+				e.logger.Error("alert engine: refresh silenced alert", "error", err, "alert_id", held.ID)
+			}
+		}
+		if !silenced {
+			e.promote(ctx, key, held)
+		}
+		return
+	}
+
 	// Serialize details to JSON
 	detailsJSON := "{}"
 	if evt.Details != nil {
@@ -303,8 +445,6 @@ func (e *Engine) processEvent(ctx context.Context, evt Event) {
 		FiredAt:    evt.Timestamp,
 	}
 
-	// Check silence rules before persisting
-	silenced := e.checkSilenceRules(ctx, evt)
 	if silenced {
 		a.Status = StatusSilenced
 		e.logger.Debug("alert: silenced by rule",
@@ -326,33 +466,36 @@ func (e *Engine) processEvent(ctx context.Context, evt Event) {
 	}
 	a.ID = id
 
-	// Track active alert (only if not silenced)
-	if !silenced {
-		e.mu.Lock()
-		e.activeAlerts[key] = a
-		e.mu.Unlock()
+	if silenced {
+		e.silenced[key] = a
+		e.broadcastAlert(a, true)
+		return
 	}
+	e.fire(ctx, key, a)
+}
+
+// fire makes a stored alert live: tracked, broadcast, handed to the escalator and notified.
+func (e *Engine) fire(ctx context.Context, key activeAlertKey, a *Alert) {
+	e.mu.Lock()
+	e.activeAlerts[key] = a
+	e.mu.Unlock()
 
 	// SSE broadcast
-	e.broadcastAlert(a, silenced)
+	e.broadcastAlert(a, false)
 
 	// Notify the escalator that a new alert is live so it can start any
-	// matching policy runs. Skipped for silenced alerts (suppressed by rule).
-	if !silenced {
-		if err := e.escalator.OnAlertCreated(ctx, a); err != nil {
-			e.logger.ErrorContext(ctx, "alert engine: OnAlertCreated hook error", "error", err, "alert_id", a.ID)
-		}
+	// matching policy runs.
+	if err := e.escalator.OnAlertCreated(ctx, a); err != nil {
+		e.logger.ErrorContext(ctx, "alert engine: OnAlertCreated hook error", "error", err, "alert_id", a.ID)
 	}
 
-	// Dispatch notifications (only if not silenced)
-	if !silenced && e.notifier != nil {
+	if e.notifier != nil {
 		e.dispatchNotifications(ctx, a, a)
 	}
 }
 
-func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) {
-	oldSeverity := existing.Severity
-
+// refreshAlert rewrites a stored alert to the latest event, then its copy in memory.
+func (e *Engine) refreshAlert(ctx context.Context, a *Alert, evt Event) error {
 	// Refresh the record to the escalating event in full — severity, message AND
 	// entity name/details — so an escalation can never leave a record mixing two
 	// events' fields. EntityID/EntityType are part of the dedup key and therefore
@@ -364,15 +507,24 @@ func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) 
 		}
 	}
 	if err := withRetry(ctx, func() error {
-		return e.alertStore.UpdateAlertOnEscalation(ctx, existing.ID, evt.Severity, evt.Message, evt.EntityName, detailsJSON)
+		return e.alertStore.UpdateAlertOnEscalation(ctx, a.ID, evt.Severity, evt.Message, evt.EntityName, detailsJSON)
 	}); err != nil {
+		return err
+	}
+	a.Severity = evt.Severity
+	a.Message = evt.Message
+	a.EntityName = evt.EntityName
+	a.Details = detailsJSON
+	return nil
+}
+
+func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) {
+	oldSeverity := existing.Severity
+
+	if err := e.refreshAlert(ctx, existing, evt); err != nil {
 		e.logger.Error("alert engine: escalate", "error", err, "alert_id", existing.ID)
 		return
 	}
-	existing.Severity = evt.Severity
-	existing.Message = evt.Message
-	existing.EntityName = evt.EntityName
-	existing.Details = detailsJSON
 
 	if stored, err := e.alertStore.GetAlert(ctx, existing.ID); err != nil {
 		e.logger.Error("alert engine: reload escalated alert", "error", err, "alert_id", existing.ID)
@@ -472,6 +624,10 @@ func (e *Engine) processRecovery(ctx context.Context, evt Event) {
 	e.mu.RUnlock()
 
 	if !exists {
+		if held, ok := e.silenced[key]; ok {
+			e.resolveSilenced(ctx, key, held, evt.Timestamp)
+			return
+		}
 		e.logger.Debug("alert: recovery without active alert",
 			"source", evt.Source,
 			"alert_type", evt.AlertType,
@@ -557,7 +713,11 @@ func (e *Engine) checkSilenceRules(ctx context.Context, evt Event) bool {
 		e.logger.Error("alert engine: get silence rules", "error", err)
 		return false
 	}
+	return e.covered(ctx, rules, evt)
+}
 
+// covered reports whether one of rules or a maintenance window covers the event's entity.
+func (e *Engine) covered(ctx context.Context, rules []*SilenceRule, evt Event) bool {
 	for _, rule := range rules {
 		if matchesSilenceRule(rule, evt) {
 			e.logger.Debug("alert: silence rule matched",
@@ -846,6 +1006,12 @@ func (e *Engine) ResolveByEntity(ctx context.Context, entityType string, entityI
 			"entity_type", entityType,
 			"entity_id", entityID,
 		)
+	}
+
+	for key, a := range e.silenced {
+		if key.EntityType == entityType && key.EntityID == entityID {
+			e.resolveSilenced(ctx, key, a, now)
+		}
 	}
 }
 

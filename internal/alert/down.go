@@ -24,6 +24,7 @@ type DownDetector struct {
 	after      time.Duration
 	logger     *slog.Logger
 	emit       func(Event)
+	silenced   func() []*Alert
 }
 
 // NewDownDetector returns a detector for containers stopped longer than after.
@@ -39,6 +40,11 @@ func NewDownDetector(containers container.ContainerStore, alerts AlertStore, aft
 // SetEmitter sets the sink receiving the fire and recovery events.
 func (d *DownDetector) SetEmitter(emit func(Event)) {
 	d.emit = emit
+}
+
+// SetSilenced sets the source of the alerts a silence holds back, so a container back during the window is still resolved.
+func (d *DownDetector) SetSilenced(silenced func() []*Alert) {
+	d.silenced = silenced
 }
 
 // isDown reports whether a state means the container stopped running on its
@@ -58,6 +64,9 @@ func (d *DownDetector) Check(ctx context.Context) error {
 	active, err := d.alerts.ListActiveAlerts(ctx)
 	if err != nil {
 		return fmt.Errorf("container down check: list active alerts: %w", err)
+	}
+	if d.silenced != nil {
+		active = append(active, d.silenced()...)
 	}
 
 	now := time.Now()

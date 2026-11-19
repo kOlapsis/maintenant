@@ -78,13 +78,15 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Push event for container:42 (covered by maintenance window)
-	engine.EventChannel() <- alert.Event{
-		Source: "container", AlertType: "restart", Severity: "warning",
-		EntityType: "container", EntityID: "42", EntityName: "c42", Timestamp: now,
+	// Push the same event for container:42 (covered by maintenance window) twice
+	for range 2 {
+		engine.EventChannel() <- alert.Event{
+			Source: "container", AlertType: "restart", Severity: "warning",
+			EntityType: "container", EntityID: "42", EntityName: "c42", Timestamp: now,
+		}
 	}
 
-	// At least one silenced alert must be persisted for container:42 (audit trail)
+	// A silenced alert must be persisted for container:42 (audit trail)
 	var silenced []*alert.Alert
 	require.Eventually(t, func() bool {
 		var err error
@@ -145,4 +147,14 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 		}
 	}
 	assert.True(t, found99, "container:99 must have an active alert")
+
+	silenced, err = alertStore.ListAlerts(ctx, alert.ListAlertsOpts{Status: "silenced", Limit: 20})
+	require.NoError(t, err)
+	held := 0
+	for _, a := range silenced {
+		if a.EntityType == "container" && a.EntityID == "42" {
+			held++
+		}
+	}
+	assert.Equal(t, 1, held, "a repeated event during the window must not add a silenced row")
 }
