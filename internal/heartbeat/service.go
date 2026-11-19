@@ -350,12 +350,9 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 	s.endPause(ctx, h.ID, previousStatus, now)
 
 	// Emit events
-	s.emitEvent(event.HeartbeatPingReceived, map[string]interface{}{
-		"heartbeat_id": h.ID,
-		"ping_type":    string(PingSuccess),
-		"status":       string(newStatus),
-		"agent_id":     agentID,
-	})
+	payloadOut := pingReceivedPayload(h, PingSuccess, newStatus)
+	payloadOut["agent_id"] = agentID
+	s.emitEvent(event.HeartbeatPingReceived, payloadOut)
 
 	if newStatus != previousStatus {
 		s.emitEvent(event.HeartbeatStatusChanged, map[string]interface{}{
@@ -444,11 +441,7 @@ func (s *Service) ProcessStartPing(ctx context.Context, token string, sourceIP, 
 	s.endPause(ctx, h.ID, previousStatus, now)
 
 	// Emit events
-	s.emitEvent(event.HeartbeatPingReceived, map[string]interface{}{
-		"heartbeat_id": h.ID,
-		"ping_type":    string(PingStart),
-		"status":       string(newStatus),
-	})
+	s.emitEvent(event.HeartbeatPingReceived, pingReceivedPayload(h, PingStart, newStatus))
 
 	if newStatus != previousStatus {
 		s.emitEvent(event.HeartbeatStatusChanged, map[string]interface{}{
@@ -560,12 +553,9 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCod
 	s.endPause(ctx, h.ID, previousStatus, now)
 
 	// Emit events
-	s.emitEvent(event.HeartbeatPingReceived, map[string]interface{}{
-		"heartbeat_id": h.ID,
-		"ping_type":    string(PingExitCode),
-		"exit_code":    exitCode,
-		"status":       string(newStatus),
-	})
+	payloadOut := pingReceivedPayload(h, PingExitCode, newStatus)
+	payloadOut["exit_code"] = exitCode
+	s.emitEvent(event.HeartbeatPingReceived, payloadOut)
 
 	if newStatus != previousStatus {
 		s.emitEvent(event.HeartbeatStatusChanged, map[string]interface{}{
@@ -747,6 +737,27 @@ func (s *Service) commitState(ctx context.Context, h *Heartbeat,
 		}
 		h = fresh
 	}
+}
+
+func pingReceivedPayload(h *Heartbeat, pingType PingType, status HeartbeatStatus) map[string]interface{} {
+	p := map[string]interface{}{
+		"heartbeat_id": h.ID,
+		"ping_type":    string(pingType),
+		"status":       string(status),
+	}
+	if h.LastPingAt != nil {
+		p["last_ping_at"] = h.LastPingAt
+	}
+	if h.NextDeadlineAt != nil {
+		p["next_deadline_at"] = h.NextDeadlineAt
+	}
+	if h.LastDurationMs != nil {
+		p["last_duration_ms"] = h.LastDurationMs
+	}
+	if h.LastExitCode != nil {
+		p["last_exit_code"] = h.LastExitCode
+	}
+	return p
 }
 
 // --- Pause / Resume ---

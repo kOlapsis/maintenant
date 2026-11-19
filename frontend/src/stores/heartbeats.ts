@@ -56,9 +56,14 @@ export const useHeartbeatsStore = defineStore('heartbeats', () => {
     }
     const idx = heartbeats.value.findIndex((hb) => hb.id === data.heartbeat_id)
     if (idx >= 0) {
+      const hb = heartbeats.value[idx]!
       heartbeats.value[idx] = {
-        ...heartbeats.value[idx]!,
+        ...hb,
         status: data.status,
+        last_ping_at: data.last_ping_at ?? hb.last_ping_at,
+        next_deadline_at: data.next_deadline_at ?? hb.next_deadline_at,
+        last_duration_ms: data.last_duration_ms ?? hb.last_duration_ms,
+        last_exit_code: data.last_exit_code ?? hb.last_exit_code,
       }
     } else {
       fetchHeartbeats()
