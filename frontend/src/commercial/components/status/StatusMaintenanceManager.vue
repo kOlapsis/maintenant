@@ -8,6 +8,7 @@
 import { ref } from 'vue'
 import { useStatusAdminStore } from '@/stores/statusAdmin'
 import { useConfirm } from '@/composables/useConfirm'
+import { toDatetimeLocal } from '@/utils/time'
 import {
   createMaintenance,
   updateMaintenance,
@@ -44,8 +45,8 @@ function startEdit(mw: MaintenanceWindow) {
   form.value = {
     title: mw.title,
     description: mw.description,
-    starts_at: mw.starts_at.slice(0, 16),
-    ends_at: mw.ends_at.slice(0, 16),
+    starts_at: toDatetimeLocal(mw.starts_at),
+    ends_at: toDatetimeLocal(mw.ends_at),
     component_ids: mw.components?.map((c) => c.id) ?? [],
   }
   showForm.value = true
