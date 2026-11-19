@@ -739,20 +739,23 @@ CREATE TABLE container_cves (
     summary       TEXT,
     fixed_in      TEXT,
     first_detected_at BIGINT NOT NULL,
-    resolved_at   BIGINT
+    resolved_at   BIGINT,
+    agent_id      TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'
 );
 CREATE INDEX idx_container_cves_container_id ON container_cves(container_id);
 CREATE INDEX idx_container_cves_severity ON container_cves(severity);
-CREATE UNIQUE INDEX uq_container_cves ON container_cves(container_id, cve_id);
+CREATE UNIQUE INDEX uq_container_cves_agent ON container_cves(agent_id, container_id, cve_id);
 
 CREATE TABLE cve_evaluations (
-    container_id    TEXT PRIMARY KEY NOT NULL,
+    container_id     TEXT NOT NULL,
     status           TEXT NOT NULL,
     evaluated_at     BIGINT NOT NULL,
     ecosystem        TEXT,
     package_name     TEXT,
     package_version  TEXT,
-    error            TEXT
+    error            TEXT,
+    agent_id         TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+    PRIMARY KEY (agent_id, container_id)
 );
 CREATE INDEX idx_cve_evaluations_status ON cve_evaluations(status);
 
@@ -763,9 +766,10 @@ CREATE TABLE version_pins (
     pinned_tag    TEXT NOT NULL,
     pinned_digest TEXT NOT NULL,
     reason        TEXT,
-    pinned_at     BIGINT NOT NULL
+    pinned_at     BIGINT NOT NULL,
+    agent_id      TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'
 );
-CREATE UNIQUE INDEX uq_version_pins_container ON version_pins(container_id);
+CREATE UNIQUE INDEX uq_version_pins_agent_container ON version_pins(agent_id, container_id);
 
 CREATE TABLE update_exclusions (
     id            TEXT PRIMARY KEY NOT NULL,
@@ -780,7 +784,8 @@ CREATE TABLE risk_score_history (
     container_id  TEXT NOT NULL,
     score         INTEGER NOT NULL,
     factors_json  TEXT NOT NULL,
-    recorded_at   BIGINT NOT NULL
+    recorded_at   BIGINT NOT NULL,
+    agent_id      TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'
 );
 CREATE INDEX idx_risk_score_history_container_time ON risk_score_history(container_id, recorded_at);
 CREATE INDEX idx_risk_score_history_recorded_at ON risk_score_history(recorded_at);
@@ -793,16 +798,19 @@ CREATE TABLE risk_acknowledgments (
     acknowledged_by TEXT NOT NULL DEFAULT '',
     reason        TEXT NOT NULL DEFAULT '',
     acknowledged_at BIGINT NOT NULL,
-    UNIQUE(container_external_id, finding_type, finding_key)
+    agent_id      TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+    UNIQUE(agent_id, container_external_id, finding_type, finding_key)
 );
 CREATE INDEX idx_risk_ack_container ON risk_acknowledgments(container_external_id);
 
 CREATE TABLE digest_baselines (
-    container_id  TEXT PRIMARY KEY NOT NULL,
+    container_id  TEXT NOT NULL,
     image         TEXT NOT NULL,
     tag           TEXT NOT NULL,
     remote_digest TEXT NOT NULL,
-    checked_at    BIGINT NOT NULL DEFAULT 0
+    checked_at    BIGINT NOT NULL DEFAULT 0,
+    agent_id      TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+    PRIMARY KEY (agent_id, container_id)
 );
 
 -- ============================================================== swarm ========

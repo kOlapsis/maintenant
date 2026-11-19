@@ -427,7 +427,7 @@ func (s *UpdateStore) UpsertContainerCVE(ctx context.Context, c *update.Containe
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO container_cves (id, container_id, cve_id, severity, cvss_score, summary, fixed_in, first_detected_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(container_id, cve_id) DO UPDATE SET
+		ON CONFLICT(agent_id, container_id, cve_id) DO UPDATE SET
 			severity=excluded.severity, cvss_score=excluded.cvss_score,
 			summary=excluded.summary, fixed_in=excluded.fixed_in`,
 		c.ID, c.ContainerID, c.CVEID, string(c.Severity), c.CVSSScore, c.Summary, c.FixedIn,
@@ -525,7 +525,7 @@ func (s *UpdateStore) UpsertCVEEvaluation(ctx context.Context, e *update.CVEEval
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO cve_evaluations (container_id, status, evaluated_at, ecosystem, package_name, package_version, error)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(container_id) DO UPDATE SET
+		ON CONFLICT(agent_id, container_id) DO UPDATE SET
 			status = excluded.status, evaluated_at = excluded.evaluated_at,
 			ecosystem = excluded.ecosystem, package_name = excluded.package_name,
 			package_version = excluded.package_version, error = excluded.error`,
@@ -586,7 +586,7 @@ func (s *UpdateStore) InsertVersionPin(ctx context.Context, p *update.VersionPin
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO version_pins (id, container_id, image, pinned_tag, pinned_digest, reason, pinned_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(container_id) DO UPDATE SET
+		ON CONFLICT(agent_id, container_id) DO UPDATE SET
 			image=excluded.image,
 			pinned_tag=excluded.pinned_tag,
 			pinned_digest=excluded.pinned_digest,
@@ -967,7 +967,7 @@ func (s *UpdateStore) UpsertDigestBaseline(ctx context.Context, b *update.Digest
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO digest_baselines (container_id, image, tag, remote_digest, checked_at)
 		 VALUES (?, ?, ?, ?, ?)
-		 ON CONFLICT(container_id) DO UPDATE SET
+		 ON CONFLICT(agent_id, container_id) DO UPDATE SET
 		   image = excluded.image,
 		   tag = excluded.tag,
 		   remote_digest = excluded.remote_digest,
