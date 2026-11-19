@@ -434,6 +434,8 @@ func listCertificatesHandler(svc *Services) gomcp.ToolHandlerFor[listCertificate
 	}
 }
 
+var changelogFields = []string{"source_url", "previous_digest", "changelog_url", "changelog_summary", "has_breaking_changes"}
+
 func getUpdatesHandler(svc *Services) gomcp.ToolHandlerFor[getUpdatesInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, _ getUpdatesInput) (*gomcp.CallToolResult, any, error) {
 		updates, err := svc.Updates.ListImageUpdates(ctx, update.ListImageUpdatesOpts{})
@@ -443,6 +445,13 @@ func getUpdatesHandler(svc *Services) gomcp.ToolHandlerFor[getUpdatesInput, any]
 		enriched, err := enrichWithAgentLabel(ctx, svc, updates)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to enrich updates: %w", err)
+		}
+		if !extension.Allows(extension.CapChangelog) {
+			for _, row := range enriched {
+				for _, field := range changelogFields {
+					delete(row, field)
+				}
+			}
 		}
 		out := map[string]any{"updates": enriched, "hosts": []map[string]any{}, "eol_table": eol.TableStatus{}}
 		if svc.EOL != nil {

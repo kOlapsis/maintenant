@@ -92,14 +92,15 @@ func TestTriggerTools_AStoreFailureNeverShowsSQL(t *testing.T) {
 
 type failingEscalation struct {
 	escalation.Service
-	err error
+	err     error
+	listErr error
 }
 
 func (f failingEscalation) CreatePolicy(context.Context, escalation.PolicyRequest) (*escalation.Policy, error) {
 	return nil, f.err
 }
 func (f failingEscalation) ListPolicies(context.Context, bool) ([]*escalation.Policy, error) {
-	return nil, f.err
+	return nil, f.listErr
 }
 func (f failingEscalation) GetPolicy(context.Context, string) (*escalation.Policy, error) {
 	return nil, f.err
@@ -157,4 +158,15 @@ func TestEscalationTools_UnknownRunIsStillRunNotFound(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Contains(t, textFromContent(t, r.Content), "run_not_found")
+}
+
+func TestEscalationTools_ACreationThatCannotListPoliciesNeverShowsSQL(t *testing.T) {
+	withEdition(t, extension.Pro)
+	svc := &Services{EscalationSvc: failingEscalation{listErr: errSQLText}}
+
+	r, _, err := createEscalationPolicyHandler(svc)(context.Background(), nil, createEscalationPolicyInput{Name: "p"})
+
+	require.NoError(t, err)
+	assert.True(t, r.IsError)
+	assertNoStoreText(t, textFromContent(t, r.Content))
 }

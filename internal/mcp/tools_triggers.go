@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -199,6 +200,7 @@ func createTriggerHandler(svc *Services) gomcp.ToolHandlerFor[triggerInput, any]
 		if stored != nil {
 			t = stored
 		}
+		svc.broadcast(event.TriggerCreated, t)
 		return jsonResult(t)
 	}
 }
@@ -250,6 +252,7 @@ func updateTriggerHandler(svc *Services) gomcp.ToolHandlerFor[updateTriggerInput
 		if stored != nil {
 			existing = stored
 		}
+		svc.broadcast(event.TriggerUpdated, existing)
 		return jsonResult(existing)
 	}
 }
@@ -269,6 +272,7 @@ func deleteTriggerHandler(svc *Services) gomcp.ToolHandlerFor[deleteTriggerInput
 		if err := svc.Triggers.DeleteTrigger(ctx, input.ID); err != nil {
 			return storeErrResult(err, "delete trigger")
 		}
+		svc.broadcast(event.TriggerDeleted, map[string]string{"id": input.ID})
 		return jsonResult(map[string]any{"deleted": true, "id": input.ID})
 	}
 }

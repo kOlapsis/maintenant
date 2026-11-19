@@ -206,9 +206,17 @@ func createEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[createEsc
 			Levels: levels,
 		}
 
+		existing, err := svc.EscalationSvc.ListPolicies(ctx, false)
+		if err != nil {
+			return storeErrResult(err, "create escalation policy")
+		}
 		policy, err := svc.EscalationSvc.CreatePolicy(ctx, req)
 		if err != nil {
 			return escalationWriteErr("create escalation policy", err)
+		}
+		warnings := svc.EscalationSvc.DetectOverlap(policy, existing)
+		if warnings == nil {
+			warnings = []escalation.OverlapWarning{}
 		}
 		return jsonResult(map[string]any{
 			"id":                   policy.ID,
@@ -218,7 +226,7 @@ func createEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[createEsc
 			"levels":               policy.Levels,
 			"created_at":           policy.CreatedAt,
 			"updated_at":           policy.UpdatedAt,
-			"overlapping_warnings": []any{},
+			"overlapping_warnings": warnings,
 		})
 	}
 }
