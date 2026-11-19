@@ -302,6 +302,12 @@ func (n *Notifier) handle(ctx context.Context, job NotificationJob) {
 			return
 		}
 		job.claim = job.Delivery.NextAttemptAt
+		if !job.Channel.Enabled {
+			if _, err := n.queue.DropDelivery(ctx, job.Delivery, job.claim); err != nil {
+				n.logger.Warn("notifier: drop a delivery of a disabled channel", "error", err, "delivery_id", job.Delivery.ID)
+			}
+			return
+		}
 		if reason := n.unsendable(job); reason != "" {
 			n.failDelivery(ctx, job, reason)
 			return
@@ -315,8 +321,6 @@ func (n *Notifier) unsendable(job NotificationJob) string {
 	switch {
 	case job.Alert == nil:
 		return "abandoned: notification unreadable"
-	case !job.Channel.Enabled:
-		return "channel disabled"
 	case n.now().After(job.Delivery.CreatedAt.Add(deliveryMaxAge)):
 		return fmt.Sprintf("abandoned: not delivered within %d hours", int(deliveryMaxAge.Hours()))
 	}

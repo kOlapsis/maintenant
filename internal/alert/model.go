@@ -255,6 +255,8 @@ type DeliveryQueue interface {
 	ClaimDelivery(ctx context.Context, d *NotificationDelivery, until time.Time) (bool, error)
 	// SettleDelivery records the outcome of the attempt claimed until claim, and reports false when that claim no longer holds.
 	SettleDelivery(ctx context.Context, d *NotificationDelivery, claim time.Time) (bool, error)
+	// DropDelivery deletes the delivery claimed until claim, and reports false when that claim no longer holds.
+	DropDelivery(ctx context.Context, d *NotificationDelivery, claim time.Time) (bool, error)
 }
 
 // TriggerStore defines the persistence interface for AlertTrigger objects

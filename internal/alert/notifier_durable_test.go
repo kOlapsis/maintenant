@@ -335,6 +335,24 @@ func TestDurableDelivery_ASentNotificationIsRecordedDespiteAStoreError(t *testin
 		"the notification is not sent again once the claim runs out")
 }
 
+func TestDurableDelivery_DisablingAChannelCancelsWhatItHadToSend(t *testing.T) {
+	f := newQueueFixture(t)
+	srv := newHookServer(t, always(http.StatusOK))
+	ch := f.channel(t, srv.URL)
+	f.delivery(t, ch, alert.EventFired, alert.StatusActive)
+	ch.Enabled = false
+	require.NoError(t, f.channels.UpdateChannel(f.ctx, ch))
+
+	f.notifier().StartUntilCleanup(f.ctx, t)
+
+	require.Eventually(t, func() bool { return f.countStatus(alert.DeliveryPending) == 0 }, 10*time.Second, 5*time.Millisecond)
+	health, err := f.channels.GetChannelHealth(f.ctx, ch.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "healthy", health, "a channel the user turned off is not failing")
+	assert.Empty(t, srv.received())
+	assert.Zero(t, f.countStatus(alert.DeliveryFailed), "the cancelled notification leaves no row")
+}
+
 func TestDurableDelivery_AnAttemptPastItsClaimLeavesTheRowAlone(t *testing.T) {
 	f := newQueueFixture(t)
 	release := make(chan struct{})

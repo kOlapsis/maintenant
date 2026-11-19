@@ -503,7 +503,7 @@ A failed attempt is retried 5 seconds later, then 10, 20, 40 seconds later and s
 
 An attempt is sent once, even by several instances sharing one PostgreSQL database. If maintenant stops between a successful send and its record, the notification goes out again with the same `X-maintenant-Delivery` id, so a webhook receiver can drop the copy.
 
-Deliveries are kept in the `notification_deliveries` table, which no API lists. A delivery is `pending` (waiting for its first attempt or for a retry), `delivered`, `failed` or `suspended`, and a channel whose last delivery failed, or waits for a retry, shows `health: failing`. A channel disabled while one of its notifications waits for a retry closes it as `failed`, with the error `channel disabled`.
+Deliveries are kept in the `notification_deliveries` table, which no API lists. A delivery is `pending` (waiting for its first attempt or for a retry), `delivered`, `failed` or `suspended`, and a channel whose last delivery failed, or waits for a retry, shows `health: failing`. Disabling a channel cancels the notifications it still had to send: they are removed, and the channel's health does not change.
 
 ---
 
