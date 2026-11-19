@@ -146,11 +146,19 @@ export const useKubernetesStore = defineStore('kubernetes', () => {
     }
   }
 
+  function onReconnected() {
+    fetchWorkloadsList()
+    fetchPodsList()
+    if (nodes.value.length > 0) fetchNodesList()
+    if (clusterOverview.value !== null) fetchCluster()
+  }
+
   function startListening() {
     sseBus.on('kubernetes.workload_changed', onWorkloadChanged)
     sseBus.on('kubernetes.pod_changed', onPodChanged)
     sseBus.on('kubernetes.node_changed', onNodeChanged)
     sseBus.on('kubernetes.topology_changed', onTopologyChanged)
+    sseBus.on('sse.reconnected', onReconnected)
   }
 
   function stopListening() {
@@ -158,6 +166,7 @@ export const useKubernetesStore = defineStore('kubernetes', () => {
     sseBus.off('kubernetes.pod_changed', onPodChanged)
     sseBus.off('kubernetes.node_changed', onNodeChanged)
     sseBus.off('kubernetes.topology_changed', onTopologyChanged)
+    sseBus.off('sse.reconnected', onReconnected)
   }
 
   return {

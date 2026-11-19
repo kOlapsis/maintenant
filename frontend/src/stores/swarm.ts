@@ -224,6 +224,12 @@ export const useSwarmStore = defineStore('swarm', () => {
     }
   }
 
+  function onReconnected() {
+    loadInfo()
+    loadNodes()
+    if (cluster.value !== null) loadCluster()
+  }
+
   function startListening() {
     sseBus.on('swarm.status', onSwarmStatus)
     sseBus.on('swarm.node_status_changed', onNodeStatusChanged)
@@ -233,6 +239,7 @@ export const useSwarmStore = defineStore('swarm', () => {
     sseBus.on('swarm.crash_loop_recovered', onCrashLoopRecovered)
     sseBus.on('swarm.update_progress', onUpdateProgressEvent)
     sseBus.on('swarm.update_completed', onUpdateCompleted)
+    sseBus.on('sse.reconnected', onReconnected)
   }
 
   function stopListening() {
@@ -244,6 +251,7 @@ export const useSwarmStore = defineStore('swarm', () => {
     sseBus.off('swarm.crash_loop_recovered', onCrashLoopRecovered)
     sseBus.off('swarm.update_progress', onUpdateProgressEvent)
     sseBus.off('swarm.update_completed', onUpdateCompleted)
+    sseBus.off('sse.reconnected', onReconnected)
   }
 
   return {

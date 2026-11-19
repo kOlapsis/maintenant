@@ -85,10 +85,15 @@ export const useTriggersStore = defineStore('triggers', () => {
     triggers.value = triggers.value.filter((t) => t.id !== data.id)
   }
 
+  function onReconnected() {
+    fetchTriggers()
+  }
+
   function connectSSE() {
     sseBus.on('trigger.created', onTriggerCreated)
     sseBus.on('trigger.updated', onTriggerUpdated)
     sseBus.on('trigger.deleted', onTriggerDeleted)
+    sseBus.on('sse.reconnected', onReconnected)
     sseBus.connect()
   }
 
@@ -96,6 +101,7 @@ export const useTriggersStore = defineStore('triggers', () => {
     sseBus.off('trigger.created', onTriggerCreated)
     sseBus.off('trigger.updated', onTriggerUpdated)
     sseBus.off('trigger.deleted', onTriggerDeleted)
+    sseBus.off('sse.reconnected', onReconnected)
     sseBus.disconnect()
   }
 
