@@ -282,6 +282,29 @@ func forwardedHeadersWarning(logger *slog.Logger, trusted bool, next http.Handle
 
 const minMCPClientSecretLength = 32
 
+const (
+	oauthFormBodyLimit      = 64 << 10
+	defaultRequestBodyLimit = 1 << 20
+)
+
+func (a *App) requestBodyLimit() int64 {
+	if a.cfg.MaxBodySize > 0 {
+		return a.cfg.MaxBodySize
+	}
+	return defaultRequestBodyLimit
+}
+
+func limitBody(max int64, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength > max {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, max)
+		next.ServeHTTP(w, r)
+	})
+}
+
 // warnWeakMCPClientSecret warns when the only credential the MCP OAuth flow checks is short enough to guess.
 func (a *App) warnWeakMCPClientSecret() {
 	n := utf8.RuneCountInString(a.cfg.MCP.ClientSecret)
@@ -324,8 +347,8 @@ func (a *App) buildHTTPServer() *http.Server {
 			}, mcpOAuthStore, a.logger.With("component", "mcp-oauth"))
 
 			topMux.HandleFunc("/.well-known/oauth-authorization-server", oauthSrv.HandleAuthServerMetadata)
-			topMux.Handle("/oauth/authorize", a.rl.Middleware(http.HandlerFunc(oauthSrv.HandleAuthorize)))
-			topMux.Handle("/oauth/token", a.rl.Middleware(http.HandlerFunc(oauthSrv.HandleToken)))
+			topMux.Handle("/oauth/authorize", a.rl.Middleware(limitBody(oauthFormBodyLimit, http.HandlerFunc(oauthSrv.HandleAuthorize))))
+			topMux.Handle("/oauth/token", a.rl.Middleware(limitBody(oauthFormBodyLimit, http.HandlerFunc(oauthSrv.HandleToken))))
 
 			topMux.Handle("/.well-known/oauth-protected-resource",
 				mcpauth.ProtectedResourceMetadataHandler(&oauthex.ProtectedResourceMetadata{
@@ -351,7 +374,7 @@ func (a *App) buildHTTPServer() *http.Server {
 			a.logger.Warn("MCP server enabled WITHOUT auth — /mcp answers anyone who reaches it",
 				"opt_out", "MAINTENANT_MCP_ALLOW_UNAUTHENTICATED")
 		}
-		mcpHandler = a.rl.Middleware(mcpHandler)
+		mcpHandler = a.rl.Middleware(limitBody(a.requestBodyLimit(), mcpHandler))
 		topMux.Handle("/mcp", mcpHandler)
 		topMux.Handle("/mcp/", mcpHandler)
 	}

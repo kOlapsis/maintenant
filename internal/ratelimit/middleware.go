@@ -11,7 +11,7 @@ import (
 
 // AllowRequest consumes one token for the address the request is attributed to.
 func (l *Limiter) AllowRequest(r *http.Request) bool {
-	return l.Allow(l.resolver.ClientIP(r))
+	return l.Allow(l.resolver.RateKey(r))
 }
 
 // Reject answers a refused request: 429, the JSON rate_limited error and the seconds until a token is back.
