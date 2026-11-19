@@ -249,6 +249,9 @@ func (n *Notifier) deliver(ctx context.Context, job NotificationJob, sender Chan
 		n.logger.Warn("notifier: delivery attempt failed",
 			"attempt", attempt+1, "channel_id", job.Channel.ID, "channel_type", job.Channel.Type,
 			"alert_id", jobAlertID(job), "error", lastErr)
+		if isPermanent(lastErr) {
+			break
+		}
 	}
 
 	n.failDelivery(ctx, job.Delivery, sender.FailureMessage(lastErr))
@@ -321,6 +324,9 @@ func (n *Notifier) SendNow(ctx context.Context, a *Alert, ch *NotificationChanne
 		}
 		n.logger.Warn("notifier: attempt failed",
 			"attempt", attempt+1, "channel_id", ch.ID, "channel_type", ch.Type, "alert_id", a.ID, "error", lastErr)
+		if isPermanent(lastErr) {
+			break
+		}
 	}
 	return lastErr
 }
