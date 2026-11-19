@@ -26,6 +26,14 @@ const (
 	notifierChannelBuffer = 256
 	webhookTimeout        = 10 * time.Second
 	maxRetries            = 3
+
+	firstRetryDelay = 5 * time.Second
+	maxRetryDelay   = time.Hour
+	deliveryMaxAge  = 24 * time.Hour
+	attemptTimeout  = time.Minute
+	claimLease      = 2 * attemptTimeout // longer than an attempt can last, so no second worker takes it meanwhile
+	resumeInterval  = 5 * time.Second
+	resumeBatch     = 100
 )
 
 var retryBackoffs = []time.Duration{
@@ -76,6 +84,12 @@ type Notifier struct {
 
 	suspendedMu     sync.Mutex
 	suspendedLogged map[string]bool
+
+	queue          DeliveryQueue   // nil when the channel store keeps no durable queue
+	unsavedRetries []time.Duration // waits between the in-memory attempts of a job without a durable row
+	now            func() time.Time
+	resumeEvery    time.Duration
+	running        sync.WaitGroup
 }
 
 // NotifierOption configures a Notifier at construction.
@@ -93,11 +107,16 @@ func WithBaseURL(baseURL string) NotifierOption {
 // (dev only, via MAINTENANT_ALLOW_PRIVATE_WEBHOOKS).
 func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bool, opts ...NotifierOption) *Notifier {
 	client := ssrf.NewHTTPClient(webhookTimeout, allowPrivate)
+	queue, _ := channelStore.(DeliveryQueue)
 	n := &Notifier{
 		channelStore:    channelStore,
+		queue:           queue,
+		unsavedRetries:  retryBackoffs,
 		httpClient:      client,
 		logger:          logger,
 		suspendedLogged: make(map[string]bool),
+		now:             time.Now,
+		resumeEvery:     resumeInterval,
 	}
 	for _, opt := range opts {
 		opt(n)
@@ -148,22 +167,96 @@ func (n *Notifier) SMTPConfigured() bool {
 func (n *Notifier) Start(ctx context.Context) {
 	n.logger.Info("alert notifier: started", "workers", notifierWorkerCount)
 	for i := range n.queues {
+		n.running.Add(2)
 		go n.worker(ctx, n.queues[i])
 		go n.worker(ctx, n.subQueues[i])
+	}
+	if n.queue != nil {
+		n.running.Add(1)
+		go n.resumeLoop(ctx)
+	}
+}
+
+// Wait blocks until the goroutines of Start have returned, which follows the end of its context, or until ctx ends.
+func (n *Notifier) Wait(ctx context.Context) error {
+	stopped := make(chan struct{})
+	go func() {
+		n.running.Wait()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
 // Enqueue adds a notification job to the queue of its stream, whose jobs one worker delivers in order.
 func (n *Notifier) Enqueue(job NotificationJob) {
+	if n.offer(job) {
+		return
+	}
+	if n.durable(job) {
+		n.logger.Info("notifier: job queue full, the delivery stays due in the database",
+			"alert_id", jobAlertID(job), "channel_id", job.Channel.ID, "delivery_id", job.Delivery.ID)
+		return
+	}
+	n.logger.Warn("notifier: job queue full, dropping notification",
+		"alert_id", jobAlertID(job), "channel_id", job.Channel.ID)
+}
+
+func (n *Notifier) offer(job NotificationJob) bool {
 	queues := &n.queues
 	if job.Alert == nil {
 		queues = &n.subQueues
 	}
 	select {
 	case queues[streamOf(job)] <- job:
+		return true
 	default:
-		n.logger.Warn("notifier: job queue full, dropping notification",
-			"alert_id", jobAlertID(job), "channel_id", job.Channel.ID)
+		return false
+	}
+}
+
+// durable reports whether job's delivery is a row of the durable queue, which outlives the job.
+func (n *Notifier) durable(job NotificationJob) bool {
+	return n.queue != nil && job.Body == nil && job.Delivery.ID != ""
+}
+
+func (n *Notifier) resumeLoop(ctx context.Context) {
+	defer n.running.Done()
+	ticker := time.NewTicker(n.resumeEvery)
+	defer ticker.Stop()
+	for {
+		n.resume(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+// resume hands the due deliveries to the workers of their streams, until one of their queues is full.
+func (n *Notifier) resume(ctx context.Context) {
+	due, err := n.queue.ListDueDeliveries(ctx, n.now(), resumeBatch)
+	if err != nil {
+		n.logger.Warn("notifier: list due deliveries", "error", err)
+		return
+	}
+	for _, d := range due {
+		ch, err := n.channelStore.GetChannel(ctx, d.ChannelID)
+		if err != nil {
+			n.logger.Warn("notifier: read the channel of a due delivery", "error", err, "delivery_id", d.ID)
+			return
+		}
+		if ch == nil {
+			continue // deleted since the list was read, its deliveries with it
+		}
+		if !n.offer(NotificationJob{Delivery: d, Channel: ch, Alert: d.Payload}) {
+			return
+		}
 	}
 }
 
@@ -180,6 +273,7 @@ func streamOf(job NotificationJob) uint32 {
 }
 
 func (n *Notifier) worker(ctx context.Context, jobs <-chan NotificationJob) {
+	defer n.running.Done()
 	for {
 		select {
 		case <-ctx.Done():
@@ -188,9 +282,41 @@ func (n *Notifier) worker(ctx context.Context, jobs <-chan NotificationJob) {
 			if !ok {
 				return
 			}
-			n.processJob(ctx, job)
+			n.handle(ctx, job)
 		}
 	}
+}
+
+// handle takes the due attempt of a durable delivery before running it, so that no attempt is ever sent twice.
+func (n *Notifier) handle(ctx context.Context, job NotificationJob) {
+	if n.durable(job) {
+		taken, err := n.queue.ClaimDelivery(ctx, job.Delivery, n.now().Add(claimLease))
+		if err != nil {
+			n.logger.Warn("notifier: claim delivery, left for the next resume pass", "error", err, "delivery_id", job.Delivery.ID)
+			return
+		}
+		if !taken {
+			return
+		}
+		if reason := n.unsendable(job); reason != "" {
+			n.failDelivery(ctx, job.Delivery, reason)
+			return
+		}
+	}
+	n.processJob(ctx, job)
+}
+
+// unsendable says why a claimed delivery is closed without being sent, or "" when it can go.
+func (n *Notifier) unsendable(job NotificationJob) string {
+	switch {
+	case job.Alert == nil:
+		return "abandoned: notification unreadable"
+	case !job.Channel.Enabled:
+		return "channel disabled"
+	case n.now().After(job.Delivery.CreatedAt.Add(deliveryMaxAge)):
+		return fmt.Sprintf("abandoned: not delivered within %d hours", int(deliveryMaxAge.Hours()))
+	}
+	return ""
 }
 
 func (n *Notifier) processJob(ctx context.Context, job NotificationJob) {
@@ -218,7 +344,57 @@ func (n *Notifier) processJob(ctx context.Context, job NotificationJob) {
 		n.failDelivery(ctx, job.Delivery, err.Error())
 		return
 	}
+	if n.durable(job) {
+		n.attempt(ctx, job, sender, eventType)
+		return
+	}
 	n.deliver(ctx, job, sender, func() error { return sender.Send(ctx, job.Channel, eventType, job.Alert) })
+}
+
+type deliveryIDKey struct{}
+
+// attempt sends a durable delivery once, then records it delivered, failed, or due again at its next attempt.
+func (n *Notifier) attempt(ctx context.Context, job NotificationJob, sender ChannelSender, eventType string) {
+	d := job.Delivery
+	d.Attempts++
+	sendCtx, cancel := context.WithTimeout(context.WithValue(ctx, deliveryIDKey{}, d.ID), attemptTimeout)
+	err := sender.Send(sendCtx, job.Channel, eventType, job.Alert)
+	cancel()
+
+	if err == nil {
+		d.Status = DeliveryDelivered
+		if updateErr := n.channelStore.UpdateDelivery(ctx, d); updateErr != nil {
+			n.logger.Error("notifier: update delivery status", "error", updateErr)
+		}
+		n.logger.Debug("alert notifier: delivered",
+			"alert_id", jobAlertID(job), "channel_id", job.Channel.ID, "channel_type", job.Channel.Type)
+	} else {
+		n.logger.Warn("notifier: delivery attempt failed",
+			"attempt", d.Attempts, "channel_id", job.Channel.ID, "channel_type", job.Channel.Type,
+			"alert_id", jobAlertID(job), "error", err)
+		if !isPermanent(err) {
+			if next := n.now().Add(sender.RetryDelay(retryDelay(d.Attempts), err)); !next.After(d.CreatedAt.Add(deliveryMaxAge)) {
+				d.LastError, d.NextAttemptAt = sender.FailureMessage(err), next
+				if updateErr := n.channelStore.UpdateDelivery(ctx, d); updateErr != nil {
+					n.logger.Error("notifier: reschedule delivery", "error", updateErr)
+				}
+				return
+			}
+		}
+		n.failDelivery(ctx, d, sender.FailureMessage(err))
+	}
+	if job.Done != nil {
+		job.Done(ctx, err)
+	}
+}
+
+// retryDelay is the wait after the attempts-th failed attempt: 5 seconds, doubling up to an hour.
+func retryDelay(attempts int) time.Duration {
+	d := firstRetryDelay
+	for i := 1; i < attempts && d < maxRetryDelay; i++ {
+		d *= 2
+	}
+	return min(d, maxRetryDelay)
 }
 
 // deliver runs send under the shared retry/backoff policy and records the delivery outcome.
@@ -229,7 +405,7 @@ func (n *Notifier) deliver(ctx context.Context, job NotificationJob, sender Chan
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(sender.RetryDelay(retryBackoffs[attempt-1], lastErr)):
+			case <-time.After(sender.RetryDelay(n.unsavedRetries[attempt-1], lastErr)):
 			}
 		}
 
