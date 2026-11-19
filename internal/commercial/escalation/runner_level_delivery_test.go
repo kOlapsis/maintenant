@@ -112,6 +112,37 @@ func TestLevelSkipsDisabledAndDeletedChannelsWithATrace(t *testing.T) {
 	assert.Empty(t, sender.snapshot())
 }
 
+func TestDeletedChannelIsTracedOncePerLevel(t *testing.T) {
+	sender := newFakeSender()
+	h := newDBHarness(t, sender)
+	gone := h.addChannel("gone", "https://example.test/gone", true)
+	flaky := h.addChannel("flaky", "https://example.test/flaky", true)
+	a := h.addAlert()
+	h.addPolicy(
+		esc.Level{Order: 0, DelaySeconds: 60, ChannelIDs: []string{gone, flaky}},
+		esc.Level{Order: 1, DelaySeconds: 600, ChannelIDs: []string{flaky}},
+	)
+	require.NoError(t, h.runner.OnAlertCreated(h.ctx, a))
+	require.NoError(t, h.channels.DeleteChannel(h.ctx, gone))
+	h.advance(61 * time.Second)
+
+	h.channels.failGet(flaky, 2)
+	h.cycle()
+	h.cycle()
+	h.cycle()
+	h.settle()
+	run := h.onlyRun(a)
+	require.Equal(t, 0, run.LastExecutedLevelIndex)
+	traces := 0
+	for _, d := range h.deliveries(run.ID) {
+		if d.ChannelID == nil {
+			traces++
+		}
+	}
+	assert.Equal(t, 1, traces, "each attempt at the level must not add a trace of the deleted channel")
+	assert.Equal(t, 1, sentTo(sender.snapshot(), flaky))
+}
+
 func TestOrphanDeliveryWaitsOutAStorageError(t *testing.T) {
 	sender := newFakeSender()
 	h := newDBHarness(t, sender)

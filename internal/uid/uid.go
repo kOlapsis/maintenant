@@ -48,6 +48,7 @@ var (
 	nsK8sWorkload  = uuid.NewSHA1(nsRoot, []byte("k8s_workload"))
 	nsNamespace    = uuid.NewSHA1(nsRoot, []byte("k8s_namespace"))
 	nsEventRecord  = uuid.NewSHA1(nsRoot, []byte("agent_event_record"))
+	nsLevelTrace   = uuid.NewSHA1(nsRoot, []byte("escalation_level_trace"))
 )
 
 // New returns a fresh time-ordered UUIDv7 string.
@@ -129,6 +130,11 @@ func Namespace(agentID, name string) string {
 // EventRecord derives the id of a row written for an agent event, so a replayed event lands on the same row.
 func EventRecord(agentID, eventID string, parts ...string) string {
 	return Derive(nsEventRecord, append([]string{agentID, eventID}, parts...)...)
+}
+
+// LevelTrace derives the id of the delivery row that records a channel set aside by a level of an escalation run.
+func LevelTrace(runID string, levelIndex int, channelID string) string {
+	return Derive(nsLevelTrace, runID, strconv.Itoa(levelIndex), channelID)
 }
 
 // Agent returns agentID, or LocalAgent when it is empty. Eases the transition

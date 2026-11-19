@@ -21,6 +21,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // Reserved level indices for non-step deliveries (negative values are intentional —
@@ -485,7 +486,8 @@ func (r *Runner) dispatchToChannel(ctx context.Context, runID string, levelIndex
 	switch {
 	case ch == nil:
 		r.logger.WarnContext(ctx, "escalation: channel not found", "channel_id", chID, "run_id", runID)
-		delivery.ChannelID = nil // its foreign key would refuse the row
+		// The foreign key refuses the channel id, so the derived row id is what keeps one trace per level.
+		delivery.ChannelID, delivery.ID = nil, uid.LevelTrace(runID, levelIndex, chID)
 		delivery.Status, delivery.Error = esc.DeliveryStatusFailed, "channel deleted: "+chID
 	case !ch.Enabled:
 		delivery.Status, delivery.Error = esc.DeliveryStatusFailed, "channel disabled"

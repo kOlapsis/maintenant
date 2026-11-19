@@ -386,8 +386,8 @@ func (s *EscalationStore) ResumeRunFromMaintenance(ctx context.Context, runID st
 	return nil
 }
 
-// InsertDelivery reserves a delivery slot. Returns escalation.ErrDeliveryDuplicate
-// when (run_id, level_index, channel_id) already exists — the caller treats this
+// InsertDelivery reserves a delivery slot, under d.ID when set. Returns escalation.ErrDeliveryDuplicate
+// when (run_id, level_index, channel_id) or that id already exists; the caller treats this
 // as "already attempted" (R4 reserve-then-deliver idempotence).
 func (s *EscalationStore) InsertDelivery(ctx context.Context, d *escalation.Delivery) (string, error) {
 	var channelID any
@@ -395,7 +395,9 @@ func (s *EscalationStore) InsertDelivery(ctx context.Context, d *escalation.Deli
 		channelID = *d.ChannelID
 	}
 
-	d.ID = uid.New()
+	if d.ID == "" {
+		d.ID = uid.New()
+	}
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO escalation_deliveries
 			(id, run_id, level_index, channel_id, status, error, attempt_started_at, sent_at)
@@ -418,7 +420,10 @@ func (s *EscalationStore) ReserveDelivery(ctx context.Context, d *escalation.Del
 	if d.ChannelID != nil {
 		channelID = *d.ChannelID
 	}
-	id := uid.New()
+	id := d.ID
+	if id == "" {
+		id = uid.New()
+	}
 	reserved := false
 	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
 		if err := tx.Serialize(ctx, "escalation_runs"); err != nil {
