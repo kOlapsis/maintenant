@@ -16,7 +16,6 @@ import (
 var prereleaseIdent = regexp.MustCompile(`(?i)^(rc|beta|alpha|pre|dev)[0-9.]*$`)
 
 // splitVariant separates a Docker tag into its version part and variant suffix.
-// A variant is what follows the first "-" that starts with a letter and is not a pre-release identifier.
 // e.g. "18.3-alpine" → ("18.3", "-alpine"), "3.19.1" → ("3.19.1", ""), "1.2.3-rc1" → ("1.2.3-rc1", "")
 func splitVariant(tag string) (version, variant string) {
 	for i := 0; i+1 < len(tag); i++ {
