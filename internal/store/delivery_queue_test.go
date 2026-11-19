@@ -134,6 +134,70 @@ func TestDeliveryQueue_AChannelWaitingForARetryIsFailing(t *testing.T) {
 	assert.Equal(t, "healthy", health())
 }
 
+func TestDeliveryQueue_ANewReminderReplacesTheOneStillPending(t *testing.T) {
+	ctx := context.Background()
+	channels, alertID, channelID := seedDeliveryStream(t, openTestDB(t))
+	otherChannel, err := channels.InsertChannel(ctx, &alert.NotificationChannel{Name: "other", Type: "webhook", URL: "https://example.com/other", Enabled: true})
+	require.NoError(t, err)
+
+	fired := insertPending(t, channels, alertID, channelID, alert.EventFired)
+	stale := insertPending(t, channels, alertID, channelID, alert.EventReminder)
+	stale.Attempts, stale.LastError, stale.NextAttemptAt = 3, "non-2xx response: 503", time.Now().Add(time.Minute)
+	require.NoError(t, channels.UpdateDelivery(ctx, stale))
+	elsewhere := insertPending(t, channels, alertID, otherChannel, alert.EventReminder)
+	latest := insertPending(t, channels, alertID, channelID, alert.EventReminder)
+
+	stored, err := channels.ListDeliveriesByAlert(ctx, alertID)
+	require.NoError(t, err)
+	ids := []string{}
+	for _, d := range stored {
+		ids = append(ids, d.ID)
+	}
+	assert.ElementsMatch(t, []string{fired.ID, elsewhere.ID, latest.ID}, ids,
+		"only the latest reminder to a channel waits to be sent, the alert itself and other channels keep theirs")
+}
+
+func TestDeliveryQueue_APayloadIsKeptOnlyWhilePending(t *testing.T) {
+	ctx := context.Background()
+	channels, alertID, channelID := seedDeliveryStream(t, openTestDB(t))
+	retried := insertPending(t, channels, alertID, channelID, alert.EventFired)
+	done := insertPending(t, channels, alertID, otherStreamChannel(t, channels), alert.EventFired)
+
+	ok, err := channels.ClaimDelivery(ctx, retried, time.Now().Add(time.Minute))
+	require.NoError(t, err)
+	require.True(t, ok)
+	claim := retried.NextAttemptAt
+	retried.Attempts, retried.NextAttemptAt = 1, time.Now().Add(time.Hour)
+	held, err := channels.SettleDelivery(ctx, retried, claim)
+	require.NoError(t, err)
+	require.True(t, held)
+
+	ok, err = channels.ClaimDelivery(ctx, done, time.Now().Add(time.Minute))
+	require.NoError(t, err)
+	require.True(t, ok)
+	done.Attempts, done.Status = 1, alert.DeliveryDelivered
+	held, err = channels.SettleDelivery(ctx, done, done.NextAttemptAt)
+	require.NoError(t, err)
+	require.True(t, held)
+
+	stored, err := channels.ListDeliveriesByAlert(ctx, alertID)
+	require.NoError(t, err)
+	for _, d := range stored {
+		if d.ID == retried.ID {
+			assert.NotNil(t, d.Payload, "a delivery waiting for its retry keeps what it will send")
+		} else {
+			assert.Nil(t, d.Payload, "a delivered notification keeps no copy of the alert")
+		}
+	}
+}
+
+func otherStreamChannel(t *testing.T, channels *ChannelStoreImpl) string {
+	t.Helper()
+	id, err := channels.InsertChannel(context.Background(), &alert.NotificationChannel{Name: "other-" + uid.New(), Type: "webhook", URL: "https://example.com/other", Enabled: true})
+	require.NoError(t, err)
+	return id
+}
+
 func TestDeliveryQueue_ADeliveryWaitsForTheEarlierOneOfItsStream(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)

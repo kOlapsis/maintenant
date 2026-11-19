@@ -265,7 +265,7 @@ func TestDurableDelivery_AFullQueueLosesNothing(t *testing.T) {
 	const total = 256 + 20 // one alert to one channel: a single stream, whose queue holds 256 jobs
 	want := map[string]int{}
 	for range total {
-		d := f.delivery(t, ch, alert.EventReminder, alert.StatusActive)
+		d := f.delivery(t, ch, alert.EventSeverityRaised, alert.StatusActive)
 		want[d.ID] = 1
 		n.Enqueue(job(d, ch))
 	}

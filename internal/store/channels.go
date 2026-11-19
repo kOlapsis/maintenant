@@ -138,7 +138,8 @@ func (s *ChannelStoreImpl) GetChannelHealth(ctx context.Context, channelID strin
 
 // --- Notification Deliveries ---
 
-// InsertDelivery stores d as a pending delivery due at once, and sets its id and dates.
+// InsertDelivery stores d as a pending delivery due at once, in place of a reminder of the same alert to the same
+// channel still pending, and sets its id and dates.
 func (s *ChannelStoreImpl) InsertDelivery(ctx context.Context, d *alert.NotificationDelivery) (string, error) {
 	payload := ""
 	if d.Payload != nil {
@@ -150,11 +151,22 @@ func (s *ChannelStoreImpl) InsertDelivery(ctx context.Context, d *alert.Notifica
 	}
 	id := uid.New()
 	now := time.Now().Unix()
-	_, err := s.writer.Exec(ctx,
-		`INSERT INTO notification_deliveries (id, alert_id, channel_id, event_type, status, attempts, payload, next_attempt_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, d.AlertID, d.ChannelID, d.EventType, d.Status, d.Attempts, NullableString(payload), now, now, now,
-	)
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if d.EventType == alert.EventReminder {
+			if _, err := tx.ExecContext(ctx,
+				`DELETE FROM notification_deliveries WHERE alert_id=? AND channel_id=? AND event_type=? AND status=?`,
+				d.AlertID, d.ChannelID, alert.EventReminder, alert.DeliveryPending,
+			); err != nil {
+				return err
+			}
+		}
+		_, err := tx.ExecContext(ctx,
+			`INSERT INTO notification_deliveries (id, alert_id, channel_id, event_type, status, attempts, payload, next_attempt_at, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, d.AlertID, d.ChannelID, d.EventType, d.Status, d.Attempts, NullableString(payload), now, now, now,
+		)
+		return err
+	})
 	if err != nil {
 		return "", fmt.Errorf("insert delivery: %w", err)
 	}
@@ -165,10 +177,11 @@ func (s *ChannelStoreImpl) InsertDelivery(ctx context.Context, d *alert.Notifica
 
 func (s *ChannelStoreImpl) UpdateDelivery(ctx context.Context, d *alert.NotificationDelivery) error {
 	_, err := s.writer.Exec(ctx,
-		`UPDATE notification_deliveries SET status=?, attempts=?, last_error=?, next_attempt_at=?, updated_at=?
+		`UPDATE notification_deliveries SET status=?, attempts=?, last_error=?, next_attempt_at=?, updated_at=?,
+			payload = CASE WHEN CAST(? AS TEXT) = 'pending' THEN payload END
 		WHERE id=?`,
 		d.Status, d.Attempts, NullableString(d.LastError), d.NextAttemptAt.Unix(),
-		time.Now().Unix(), d.ID,
+		time.Now().Unix(), d.Status, d.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update delivery: %w", err)
@@ -201,9 +214,10 @@ func (s *ChannelStoreImpl) ClaimDelivery(ctx context.Context, d *alert.Notificat
 // SettleDelivery records the outcome of the attempt of d claimed until claim, and reports false when that claim no longer holds.
 func (s *ChannelStoreImpl) SettleDelivery(ctx context.Context, d *alert.NotificationDelivery, claim time.Time) (bool, error) {
 	res, err := s.writer.Exec(ctx,
-		`UPDATE notification_deliveries SET status=?, attempts=?, last_error=?, next_attempt_at=?, updated_at=?
+		`UPDATE notification_deliveries SET status=?, attempts=?, last_error=?, next_attempt_at=?, updated_at=?,
+			payload = CASE WHEN CAST(? AS TEXT) = 'pending' THEN payload END
 		WHERE id=? AND status=? AND next_attempt_at=?`,
-		d.Status, d.Attempts, NullableString(d.LastError), d.NextAttemptAt.Unix(), time.Now().Unix(),
+		d.Status, d.Attempts, NullableString(d.LastError), d.NextAttemptAt.Unix(), time.Now().Unix(), d.Status,
 		d.ID, alert.DeliveryPending, claim.Unix(),
 	)
 	if err != nil {
