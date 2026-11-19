@@ -17,10 +17,7 @@ import (
 // EventMeta is the observation time and the replay flag of an agent event.
 type EventMeta = agentevent.Meta
 
-const (
-	maxClockSkew      = 60 * time.Second
-	maxObservationAge = 24 * time.Hour
-)
+const maxObservationAge = 24 * time.Hour
 
 // ContainerHandler processes a container event from a remote agent.
 type ContainerHandler interface {
@@ -136,12 +133,12 @@ func eventMeta(evt *agentpb.AgentEvent, now time.Time) (EventMeta, error) {
 
 	observed := ts.AsTime()
 	if observed.After(now.Add(maxClockSkew)) {
-		return meta, fmt.Errorf("observed_at %s is more than %s ahead of the server clock",
-			observed.Format(time.RFC3339Nano), maxClockSkew)
+		return meta, fmt.Errorf("%w: observed_at %s is more than %s ahead of the server clock",
+			agentevent.ErrInvalid, observed.Format(time.RFC3339Nano), maxClockSkew)
 	}
 	if observed.Before(now.Add(-maxObservationAge)) {
-		return meta, fmt.Errorf("observed_at %s is older than the %s retention window",
-			observed.Format(time.RFC3339Nano), maxObservationAge)
+		return meta, fmt.Errorf("%w: observed_at %s is older than the %s retention window",
+			agentevent.ErrInvalid, observed.Format(time.RFC3339Nano), maxObservationAge)
 	}
 
 	meta.ObservedAt = observed

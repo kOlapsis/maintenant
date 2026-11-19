@@ -63,6 +63,9 @@ type Server struct {
 
 // New creates a Server. Call Start to begin accepting connections.
 func New(deps Deps) *Server {
+	if deps.Sessions != nil && deps.Dispatcher != nil {
+		deps.Sessions.rejectedEvents = deps.Dispatcher.RejectedEvents
+	}
 	return &Server{
 		impl: &ingestImpl{deps: deps, perIP: ratelimit.New(attemptsPerMinute/60.0, attemptsBurst, nil)},
 		deps: deps,

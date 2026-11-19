@@ -158,6 +158,8 @@ type Sessions struct {
 
 	certFingerprint string // guarded by mu
 	certSelfSigned  bool   // guarded by mu
+
+	rejectedEvents func(agentID string) uint64 // set once by New, before serving
 }
 
 // NewSessions creates an empty Sessions registry.
@@ -483,6 +485,14 @@ func (s *Sessions) SpoolStatus(agentID string) *agentproto.SpoolState {
 		DroppedSinceConnect: stream.spoolDropped.Load(),
 		ReportedAt:          time.Unix(at, 0),
 	}
+}
+
+// RejectedEvents returns how many events of agentID were refused for their observation time since startup.
+func (s *Sessions) RejectedEvents(agentID string) uint64 {
+	if s.rejectedEvents == nil {
+		return 0
+	}
+	return s.rejectedEvents(agentID)
 }
 
 // EventsSeen returns the events_seen counter for agentID (0 if not connected).

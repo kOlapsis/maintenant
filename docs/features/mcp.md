@@ -217,7 +217,7 @@ and add an `agent_label` to each row that belongs to a remote agent.
 | `get_top_consumers` | Containers ranked by CPU or memory usage (`metric`, `limit` defaulting to 10, at most 20), live or over a history window (`period`) | Community (see above) |
 | `get_updates` | Returns `updates` (available image updates), `hosts` (each host's OS and end-of-support status) and `eol_table` | Community |
 | `get_health` | maintenant version, runtime, and status | Community |
-| `list_agents` | Active remote agents with label, hostname, runtime and connection state | Personal |
+| `list_agents` | Active remote agents with label, hostname, runtime, connection state and `rejected_events` (events refused since the server started for an out of range observation time) | Personal |
 | `get_edition` | Running edition, which capability each edition opens, quota usage (with `unmonitored`, the endpoints and certificates left out by the Community cap), history windows, and the notification channels the edition has suspended | Community |
 
 ### Security & supply chain (read)

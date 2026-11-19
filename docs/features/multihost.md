@@ -233,7 +233,7 @@ The server enforces a per-agent limit of **1 000 events/second** (token bucket).
 
 ### Clock checks
 
-The server refuses an event observed more than 60 seconds ahead of its own clock, or more than 24 hours in the past. Keep agent clocks in sync (the handshake tolerates 5 minutes of skew, events far less).
+The server refuses an event observed more than 5 minutes ahead of its own clock (the same tolerance as the handshake), or more than 24 hours in the past. A refused event is acknowledged and dropped, the agent logs the refusal, and the server counts it in the agent's `rejected_events` (`GET /api/v1/agents`, MCP `list_agents`). Keep agent clocks in sync.
 
 ---
 
@@ -368,7 +368,7 @@ The Agents page shows each agent's runtime (the one the agent detected, reported
 |---------|-----------|
 | Transport encryption | TLS at the gRPC listener, or h2c behind a trusted reverse proxy (`MAINTENANT_GRPC_TLS_INSECURE=true`). Plaintext mode is explicit opt-in, not the default. A private CA is trusted through `MAINTENANT_CA_CERT`. |
 | Per-stream authentication | Ed25519 challenge-response, fresh nonce per connection |
-| Clock skew tolerance | ±5 minutes between agent and server clocks for the handshake |
+| Clock skew tolerance | ±5 minutes between agent and server clocks, for the handshake and for the observation time of each event |
 | Token exposure | Cleartext shown once at creation, stored hashed, masked in subsequent reads |
 | Key compromise | Revoke the agent from the UI; re-enrolling generates a new keypair |
 | Edition enforcement | All `/api/v1/agents/*` endpoints return `403 EDITION_REQUIRED` below Personal, naming the capability and the edition that grants it |
