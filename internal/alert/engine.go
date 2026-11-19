@@ -61,7 +61,7 @@ type Engine struct {
 	// In-memory active alert map for recovery linking and dedup
 	activeAlerts map[activeAlertKey]*Alert
 	mu           sync.RWMutex
-	procMu       sync.Mutex // held by the event loop and ResolveByEntity across a store write and the map update that follows it
+	procMu       sync.Mutex // serializes a store write with the map update that follows it
 }
 
 var storeRetryDelays = []time.Duration{100 * time.Millisecond, 500 * time.Millisecond}
