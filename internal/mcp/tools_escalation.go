@@ -18,6 +18,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
@@ -93,7 +94,7 @@ type createEscalationPolicyInput struct {
 }
 
 type escalationFiltersInput struct {
-	Severities []string               `json:"severities,omitempty" jsonschema:"Severity filters: warning, critical"`
+	Severities []string               `json:"severities,omitempty" jsonschema:"Severity filters: info, warning, critical (lowercase). Empty matches every severity."`
 	Scopes     []escalationScopeInput `json:"scopes,omitempty" jsonschema:"Scope filters"`
 }
 
@@ -207,7 +208,7 @@ func createEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[createEsc
 
 		policy, err := svc.EscalationSvc.CreatePolicy(ctx, req)
 		if err != nil {
-			return errResult(fmt.Sprintf("validation_failed: %s", err.Error()))
+			return escalationWriteErr("create_failed", err)
 		}
 		return jsonResult(map[string]any{
 			"id":                   policy.ID,
@@ -220,6 +221,13 @@ func createEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[createEsc
 			"overlapping_warnings": []any{},
 		})
 	}
+}
+
+func escalationWriteErr(failure string, err error) (*gomcp.CallToolResult, any, error) {
+	if errors.Is(err, escalation.ErrValidationFailed) {
+		return errResult(fmt.Sprintf("validation_failed: %s", err.Error()))
+	}
+	return errResult(fmt.Sprintf("%s: %s", failure, err.Error()))
 }
 
 func deleteEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[deleteEscalationPolicyInput, any] {
@@ -299,7 +307,7 @@ func updateEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[updateEsc
 		}
 		policy, err := svc.EscalationSvc.UpdatePolicy(ctx, input.ID, req)
 		if err != nil {
-			return errResult(fmt.Sprintf("update_failed: %s", err.Error()))
+			return escalationWriteErr("update_failed", err)
 		}
 		return jsonResult(policy)
 	}
