@@ -317,11 +317,11 @@ func (s *Spool) flush() error {
 
 	if _, err := s.store.Append(batch); err != nil {
 		s.mu.Lock()
-		s.buf = append(batch, s.buf...)
-		for _, ev := range batch {
-			s.bufBytes += int64(len(ev.Payload))
-		}
+		dropped := s.requeueLocked(batch)
 		s.mu.Unlock()
+		if dropped > 0 {
+			s.logger.Warn("agent: spool memory budget reached, oldest events dropped", "dropped", dropped)
+		}
 		return err
 	}
 	return s.enforceDiskBudget()
@@ -377,6 +377,15 @@ func (s *Spool) recordDropped(n int64) {
 	s.mu.Unlock()
 
 	s.logger.Warn("agent: spool is full, oldest events dropped", "dropped", total)
+}
+
+// requeueLocked puts batch back at the head of the buffer and trims to budget; caller holds mu.
+func (s *Spool) requeueLocked(batch []pendingEvent) int64 {
+	s.buf = append(batch, s.buf...)
+	for _, ev := range batch {
+		s.bufBytes += int64(len(ev.Payload))
+	}
+	return s.trimMemoryLocked()
 }
 
 // trimMemoryLocked drops the oldest buffered events past budget; caller holds mu.
@@ -572,8 +581,11 @@ func (s *Spool) drainOnce(ctx context.Context) error {
 		sink, store, after, gen, attachedAt := s.sink, s.store, s.sendSeq, s.generation, s.attachedAt
 		paused := time.Now().Before(s.pausedUntil)
 		s.mu.Unlock()
-		if sink == nil || store == nil || paused {
+		if sink == nil || paused {
 			return nil
+		}
+		if store == nil {
+			return s.drainMemory(ctx, sink, attachedAt)
 		}
 
 		batch, err := store.ReadFrom(after, spoolDrainBatch)
@@ -610,6 +622,37 @@ func (s *Spool) drainOnce(ctx context.Context) error {
 			if !s.advance(gen, row.Seq) {
 				break
 			}
+		}
+	}
+}
+
+// Without a store there is no ack: an event goes out once and stays buffered only if the send fails.
+func (s *Spool) drainMemory(ctx context.Context, sink eventSink, attachedAt time.Time) error {
+	for {
+		if err := s.limiter.Wait(ctx); err != nil {
+			return nil
+		}
+		s.mu.Lock()
+		if len(s.buf) == 0 {
+			s.mu.Unlock()
+			return nil
+		}
+		ev := s.buf[0]
+		s.buf = s.buf[1:]
+		s.bufBytes -= int64(len(ev.Payload))
+		s.mu.Unlock()
+
+		evt := &agentpb.AgentEvent{}
+		if err := proto.Unmarshal(ev.Payload, evt); err != nil {
+			s.logger.Warn("agent: dropping unreadable buffered event", "event_id", ev.EventID, "error", err)
+			continue
+		}
+		evt.Replayed = evt.GetObservedAt() != nil && evt.GetObservedAt().AsTime().Before(attachedAt)
+		if err := sink.Send(evt); err != nil {
+			s.mu.Lock()
+			s.requeueLocked([]pendingEvent{ev})
+			s.mu.Unlock()
+			return fmt.Errorf("drain buffered event: %w", err)
 		}
 	}
 }

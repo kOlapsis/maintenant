@@ -165,9 +165,9 @@ func runEnrolled(parent context.Context, cfg AgentConfig, id *Identity, link *ru
 	collectorDone := make(chan struct{})
 	go func() {
 		defer close(collectorDone)
-		if cerr := runCollector(ctx, id, link, cfg.NodeName, spool, logger); cerr != nil && ctx.Err() == nil {
-			logger.Error("agent: collector stopped", "error", cerr)
-		}
+		superviseCollector(ctx, func(ctx context.Context) error {
+			return runCollector(ctx, id, link, cfg.NodeName, spool, logger)
+		}, retry.New(runtimeRetryMin, runtimeRetryMax, 0), logger)
 	}()
 
 	hooks := StreamHooks{Acked: spool.Acked, RateLimited: spool.RateLimited}
@@ -194,6 +194,26 @@ func runEnrolled(parent context.Context, cfg AgentConfig, id *Identity, link *ru
 		logger.Warn("agent: spool did not close cleanly", "error", cerr)
 	}
 	return err
+}
+
+// superviseCollector reruns run with a backoff until ctx ends.
+func superviseCollector(ctx context.Context, run func(context.Context) error, backoff *retry.Backoff, logger *slog.Logger) {
+	for ctx.Err() == nil {
+		started := time.Now()
+		cerr := run(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		if time.Since(started) > backoff.Max {
+			backoff.Reset()
+		}
+		delay := backoff.Next()
+		logger.Error("agent: collector stopped, restarting", "error", cerr, "retry_in", delay)
+		select {
+		case <-ctx.Done():
+		case <-time.After(delay):
+		}
+	}
 }
 
 func spoolConfig(cfg AgentConfig) SpoolConfig {
