@@ -401,19 +401,37 @@ func clTLSServer(t *testing.T) clTLS {
 	return clTLS{url: srv.URL, conns: &conns}
 }
 
-// clRollBackTo43 turns a database of this version into one of the previous version.
+// clRollBackTo43 turns a database of this version into one of the version before migration 44.
 func clRollBackTo43(t *testing.T, dbPath string) {
 	t.Helper()
 	matches, err := filepath.Glob("../store/migrations/sqlite/44_*.down.sql")
 	require.NoError(t, err)
 	require.Len(t, matches, 1, "migration 44 must exist, with its down file")
-	down, err := os.ReadFile(matches[0])
+	files, err := filepath.Glob("../store/migrations/sqlite/*.down.sql")
 	require.NoError(t, err)
+	type down struct {
+		version int
+		path    string
+	}
+	var downs []down
+	for _, f := range files {
+		var v int
+		_, err := fmt.Sscanf(filepath.Base(f), "%d_", &v)
+		require.NoError(t, err, f)
+		if v >= 44 {
+			downs = append(downs, down{v, f})
+		}
+	}
+	sort.Slice(downs, func(i, j int) bool { return downs[i].version > downs[j].version })
 	db, err := sql.Open("sqlite3", dbPath)
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
-	_, err = db.Exec(string(down))
-	require.NoError(t, err)
+	for _, d := range downs {
+		body, err := os.ReadFile(d.path)
+		require.NoError(t, err)
+		_, err = db.Exec(string(body))
+		require.NoError(t, err, d.path)
+	}
 	_, err = db.Exec(`UPDATE schema_migrations SET version = 43, dirty = 0`)
 	require.NoError(t, err)
 }

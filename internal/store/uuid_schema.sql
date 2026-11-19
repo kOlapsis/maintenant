@@ -413,6 +413,7 @@ CREATE INDEX idx_alerts_status ON alerts(status);
 CREATE INDEX idx_alerts_source_severity ON alerts(source, severity);
 CREATE INDEX idx_alerts_entity ON alerts(entity_type, entity_id);
 CREATE INDEX idx_alerts_fired_at ON alerts(fired_at DESC);
+CREATE INDEX idx_alerts_resolved_by_id ON alerts(resolved_by_id);
 CREATE INDEX idx_alerts_active_dedup ON alerts(source, alert_type, entity_type, entity_id) WHERE status = 'active';
 
 CREATE TABLE notification_channels (
