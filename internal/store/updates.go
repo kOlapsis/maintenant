@@ -711,10 +711,10 @@ func (s *UpdateStore) ListRiskScoreHistory(ctx context.Context, agentID, contain
 	return result, rows.Err()
 }
 
-// ContainerAgent returns the agent of the containers bearing externalID when they all run on one, else the local runtime.
+// ContainerAgent returns the agent a call naming only externalID acts on: the local runtime when it runs it or nothing does, else the only agent that runs it.
 func (s *UpdateStore) ContainerAgent(ctx context.Context, externalID string) (string, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT DISTINCT agent_id FROM containers WHERE external_id = ? LIMIT 2`, externalID)
+		`SELECT DISTINCT agent_id FROM containers WHERE external_id = ?`, externalID)
 	if err != nil {
 		return "", fmt.Errorf("container agent: %w", err)
 	}
@@ -730,10 +730,13 @@ func (s *UpdateStore) ContainerAgent(ctx context.Context, externalID string) (st
 	if err := rows.Err(); err != nil {
 		return "", err
 	}
-	if len(agents) == 1 {
+	switch {
+	case len(agents) == 0 || slices.Contains(agents, uid.LocalAgent):
+		return uid.LocalAgent, nil
+	case len(agents) == 1:
 		return agents[0], nil
 	}
-	return uid.LocalAgent, nil
+	return "", fmt.Errorf("%w: %s", update.ErrAmbiguousAgent, externalID)
 }
 
 // --- Retention cleanup ---

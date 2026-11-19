@@ -209,21 +209,27 @@ func TestContainerData_ReadsArePerAgent(t *testing.T) {
 	require.NoError(t, err, "the prod homonym can acknowledge the same finding on its own")
 }
 
-// A container whose external id runs on one agent only names that agent; a shared or unknown one names the local runtime.
-func TestContainerAgent_OnlyAnUnambiguousAgent(t *testing.T) {
+// An external id names the local runtime when it runs it or nothing does, else its only agent; two remote agents need naming.
+func TestContainerAgent_LocalFirstThenTheOnlyRemote(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
 	seedHomonyms(t, db)
-	seedHostedContainer(t, NewContainerStore(db), "agent-prod", "ctr-only-prod", "web", "nginx:1.27")
+	cs := NewContainerStore(db)
+	seedHostedContainer(t, cs, "agent-prod", "ctr-only-prod", "web", "nginx:1.27")
+	seedHostedContainer(t, cs, uid.LocalAgent, "ctr-shared", "web", "nginx:1.27")
+	seedHostedContainer(t, cs, "agent-prod", "ctr-shared", "web", "nginx:1.27")
 	us := NewUpdateStore(db)
 
 	for externalID, want := range map[string]string{
 		"ctr-only-prod": "agent-prod",
-		homonym:         uid.LocalAgent,
+		"ctr-shared":    uid.LocalAgent,
 		"ctr-unknown":   uid.LocalAgent,
 	} {
 		got, err := us.ContainerAgent(ctx, externalID)
 		require.NoError(t, err)
 		assert.Equal(t, want, got, externalID)
 	}
+
+	_, err := us.ContainerAgent(ctx, homonym)
+	assert.ErrorIs(t, err, update.ErrAmbiguousAgent, "staging and prod both run it")
 }

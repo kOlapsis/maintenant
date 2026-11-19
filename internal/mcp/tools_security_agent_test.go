@@ -99,4 +99,12 @@ func TestSecurityTools_ContainerIDReadsItsOwnAgent(t *testing.T) {
 		assert.Equal(t, agentID, row.AgentID)
 		assert.Equal(t, risk, row.RiskScore)
 	}
+
+	cveResult, _, err := listCVEHandler(svc)(ctx, nil, listCVEInput{ContainerID: homonymWorkload})
+	require.NoError(t, err)
+	assert.True(t, cveResult.IsError, "an external id two agents run cannot pick one")
+	assert.Contains(t, textFromContent(t, cveResult.Content), "list_containers")
+	riskResult, _, err := listRiskScoresHandler(svc)(ctx, nil, listRiskScoresInput{ContainerID: homonymWorkload})
+	require.NoError(t, err)
+	assert.True(t, riskResult.IsError, "an external id two agents run cannot pick one")
 }

@@ -5,6 +5,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/kolapsis/maintenant/internal/container"
@@ -67,6 +68,8 @@ type containerCVEList struct {
 	Evaluation  string                 `json:"evaluation"`
 	CVEs        []*update.ContainerCVE `json:"cves"`
 }
+
+const ambiguousContainer = "invalid input: several agents run a container with this external id, pass its id field from list_containers as container_id"
 
 // containerRef resolves a container_id input, the internal id of list_containers or else an external id, to its agent and external id.
 func containerRef(ctx context.Context, svc *Services, id string) (agentID, externalID string, err error) {
@@ -139,6 +142,9 @@ func listCVEHandler(svc *Services) gomcp.ToolHandlerFor[listCVEInput, any] {
 		}
 		if input.ContainerID != "" {
 			agentID, externalID, err := containerRef(ctx, svc, input.ContainerID)
+			if errors.Is(err, update.ErrAmbiguousAgent) {
+				return errResult(ambiguousContainer)
+			}
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to resolve the container: %w", err)
 			}
@@ -194,6 +200,9 @@ func listRiskScoresHandler(svc *Services) gomcp.ToolHandlerFor[listRiskScoresInp
 
 		if input.ContainerID != "" {
 			agentID, externalID, err := containerRef(ctx, svc, input.ContainerID)
+			if errors.Is(err, update.ErrAmbiguousAgent) {
+				return errResult(ambiguousContainer)
+			}
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to resolve the container: %w", err)
 			}

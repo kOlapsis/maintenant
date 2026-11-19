@@ -5,8 +5,12 @@ package update
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrAmbiguousAgent reports an external id that several remote agents run, so a call has to name the agent.
+var ErrAmbiguousAgent = errors.New("several agents run this container")
 
 // UpdateStore defines the persistence interface for update intelligence data.
 type UpdateStore interface {
@@ -61,7 +65,7 @@ type UpdateStore interface {
 	InsertRiskScoreRecord(ctx context.Context, r *RiskScoreRecord) (string, error)
 	ListRiskScoreHistory(ctx context.Context, agentID, containerID string, from, to time.Time) ([]*RiskScoreRecord, error)
 
-	// ContainerAgent returns the agent of the containers bearing externalID when they all run on one, else the local runtime.
+	// ContainerAgent returns the agent a call naming only externalID acts on, or ErrAmbiguousAgent when several remote agents run it.
 	ContainerAgent(ctx context.Context, externalID string) (string, error)
 
 	// Retention cleanup

@@ -6,6 +6,7 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -172,7 +173,7 @@ func (h *UpdateHandler) HandleGetContainerUpdate(w http.ResponseWriter, r *http.
 
 	agentID, err := requestAgent(r, h.store, containerID)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get update")
+		writeAgentError(w, err, "INTERNAL_ERROR", "Failed to get update")
 		return
 	}
 	u, err := h.service.GetAgentImageUpdate(r.Context(), agentID, containerID)
@@ -341,7 +342,7 @@ func (h *UpdateHandler) HandlePinVersion(w http.ResponseWriter, r *http.Request)
 
 	agentID, err := requestAgent(r, h.store, containerID)
 	if err != nil {
-		WriteStoreError(w, err, "Failed to read update data")
+		writeAgentError(w, err, "INTERNAL_ERROR", "Failed to read update data")
 		return
 	}
 	// Get current update info
@@ -395,7 +396,7 @@ func (h *UpdateHandler) HandleUnpinVersion(w http.ResponseWriter, r *http.Reques
 
 	agentID, err := requestAgent(r, h.store, containerID)
 	if err != nil {
-		WriteStoreError(w, err, "Failed to unpin version")
+		writeAgentError(w, err, "INTERNAL_ERROR", "Failed to unpin version")
 		return
 	}
 	if err := h.store.DeleteVersionPin(r.Context(), agentID, containerID); err != nil {
@@ -503,12 +504,21 @@ func (h *UpdateHandler) HandleDeleteExclusion(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// requestAgent names the agent a container route acts on: ?agent_id=, else the only agent that runs externalID, else the local runtime.
+// requestAgent names the agent a container route acts on: ?agent_id=, else the one ContainerAgent picks for externalID.
 func requestAgent(r *http.Request, s update.UpdateStore, externalID string) (string, error) {
 	if agentID := agentScopeParam(r); agentID != "" {
 		return agentID, nil
 	}
 	return s.ContainerAgent(r.Context(), externalID)
+}
+
+// writeAgentError answers a failed requestAgent, 400 when the container runs on several agents and none was named.
+func writeAgentError(w http.ResponseWriter, err error, internalCode, message string) {
+	if errors.Is(err, update.ErrAmbiguousAgent) {
+		WriteError(w, http.StatusBadRequest, "AGENT_REQUIRED", "Several agents run this container: pass agent_id")
+		return
+	}
+	writeStoreError(w, err, internalCode, message)
 }
 
 func imageUpdateToMap(u *update.ImageUpdate) map[string]interface{} {
