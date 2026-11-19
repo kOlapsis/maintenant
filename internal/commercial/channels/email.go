@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/event"
 )
 
 const (
@@ -93,6 +94,8 @@ func formatEmailSubject(label, eventType, message string) string {
 	prefix := "ALERT"
 	if strings.Contains(eventType, "resolved") {
 		prefix = "RESOLVED"
+	} else if eventType == event.AlertAcknowledged {
+		prefix = "ACKNOWLEDGED"
 	} else if eventType == "test" {
 		prefix = "TEST"
 	}

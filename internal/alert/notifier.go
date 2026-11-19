@@ -523,10 +523,14 @@ func alertEventType(a *Alert) string {
 // caller (e.g. the escalation Runner) manages its own delivery row state.
 // Returns nil on success, or the last error after maxRetries attempts.
 func (n *Notifier) SendNow(ctx context.Context, a *Alert, ch *NotificationChannel) error {
+	return n.SendEventNow(ctx, alertEventType(a), a, ch)
+}
+
+// SendEventNow is SendNow for a caller that names the event the channel receives.
+func (n *Notifier) SendEventNow(ctx context.Context, eventType string, a *Alert, ch *NotificationChannel) error {
 	if err := n.suspension(ch); err != nil {
 		return err
 	}
-	eventType := alertEventType(a)
 	sender := n.senderFor(ch.Type)
 	if err := sender.Ready(); err != nil {
 		return err
@@ -663,11 +667,13 @@ func ParseAlertDetails(details string) map[string]interface{} {
 	return m
 }
 
-// EventTitle is the headline of a fired, resolved or test notification.
+// EventTitle is the headline of a fired, acknowledged, resolved or test notification.
 func EventTitle(eventType string, a *Alert) string {
 	switch {
 	case eventType == "test":
 		return "maintenant Test Notification"
+	case eventType == event.AlertAcknowledged:
+		return fmt.Sprintf("Acknowledged: %s", a.EntityName)
 	case strings.Contains(eventType, "resolved"):
 		return fmt.Sprintf("Resolved: %s", a.EntityName)
 	default:

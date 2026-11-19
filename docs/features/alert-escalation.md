@@ -104,7 +104,7 @@ A request that breaks a rule returns `400 validation_failed` with the field in t
 
 ### Acknowledgment stops escalation
 
-When an alert is acknowledged, any active escalation run is immediately stopped with status `stopped_by_ack`. Every channel that received a notification of the run (a delivery that is `sent` or still `pending`) gets one acknowledgment notice, once, even if it appeared in several levels. The notice reuses the recovery format of the channel, and its message is:
+When an alert is acknowledged, any active escalation run is immediately stopped with status `stopped_by_ack`. Every channel that received a notification of the run (a delivery that is `sent` or still `pending`) gets one acknowledgment notice, once, even if it appeared in several levels. The notice is an acknowledgment, not a recovery: a `webhook` channel receives `"event": "alert.acknowledged"` with the alert still `active` and its `acknowledged_at` and `acknowledged_by`, Slack, Teams, Discord and Telegram title it `Acknowledged: <entity>`, and the email subject reads `[maintenant] ACKNOWLEDGED: <message>`. Its message is:
 
 ```
 Acknowledged by <who> at <time in RFC 3339, UTC>: <original alert message>

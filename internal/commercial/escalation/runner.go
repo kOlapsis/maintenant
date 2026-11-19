@@ -17,6 +17,7 @@ import (
 	esc "github.com/kolapsis/maintenant/internal/alert/escalation"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
 )
 
@@ -38,7 +39,7 @@ const (
 // Runner can be unit-tested without spinning up an HTTP server. *alert.Notifier
 // satisfies it.
 type Sender interface {
-	SendNow(ctx context.Context, a *alert.Alert, ch *alert.NotificationChannel) error
+	SendEventNow(ctx context.Context, eventType string, a *alert.Alert, ch *alert.NotificationChannel) error
 }
 
 // RunnerDeps bundles the dependencies of the concrete Pro escalator.
@@ -430,7 +431,11 @@ func (r *Runner) dispatchToChannel(ctx context.Context, runID string, levelIndex
 
 // deliverAndUpdate performs the actual network send and persists the outcome.
 func (r *Runner) deliverAndUpdate(ctx context.Context, delivery *esc.Delivery, a *alert.Alert, ch *alert.NotificationChannel) {
-	err := r.notifier.SendNow(ctx, a, ch)
+	eventType := event.AlertFired
+	if delivery.LevelIndex == specialLevelAck {
+		eventType = event.AlertAcknowledged
+	}
+	err := r.notifier.SendEventNow(ctx, eventType, a, ch)
 	if err != nil {
 		delivery.Status = esc.DeliveryStatusFailed
 		delivery.Error = truncateErr(err.Error())
@@ -539,11 +544,10 @@ func unmarshalPolicySnapshot(s string) (*esc.Policy, error) {
 }
 
 // formatAckAlert produces a synthetic *Alert reusing the notifier's formatting
-// pipeline. Cloning lets us override Message/Status without mutating the
+// pipeline. Cloning lets us override Message without mutating the
 // upstream alert tracked by the engine.
 func formatAckAlert(a *alert.Alert, ack alert.Acknowledgment) *alert.Alert {
 	cp := *a
-	cp.Status = alert.StatusResolved // routes the notifier through the "resolved" copy
 	at := ack.At.UTC().Format(time.RFC3339)
 	if ack.By == "" {
 		cp.Message = fmt.Sprintf("Acknowledged at %s: %s", at, a.Message)

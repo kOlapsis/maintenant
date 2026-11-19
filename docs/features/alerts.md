@@ -164,7 +164,7 @@ maintenant sends one `POST` per notification, with `Content-Type: application/js
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `event` | string | `alert.fired`, `alert.resolved` or `test` |
+| `event` | string | `alert.fired`, `alert.resolved`, `alert.acknowledged` (the acknowledgment notice of an [escalation policy](alert-escalation.md#acknowledgment-stops-escalation)) or `test` |
 | `timestamp` | string | When the notification was sent, RFC 3339 UTC |
 | `alert.id` | string | UUID of the alert. The resolved notification carries the id of the alert it resolves. |
 | `alert.agent_id` | string | UUID of the host the alert belongs to. The server's own runtime is `00000000-0000-0000-0000-000000000000`; remote hosts are listed by `GET /api/v1/agents`. |
@@ -172,7 +172,7 @@ maintenant sends one `POST` per notification, with `Content-Type: application/js
 | `alert.source` | string | `container`, `endpoint`, `heartbeat`, `certificate`, `resource`, `update`, `security`, `agent`, `host`, `swarm` or `kubernetes` (see [Alert Sources](#alert-sources)) |
 | `alert.alert_type` | string | Source-specific type, such as `consecutive_failure` or `restart_loop` |
 | `alert.severity` | string | `critical`, `warning` or `info` |
-| `alert.status` | string | `active` on `alert.fired`, `resolved` on `alert.resolved` |
+| `alert.status` | string | `active` on `alert.fired` and `alert.acknowledged`, `resolved` on `alert.resolved` |
 | `alert.message` | string | Human-readable description; on `alert.resolved`, the recovery message |
 | `alert.entity_type`, `alert.entity_id`, `alert.entity_name` | string | The monitored object: its type, UUID and display name |
 | `alert.fired_at` | string | When the condition was detected, RFC 3339 UTC |
@@ -261,7 +261,7 @@ Email goes through your own SMTP server, set with environment variables. The cha
 
 On a port other than 465, maintenant upgrades the connection with STARTTLS and gives up the delivery if the upgrade fails. A server that does not announce STARTTLS gets nothing: the send fails with `smtp: <host> does not offer STARTTLS; set MAINTENANT_SMTP_ALLOW_PLAINTEXT=true to send in clear`. With `MAINTENANT_SMTP_ALLOW_PLAINTEXT=true` such a server receives the mail in clear, and with credentials set the send still fails unless the server is `localhost`, because the credentials would travel in clear. Server certificates are checked against the system roots plus `MAINTENANT_CA_CERT`. A send gives up after 30 seconds.
 
-The subject reads `[maintenant] ALERT: <message>` or `[maintenant] RESOLVED: <message>`, and the test email reads `[maintenant] TEST: Test notification`. The body is plain text.
+The subject reads `[maintenant] ALERT: <message>` or `[maintenant] RESOLVED: <message>`, the acknowledgment notice of an escalation `[maintenant] ACKNOWLEDGED: <message>`, and the test email reads `[maintenant] TEST: Test notification`. The body is plain text.
 
 To tell several instances apart, set a subject label on the channel (the **Subject label** field, or `config` `{"subject_label": "prod-paris"}` through the API and MCP). It replaces `maintenant` between the brackets: `[prod-paris] ALERT: <message>`. Surrounding spaces are dropped, and an empty label brings back `maintenant`. A label holds at most 64 characters and no line break or other control character; anything else is refused with `400 VALIDATION_ERROR`. The same SMTP server sends the status page mails.
 
