@@ -152,46 +152,46 @@ func (s *Service) SetEventCallback(cb EventCallback) {
 	s.onEvent = cb
 }
 
-// ProcessEvent handles a single container/workload event.
+// ProcessEvent handles a single container/workload event; a store error is logged where it happens.
 func (s *Service) ProcessEvent(ctx context.Context, evt ContainerEvent) {
 	if uid.Agent(evt.AgentID) == uid.LocalAgent {
 		s.localMu.Lock()
 		defer s.localMu.Unlock()
 	}
-	s.processEvent(ctx, evt)
+	_ = s.processEvent(ctx, evt)
 }
 
-func (s *Service) processEvent(ctx context.Context, evt ContainerEvent) {
+func (s *Service) processEvent(ctx context.Context, evt ContainerEvent) error {
 	s.logger.Debug("container: event received", "action", evt.Action, "external_id", evt.ExternalID)
 	switch evt.Action {
 	case "start":
 		if uid.Agent(evt.AgentID) == uid.LocalAgent && !evt.Timestamp.IsZero() {
 			s.localStarts.Store(evt.ExternalID, evt.Timestamp)
 		}
-		s.handleStateChange(ctx, evt, StateRunning)
+		return s.handleStateChange(ctx, evt, StateRunning)
 	case "stop":
 		// Docker sends "die" before "stop". If the container exited cleanly (exit 0),
 		// the die handler already set StateCompleted — don't overwrite it with StateExited.
 		c, _ := s.lookup(ctx, evt)
 		if c != nil && c.State == StateCompleted {
-			return
+			return nil
 		}
-		s.handleStateChange(ctx, evt, StateExited)
+		return s.handleStateChange(ctx, evt, StateExited)
 	case "die":
 		if evt.ExitCode != "" && IsCleanExit(parseExitCode(evt.ExitCode), evt.OOMKilled) {
-			s.handleStateChange(ctx, evt, StateCompleted)
-		} else {
-			s.handleStateChange(ctx, evt, StateExited)
+			return s.handleStateChange(ctx, evt, StateCompleted)
 		}
+		return s.handleStateChange(ctx, evt, StateExited)
 	case "pause":
-		s.handleStateChange(ctx, evt, StatePaused)
+		return s.handleStateChange(ctx, evt, StatePaused)
 	case "unpause":
-		s.handleStateChange(ctx, evt, StateRunning)
+		return s.handleStateChange(ctx, evt, StateRunning)
 	case "destroy":
-		s.handleDestroy(ctx, evt)
+		return s.handleDestroy(ctx, evt)
 	case "health_status":
-		s.handleHealthChange(ctx, evt)
+		return s.handleHealthChange(ctx, evt)
 	}
+	return nil
 }
 
 func (s *Service) lookup(ctx context.Context, evt ContainerEvent) (*Container, error) {
@@ -218,26 +218,26 @@ func (s *Service) timelineAt(ctx context.Context, c *Container, ts time.Time) (C
 	return state, c.HealthStatus, nil
 }
 
-func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, newState ContainerState) {
+func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, newState ContainerState) error {
 	c, err := s.lookup(ctx, evt)
 	if err != nil {
 		s.logger.Error("get container for state change", "external_id", shortID(evt.ExternalID), "error", err)
-		return
+		return err
 	}
 	if c == nil {
 		if newState != StateRunning || s.discoverer == nil || uid.Agent(evt.AgentID) != uid.LocalAgent {
 			s.logger.Debug("unknown container event, skipping", "external_id", shortID(evt.ExternalID), "action", evt.Action)
-			return
+			return nil
 		}
 		// New container started after initial reconciliation — discover it.
 		s.logger.Info("new container detected, running reconciliation", "external_id", shortID(evt.ExternalID))
 		if err := s.reconcile(ctx, s.discoverer); err != nil {
 			s.logger.Error("on-demand reconciliation failed", "error", err)
 		}
-		return
+		return nil
 	}
 	if c.IsIgnored {
-		return
+		return nil
 	}
 
 	previousState := c.State
@@ -245,13 +245,13 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 		previousState, _, err = s.timelineAt(ctx, c, evt.Timestamp)
 		if err != nil {
 			s.logger.Error("read timeline for replayed state change", "container_id", c.ID, "error", err)
-			return
+			return err
 		}
 	}
 
 	if previousState == newState {
 		s.logger.Debug("container: state unchanged, skipping", "container_id", c.ID, "state", string(previousState))
-		return
+		return nil
 	}
 
 	if !evt.Replayed {
@@ -260,7 +260,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 
 		if err := s.store.UpdateContainer(ctx, c); err != nil {
 			s.logger.Error("update container state", "id", c.ID, "error", err)
-			return
+			return err
 		}
 
 		s.logger.Info("container: state changed", "container_id", c.ID, "name", c.Name, "previous_state", string(previousState), "new_state", string(newState))
@@ -292,12 +292,13 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 		}
 	}
 
-	if _, err := s.store.InsertTransition(ctx, transition); err != nil {
-		s.logger.Error("insert transition", "container_id", c.ID, "error", err)
+	_, transitionErr := s.store.InsertTransition(ctx, transition)
+	if transitionErr != nil {
+		s.logger.Error("insert transition", "container_id", c.ID, "error", transitionErr)
 	}
 
 	if evt.Replayed {
-		return
+		return transitionErr
 	}
 
 	// Check restart threshold (T030)
@@ -333,6 +334,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 		"timestamp":      evt.Timestamp,
 		"agent_id":       c.AgentID,
 	})
+	return transitionErr
 }
 
 // fetchExitSnippet returns the log lines since the container's last known start, or the unbounded snippet when that start is unknown.
@@ -356,22 +358,22 @@ func (s *Service) fetchExitSnippet(ctx context.Context, externalID string, exite
 	return s.logFetcher.FetchLogSnippet(ctx, externalID)
 }
 
-func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) {
+func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) error {
 	s.localStarts.Delete(evt.ExternalID)
 	c, err := s.lookup(ctx, evt)
 	if err != nil {
 		s.logger.Error("get container for destroy", "external_id", shortID(evt.ExternalID), "error", err)
-		return
+		return err
 	}
 	if c == nil {
 		s.logger.Debug("container: destroy for unknown container", "external_id", evt.ExternalID)
-		return
+		return nil
 	}
 
 	now := evt.Timestamp
 	if err := s.store.ArchiveContainer(ctx, c.ID, now); err != nil {
 		s.logger.Error("archive container", "external_id", shortID(evt.ExternalID), "error", err)
-		return
+		return err
 	}
 	s.untrackRestartAlert(c.ID)
 
@@ -381,16 +383,17 @@ func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) {
 		"archived_at": now,
 		"agent_id":    c.AgentID,
 	})
+	return nil
 }
 
-func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
+func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) error {
 	c, err := s.lookup(ctx, evt)
 	if err != nil {
 		s.logger.Error("get container for health change", "external_id", shortID(evt.ExternalID), "error", err)
-		return
+		return err
 	}
 	if c == nil || c.IsIgnored {
-		return
+		return nil
 	}
 
 	state, previousHealth := c.State, c.HealthStatus
@@ -399,12 +402,12 @@ func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
 		state, previousHealth, err = s.timelineAt(ctx, c, evt.Timestamp)
 		if err != nil {
 			s.logger.Error("read timeline for replayed health change", "container_id", c.ID, "error", err)
-			return
+			return err
 		}
 	}
 	if previousHealth != nil && *previousHealth == newHealth {
 		s.logger.Debug("container: health unchanged, skipping", "container_id", c.ID, "health", string(newHealth))
-		return
+		return nil
 	}
 	s.logger.Debug("container: health changed", "container_id", c.ID, "name", c.Name, "previous_health", previousHealth, "new_health", string(newHealth), "replayed", evt.Replayed)
 
@@ -414,7 +417,7 @@ func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
 
 		if err := s.store.UpdateContainer(ctx, c); err != nil {
 			s.logger.Error("update container health", "id", c.ID, "error", err)
-			return
+			return err
 		}
 	}
 
@@ -427,12 +430,13 @@ func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
 		NewHealth:      &newHealth,
 		Timestamp:      evt.Timestamp,
 	}
-	if _, err := s.store.InsertTransition(ctx, transition); err != nil {
-		s.logger.Error("insert health transition", "container_id", c.ID, "error", err)
+	_, transitionErr := s.store.InsertTransition(ctx, transition)
+	if transitionErr != nil {
+		s.logger.Error("insert health transition", "container_id", c.ID, "error", transitionErr)
 	}
 
 	if evt.Replayed {
-		return
+		return transitionErr
 	}
 
 	s.emitEvent(event.ContainerHealthChanged, map[string]interface{}{
@@ -443,6 +447,7 @@ func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
 		"timestamp":       evt.Timestamp,
 		"agent_id":        c.AgentID,
 	})
+	return transitionErr
 }
 
 func (s *Service) emitEvent(eventType string, data interface{}) {
@@ -571,7 +576,7 @@ func (s *Service) reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 		}
 
 		if dc.HealthStatus != nil && (sc.HealthStatus == nil || *sc.HealthStatus != *dc.HealthStatus) {
-			s.processEvent(ctx, ContainerEvent{
+			_ = s.processEvent(ctx, ContainerEvent{
 				Action:       "health_status",
 				AgentID:      sc.AgentID,
 				ExternalID:   sc.ExternalID,

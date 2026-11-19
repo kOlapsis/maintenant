@@ -390,7 +390,7 @@ func TestService_HandleStateChange_LogFetcherSkippedForRemote(t *testing.T) {
 	c.AgentID = "agent-remote"
 	store.seed(c)
 
-	svc.handleStateChange(context.Background(), makeTestEvent("die", c.ExternalID), StateExited)
+	require.NoError(t, svc.handleStateChange(context.Background(), makeTestEvent("die", c.ExternalID), StateExited))
 	assert.Equal(t, 0, lf.calls, "logFetcher should not be called for remote containers")
 
 	// Local container (AgentID nil): logFetcher IS called on die.
@@ -401,7 +401,7 @@ func TestService_HandleStateChange_LogFetcherSkippedForRemote(t *testing.T) {
 	c2 := makeTestContainer(extID("local"), StateRunning)
 	store2.seed(c2)
 
-	svc2.handleStateChange(context.Background(), makeTestEvent("die", c2.ExternalID), StateExited)
+	require.NoError(t, svc2.handleStateChange(context.Background(), makeTestEvent("die", c2.ExternalID), StateExited))
 	assert.Equal(t, 1, lf2.calls, "logFetcher should be called for local containers")
 }
 

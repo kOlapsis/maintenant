@@ -272,9 +272,15 @@ the restart counter or bring back an archived container. A container that only
 appears in the replay (the fresh inventory did not list it, so it is gone) is
 recorded as archived history.
 
-Delivery is at-least-once. A stream that breaks mid-replay resends everything
-past the last acknowledgement, so the server may see an event twice. Records are
-keyed by the event, so a duplicate rewrites the same row instead of adding one.
+Delivery is at-least-once. The server acknowledges an event once it has handled
+it, or once it refused it for good (an invalid event, an observation time out of
+range). When its database cannot store a container state or health change, it
+closes the stream without acknowledging it, and the agent reconnects and resends
+from that event; a server that shuts down closes the streams before its database,
+so nothing is acknowledged that was not written. A stream
+that breaks mid-replay resends everything past the last acknowledgement, so the
+server may see an event twice. Records are keyed by the event, so a duplicate
+rewrites the same row instead of adding one.
 
 ### Limits
 

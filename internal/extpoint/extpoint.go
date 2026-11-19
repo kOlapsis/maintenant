@@ -177,8 +177,9 @@ type GRPCConfig struct {
 	DataDir     string
 }
 
-// MultiHost holds the agent session registry and the function that serves agents over gRPC.
+// MultiHost holds the agent session registry and the functions that serve agents over gRPC and stop serving them.
 type MultiHost struct {
 	Sessions AgentSessions
 	Serve    func(ctx context.Context, cfg GRPCConfig) error
+	Stop     func(ctx context.Context)
 }

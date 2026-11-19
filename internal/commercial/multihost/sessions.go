@@ -28,6 +28,9 @@ var (
 	ErrSessionClosed   = errors.New("session_closed")
 )
 
+// reasonResend raises no disconnect alert: the agent reconnects at once, and the stale watcher reports one that does not.
+const reasonResend = "resend"
+
 // CauseForReason maps a Close reason to the cause handed to the agent.
 func CauseForReason(reason string) error {
 	switch reason {
@@ -274,7 +277,7 @@ func (s *Sessions) remove(agentID string, only *activeStream, reason string) {
 	// removal (revoke/delete), so a pending disconnect alert is resolved even
 	// when the agent was already offline with no live session to close.
 	terminal := reason == "revoked" || reason == "deleted"
-	if s.alertHook != nil && (had || terminal) {
+	if s.alertHook != nil && (had || terminal) && reason != reasonResend {
 		s.mu.Lock()
 		if terminal {
 			delete(s.offlineReported, agentID)

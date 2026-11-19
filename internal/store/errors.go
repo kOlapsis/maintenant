@@ -70,6 +70,9 @@ func IsUnavailable(err error) bool {
 	if err == nil {
 		return false
 	}
+	if errors.Is(err, errWriterStopped) {
+		return true
+	}
 	var se sqlite3.Error
 	if errors.As(err, &se) {
 		return se.Code == sqlite3.ErrFull

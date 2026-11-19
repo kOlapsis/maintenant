@@ -104,6 +104,8 @@ type App struct {
 	agentStore     *store.AgentStore
 	agentSessions  extpoint.AgentSessions
 	serveAgents    func(ctx context.Context, cfg extpoint.GRPCConfig) error
+	stopAgents     func(ctx context.Context)
+	stopWriter     context.CancelFunc
 	eolSvc         *eol.Service
 	// shuttingDown suppresses agent-disconnect alerts during graceful shutdown,
 	// where every stream ends at once and would otherwise page for the whole fleet.
@@ -682,6 +684,7 @@ func (a *App) wireMultiHost() {
 	})
 	a.agentSessions = mh.Sessions
 	a.serveAgents = mh.Serve
+	a.stopAgents = mh.Stop
 }
 
 func (a *App) wireStatusPage(
@@ -885,7 +888,11 @@ func (a *App) Start(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	a.db.StartWriter(ctx)
+	// Outlives ctx: Shutdown stops it only once the agent streams can no longer write.
+	writerCtx, stopWriter := context.WithCancel(context.WithoutCancel(ctx))
+	defer stopWriter()
+	a.stopWriter = stopWriter
+	a.db.StartWriter(writerCtx)
 
 	// Registered after the writer starts: on SQLite every write goes through it.
 	a.startInstanceHeartbeat(ctx)
@@ -1131,13 +1138,8 @@ func (a *App) Shutdown() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Drop this instance's row before closing: a clean restart must not see
-	// its own previous run as a peer until the stale purge catches up.
-	if a.instanceStore != nil {
-		if err := a.instanceStore.Deregister(shutdownCtx, a.instanceID); err != nil {
-			a.logger.Warn("instance deregistration failed, a restart may report itself as a peer until the stale purge runs",
-				"error", err)
-		}
+	if a.stopAgents != nil {
+		a.stopAgents(shutdownCtx)
 	}
 
 	_ = a.rt.Close()
@@ -1151,6 +1153,17 @@ func (a *App) Shutdown() error {
 		case <-a.retentionStopped:
 		case <-shutdownCtx.Done():
 			a.logger.Warn("retention cleanup still running at shutdown, closing the database anyway")
+		}
+	}
+
+	a.stopWriter()
+
+	// Drop this instance's row before closing: a clean restart must not see
+	// its own previous run as a peer until the stale purge catches up.
+	if a.instanceStore != nil {
+		if err := a.instanceStore.Deregister(shutdownCtx, a.instanceID); err != nil {
+			a.logger.Warn("instance deregistration failed, a restart may report itself as a peer until the stale purge runs",
+				"error", err)
 		}
 	}
 

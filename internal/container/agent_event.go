@@ -75,7 +75,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		s.forgetAgentDetails(agentID, externalID)
 		if c != nil {
 			base.Action = "destroy"
-			s.ProcessEvent(ctx, base)
+			return s.processEvent(ctx, base)
 		}
 		return nil
 	}
@@ -98,7 +98,9 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		h := base
 		h.Action = "health_status"
 		h.HealthStatus = hs
-		s.ProcessEvent(ctx, h)
+		if err := s.processEvent(ctx, h); err != nil {
+			return err
+		}
 	}
 
 	if action := containerStateToAction(ev); action != "" {
@@ -106,7 +108,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		st.Action = action
 		st.ExitCode = ev.GetStatusMessage()
 		st.OOMKilled = ev.GetOomKilled()
-		s.ProcessEvent(ctx, st)
+		return s.processEvent(ctx, st)
 	}
 	return nil
 }

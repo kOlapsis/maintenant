@@ -154,7 +154,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, agentID string, evt *agentpb.
 	// compromised agent forge or wipe data for any other host. Reject a
 	// mismatch outright; the authenticated agentID is the only source of truth.
 	if claimed := evt.GetAgentId(); claimed != "" && claimed != agentID {
-		return fmt.Errorf("dispatch: event agent_id %q does not match authenticated agent %q", claimed, agentID)
+		return fmt.Errorf("%w: event agent_id %q does not match authenticated agent %q", agentevent.ErrInvalid, claimed, agentID)
 	}
 
 	meta, err := eventMeta(evt, time.Now())
