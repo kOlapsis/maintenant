@@ -20,6 +20,7 @@ import TextareaInput from '@/components/ui/TextareaInput.vue'
 import SelectInput from '@/components/ui/SelectInput.vue'
 import CheckboxInput from '@/components/ui/CheckboxInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import InlineAlert from '@/components/ui/InlineAlert.vue'
 
 const store = useStatusAdminStore()
 
@@ -35,6 +36,8 @@ const showUpdateForm = ref<string | null>(null)
 const updateForm = ref({ status: 'identified', message: '' })
 
 const statusFilter = ref('')
+const busy = ref(false)
+const error = ref('')
 
 function resetCreateForm() {
   createForm.value = { title: '', severity: 'minor', component_ids: [], message: '' }
@@ -42,30 +45,57 @@ function resetCreateForm() {
 }
 
 async function submitCreate() {
-  await createIncident(createForm.value)
-  resetCreateForm()
-  store.fetchIncidents()
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    await createIncident(createForm.value)
+    resetCreateForm()
+    store.fetchIncidents()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to create incident'
+  } finally {
+    busy.value = false
+  }
 }
 
 async function submitUpdate(incidentId: string) {
-  await postIncidentUpdate(incidentId, updateForm.value)
-  showUpdateForm.value = null
-  updateForm.value = { status: 'identified', message: '' }
-  store.fetchIncidents()
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    await postIncidentUpdate(incidentId, updateForm.value)
+    showUpdateForm.value = null
+    updateForm.value = { status: 'identified', message: '' }
+    store.fetchIncidents()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to post update'
+  } finally {
+    busy.value = false
+  }
 }
 
 const confirm = useConfirm()
 
 async function handleDelete(id: string) {
-  const ok = await confirm({
-    title: 'Delete incident',
-    message: 'Remove this incident and all its updates? This cannot be undone.',
-    confirmLabel: 'Delete',
-    destructive: true,
-  })
-  if (!ok) return
-  await deleteIncident(id)
-  store.fetchIncidents()
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    const ok = await confirm({
+      title: 'Delete incident',
+      message: 'Remove this incident and all its updates? This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
+    await deleteIncident(id)
+    store.fetchIncidents()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to delete incident'
+  } finally {
+    busy.value = false
+  }
 }
 
 function startPostUpdate(inc: Incident) {
@@ -109,6 +139,8 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
       </div>
     </div>
 
+    <InlineAlert v-if="error" class="mb-4" severity="critical" title="Request failed" tag="">{{ error }}</InlineAlert>
+
     <!-- Create form -->
     <div v-if="showCreateForm" class="mb-4 rounded-lg border p-4" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
       <h3 class="mb-3 text-sm font-medium" style="color: var(--mnt-text-primary)">New Incident</h3>
@@ -142,7 +174,7 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
           </template>
         </FormField>
         <div class="flex gap-2">
-          <UiButton type="submit" variant="primary">Create</UiButton>
+          <UiButton type="submit" variant="primary" :loading="busy">Create</UiButton>
           <UiButton type="button" variant="secondary" @click="resetCreateForm">Cancel</UiButton>
         </div>
       </form>
@@ -186,7 +218,7 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
             <UiButton v-if="inc.status !== 'resolved'" variant="secondary" size="sm" @click="startPostUpdate(inc)">
               Post Update
             </UiButton>
-            <UiButton variant="danger-ghost" size="sm" @click="handleDelete(inc.id)">Delete</UiButton>
+            <UiButton variant="danger-ghost" size="sm" :disabled="busy" @click="handleDelete(inc.id)">Delete</UiButton>
           </div>
         </div>
 
@@ -216,7 +248,7 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
               </template>
             </FormField>
             <div class="flex gap-2">
-              <UiButton type="submit" variant="primary">Post Update</UiButton>
+              <UiButton type="submit" variant="primary" :loading="busy">Post Update</UiButton>
               <UiButton type="button" variant="secondary" @click="showUpdateForm = null">Cancel</UiButton>
             </div>
           </form>

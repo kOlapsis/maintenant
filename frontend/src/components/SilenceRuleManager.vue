@@ -9,6 +9,7 @@ import { useAlertsStore } from '@/stores/alerts'
 import { useConfirm } from '@/composables/useConfirm'
 import { createSilenceRule, cancelSilenceRule, type CreateSilenceRuleInput } from '@/services/alertApi'
 import UiButton from '@/components/ui/UiButton.vue'
+import InlineAlert from '@/components/ui/InlineAlert.vue'
 import FormField from '@/components/ui/FormField.vue'
 import TextInput from '@/components/ui/TextInput.vue'
 import SelectInput from '@/components/ui/SelectInput.vue'
@@ -17,6 +18,8 @@ import SegmentedToggle from '@/components/ui/SegmentedToggle.vue'
 const store = useAlertsStore()
 
 const showForm = ref(false)
+const busy = ref(false)
+const error = ref('')
 const form = ref({
   entity_type: '',
   entity_id: undefined as string | undefined,
@@ -53,28 +56,46 @@ function resetForm() {
 }
 
 async function submitForm() {
-  const data: CreateSilenceRuleInput = { duration_seconds: form.value.duration_seconds }
-  if (form.value.entity_type) data.entity_type = form.value.entity_type
-  if (form.value.entity_id) data.entity_id = form.value.entity_id
-  if (form.value.source) data.source = form.value.source
-  if (form.value.reason) data.reason = form.value.reason
-  await createSilenceRule(data)
-  resetForm()
-  store.fetchSilenceRules()
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    const data: CreateSilenceRuleInput = { duration_seconds: form.value.duration_seconds }
+    if (form.value.entity_type) data.entity_type = form.value.entity_type
+    if (form.value.entity_id) data.entity_id = form.value.entity_id
+    if (form.value.source) data.source = form.value.source
+    if (form.value.reason) data.reason = form.value.reason
+    await createSilenceRule(data)
+    resetForm()
+    store.fetchSilenceRules()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to create silence rule'
+  } finally {
+    busy.value = false
+  }
 }
 
 const confirm = useConfirm()
 
 async function handleCancel(id: string) {
-  const ok = await confirm({
-    title: 'Cancel silence rule',
-    message: 'Cancel this silence rule? Alerts will resume for affected entities.',
-    confirmLabel: 'Cancel rule',
-    destructive: true,
-  })
-  if (!ok) return
-  await cancelSilenceRule(id)
-  store.fetchSilenceRules()
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    const ok = await confirm({
+      title: 'Cancel silence rule',
+      message: 'Cancel this silence rule? Alerts will resume for affected entities.',
+      confirmLabel: 'Cancel rule',
+      destructive: true,
+    })
+    if (!ok) return
+    await cancelSilenceRule(id)
+    store.fetchSilenceRules()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to cancel silence rule'
+  } finally {
+    busy.value = false
+  }
 }
 
 function formatTime(ts: string): string {
@@ -93,6 +114,8 @@ function formatDuration(seconds: number): string {
       <h2 class="text-lg font-semibold" style="color: var(--mnt-text-primary)">Silence Rules</h2>
       <UiButton variant="primary" @click="showForm = true">Create Silence Rule</UiButton>
     </div>
+
+    <InlineAlert v-if="error" class="mb-4" severity="critical" title="Request failed" tag="">{{ error }}</InlineAlert>
 
     <!-- Create form -->
     <div v-if="showForm" class="mb-4 rounded-lg border p-4" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
@@ -129,7 +152,7 @@ function formatDuration(seconds: number): string {
           </template>
         </FormField>
         <div class="flex gap-2">
-          <UiButton type="submit" variant="primary">Create</UiButton>
+          <UiButton type="submit" variant="primary" :loading="busy">Create</UiButton>
           <UiButton type="button" variant="secondary" @click="resetForm">Cancel</UiButton>
         </div>
       </form>
@@ -174,7 +197,7 @@ function formatDuration(seconds: number): string {
               {{ formatTime(rule.starts_at) }} - {{ formatTime(rule.expires_at) }}
             </p>
           </div>
-          <UiButton v-if="rule.is_active" variant="danger-ghost" size="sm" @click="handleCancel(rule.id)">Cancel</UiButton>
+          <UiButton v-if="rule.is_active" variant="danger-ghost" size="sm" :disabled="busy" @click="handleCancel(rule.id)">Cancel</UiButton>
           <span v-else class="text-xs" style="color: var(--mnt-text-muted)">
             {{ rule.cancelled_at ? 'Cancelled' : 'Expired' }}
           </span>

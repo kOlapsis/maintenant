@@ -20,10 +20,13 @@ import TextInput from '@/components/ui/TextInput.vue'
 import TextareaInput from '@/components/ui/TextareaInput.vue'
 import CheckboxInput from '@/components/ui/CheckboxInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import InlineAlert from '@/components/ui/InlineAlert.vue'
 
 const store = useStatusAdminStore()
 
 const showForm = ref(false)
+const busy = ref(false)
+const error = ref('')
 const editingId = ref<string | null>(null)
 const form = ref({
   title: '',
@@ -53,32 +56,50 @@ function startEdit(mw: MaintenanceWindow) {
 }
 
 async function submitForm() {
-  const data = {
-    ...form.value,
-    starts_at: new Date(form.value.starts_at).toISOString(),
-    ends_at: new Date(form.value.ends_at).toISOString(),
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    const data = {
+      ...form.value,
+      starts_at: new Date(form.value.starts_at).toISOString(),
+      ends_at: new Date(form.value.ends_at).toISOString(),
+    }
+    if (editingId.value) {
+      await updateMaintenance(editingId.value, data)
+    } else {
+      await createMaintenance(data)
+    }
+    resetForm()
+    store.fetchMaintenance()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to save maintenance window'
+  } finally {
+    busy.value = false
   }
-  if (editingId.value) {
-    await updateMaintenance(editingId.value, data)
-  } else {
-    await createMaintenance(data)
-  }
-  resetForm()
-  store.fetchMaintenance()
 }
 
 const confirm = useConfirm()
 
 async function handleDelete(id: string) {
-  const ok = await confirm({
-    title: 'Delete maintenance window',
-    message: 'Remove this maintenance window? This cannot be undone.',
-    confirmLabel: 'Delete',
-    destructive: true,
-  })
-  if (!ok) return
-  await deleteMaintenance(id)
-  store.fetchMaintenance()
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    const ok = await confirm({
+      title: 'Delete maintenance window',
+      message: 'Remove this maintenance window? This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
+    await deleteMaintenance(id)
+    store.fetchMaintenance()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to delete maintenance window'
+  } finally {
+    busy.value = false
+  }
 }
 
 function statusLabel(mw: MaintenanceWindow): string {
@@ -102,6 +123,8 @@ function statusStyle(mw: MaintenanceWindow): { bg: string; color: string } {
       <h2 class="text-lg font-semibold" style="color: var(--mnt-text-primary)">Maintenance Windows</h2>
       <UiButton variant="primary" @click="showForm = true">Schedule Maintenance</UiButton>
     </div>
+
+    <InlineAlert v-if="error" class="mb-4" severity="critical" title="Request failed" tag="">{{ error }}</InlineAlert>
 
     <div v-if="showForm" class="mb-4 rounded-lg border p-4" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
       <h3 class="mb-3 text-sm font-medium" style="color: var(--mnt-text-primary)">
@@ -144,7 +167,7 @@ function statusStyle(mw: MaintenanceWindow): { bg: string; color: string } {
           </div>
         </div>
         <div class="flex gap-2">
-          <UiButton type="submit" variant="primary">{{ editingId ? 'Update' : 'Schedule' }}</UiButton>
+          <UiButton type="submit" variant="primary" :loading="busy">{{ editingId ? 'Update' : 'Schedule' }}</UiButton>
           <UiButton type="button" variant="secondary" @click="resetForm">Cancel</UiButton>
         </div>
       </form>
@@ -180,7 +203,7 @@ function statusStyle(mw: MaintenanceWindow): { bg: string; color: string } {
             >
               Edit
             </UiButton>
-            <UiButton variant="danger-ghost" size="sm" @click="handleDelete(mw.id)">Delete</UiButton>
+            <UiButton variant="danger-ghost" size="sm" :disabled="busy" @click="handleDelete(mw.id)">Delete</UiButton>
           </div>
         </div>
         <p v-if="mw.description" class="mt-1 text-xs" style="color: var(--mnt-text-muted)">{{ mw.description }}</p>

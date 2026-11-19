@@ -19,6 +19,7 @@ import ChangelogViewer from '@/commercial/components/updates/ChangelogViewer.vue
 import FeatureGate from '@/components/FeatureGate.vue'
 import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import InlineAlert from '@/components/ui/InlineAlert.vue'
 import TextareaInput from '@/components/ui/TextareaInput.vue'
 import { AlertTriangle, ArrowRight, Check, Copy, ExternalLink, Pin, PinOff } from 'lucide-vue-next'
 
@@ -33,6 +34,8 @@ const alertsStore = useAlertsStore()
 const agents = useAgentsStore()
 const detail = ref<ContainerUpdateDetail | null>(null)
 const loading = ref(true)
+const error = ref('')
+const pinning = ref(false)
 const copied = ref(false)
 const copiedRollback = ref(false)
 const pinReason = ref('')
@@ -63,6 +66,7 @@ const updateAlert = computed<Alert | undefined>(() => {
 
 async function loadDetail() {
   loading.value = true
+  error.value = ''
   try {
     detail.value = await fetchContainerUpdate(props.containerId)
     // Les alertes actives sont déjà chargées et tenues à jour app-wide
@@ -76,8 +80,8 @@ async function loadDetail() {
     if (hasFeature('cve_enrichment')) {
       await updates.fetchContainerCves(props.containerId)
     }
-  } catch {
-    // ignore
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to load update details'
   } finally {
     loading.value = false
   }
@@ -110,16 +114,26 @@ async function copyRollbackCommand() {
 }
 
 async function handlePin() {
-  if (detail.value?.pinned) {
-    await updates.unpinVersion(props.containerId)
-  } else {
-    if (!showPinInput.value) {
-      showPinInput.value = true
-      return
+  if (pinning.value) return
+  if (!detail.value?.pinned && !showPinInput.value) {
+    showPinInput.value = true
+    return
+  }
+  pinning.value = true
+  error.value = ''
+  try {
+    if (detail.value?.pinned) {
+      await updates.unpinVersion(props.containerId)
+    } else {
+      await updates.pinVersion(props.containerId, pinReason.value)
+      showPinInput.value = false
+      pinReason.value = ''
     }
-    await updates.pinVersion(props.containerId, pinReason.value)
-    showPinInput.value = false
-    pinReason.value = ''
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to update the pin'
+    return
+  } finally {
+    pinning.value = false
   }
   await loadDetail()
 }
@@ -347,12 +361,15 @@ onMounted(loadDetail)
 
     <!-- Actions -->
     <div class="pt-4 border-t border-mnt-default space-y-3">
+      <InlineAlert v-if="error" severity="critical" title="Request failed" tag="">{{ error }}</InlineAlert>
+
       <!-- Pin / Unpin -->
       <div>
         <UiButton
           v-if="!showPinInput || detail.pinned"
           :variant="detail.pinned ? 'secondary' : 'primary'"
           class="w-full"
+          :loading="pinning"
           :icon="detail.pinned ? PinOff : Pin"
           @click="handlePin"
         >
@@ -360,7 +377,7 @@ onMounted(loadDetail)
         </UiButton>
         <div v-if="showPinInput && !detail.pinned">
           <TextareaInput v-model="pinReason" :rows="2" placeholder="Reason (optional)" />
-          <UiButton variant="primary" class="mt-2 w-full" @click="handlePin">
+          <UiButton variant="primary" class="mt-2 w-full" :loading="pinning" @click="handlePin">
             Confirm pin
           </UiButton>
         </div>
@@ -379,6 +396,8 @@ onMounted(loadDetail)
       </a>
     </div>
   </div>
+
+  <InlineAlert v-else-if="error" severity="critical" title="Update details unavailable" tag="">{{ error }}</InlineAlert>
 
   <div v-else class="text-center py-12">
     <p class="text-sm text-mnt-muted">No update data available</p>
