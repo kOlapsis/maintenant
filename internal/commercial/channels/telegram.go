@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/event"
 )
 
 // TelegramAPIBase is the destination the product calls. The operator never
@@ -111,27 +112,38 @@ func escapeTelegramHTML(s string) string {
 	return r.Replace(s)
 }
 
-// BuildTelegramMessage renders the fired or resolved message. The severity and
+// BuildTelegramMessage renders the fired, acknowledged or resolved message. The severity and
 // the entity sit on the first line so a phone notification, which shows little,
 // still says what happened and to what (SC-006).
 func BuildTelegramMessage(eventType string, a *alert.Alert) string {
 	resolved := strings.Contains(eventType, "resolved")
+	acknowledged := eventType == event.AlertAcknowledged
 
 	emoji := alert.SeverityEmoji(a.Severity)
 	stamp := a.FiredAt
 	stampLabel := "Fired"
-	if resolved {
+	switch {
+	case resolved:
 		emoji = "\xE2\x9C\x85" // white heavy check mark
 		stampLabel = "Resolved"
 		if a.ResolvedAt != nil {
 			stamp = *a.ResolvedAt
 		}
+	case acknowledged:
+		emoji = "\xF0\x9F\x91\x80" // eyes
+		stampLabel = "Acknowledged"
+		if a.AcknowledgedAt != nil {
+			stamp = *a.AcknowledgedAt
+		}
 	}
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s <b>%s</b>\n\n", emoji, escapeTelegramHTML(alert.EventTitle(eventType, a)))
-	if !resolved {
+	if !resolved && !acknowledged {
 		fmt.Fprintf(&b, "<b>Severity</b> · %s\n", escapeTelegramHTML(a.Severity))
+	}
+	if acknowledged && a.AcknowledgedBy != "" {
+		fmt.Fprintf(&b, "<b>By</b> · %s\n", escapeTelegramHTML(a.AcknowledgedBy))
 	}
 	fmt.Fprintf(&b, "<b>Source</b> · %s\n", escapeTelegramHTML(a.Source))
 	fmt.Fprintf(&b, "<b>Entity</b> · %s\n", escapeTelegramHTML(a.EntityName))

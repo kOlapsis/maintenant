@@ -310,7 +310,9 @@ the database and its backups as secrets.
 
 Messages use Telegram's HTML formatting: a severity emoji and the entity on the
 first line, so a phone notification says what happened before you open it. A
-recovery arrives as a separate message, marked ✅. Anything over Telegram's
+recovery arrives as a separate message, marked ✅. The acknowledgment notice of an
+escalation is marked 👀 and gives who acknowledged and when, in place of the
+severity and the firing time. Anything over Telegram's
 4096-character limit is truncated with a visible marker rather than rejected.
 
 When a send fails, the log and the delivery record carry Telegram's own words
