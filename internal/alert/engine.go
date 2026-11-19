@@ -374,7 +374,7 @@ func (e *Engine) processEvent(ctx context.Context, evt Event) {
 	}
 
 	// Dedup: skip if there's already an active alert for this key,
-	// unless the new event has a higher severity (escalation).
+	// unless the new event has a higher severity (escalation) or is a reminder.
 	e.mu.RLock()
 	existing, exists := e.activeAlerts[key]
 	e.mu.RUnlock()
@@ -395,7 +395,7 @@ func (e *Engine) processEvent(ctx context.Context, evt Event) {
 				"incoming_entity", evt.EntityName,
 			)
 		}
-		if severityRank(evt.Severity) > severityRank(existing.Severity) {
+		if severityRank(evt.Severity) > severityRank(existing.Severity) || evt.Renotify {
 			e.escalateAlert(ctx, existing, evt)
 		} else {
 			e.logger.Debug("alert: dedup, skipping duplicate",
@@ -412,7 +412,7 @@ func (e *Engine) processEvent(ctx context.Context, evt Event) {
 	silenced := e.checkSilenceRules(ctx, evt)
 
 	if held, ok := e.silenced[key]; ok {
-		if severityRank(evt.Severity) > severityRank(held.Severity) {
+		if severityRank(evt.Severity) > severityRank(held.Severity) || evt.Renotify {
 			if err := e.refreshAlert(ctx, held, evt); err != nil {
 				e.logger.Error("alert engine: refresh silenced alert", "error", err, "alert_id", held.ID)
 			}
@@ -520,6 +520,7 @@ func (e *Engine) refreshAlert(ctx context.Context, a *Alert, evt Event) error {
 
 func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) {
 	oldSeverity := existing.Severity
+	raised := severityRank(evt.Severity) > severityRank(oldSeverity)
 
 	if err := e.refreshAlert(ctx, existing, evt); err != nil {
 		e.logger.Error("alert engine: escalate", "error", err, "alert_id", existing.ID)
@@ -532,12 +533,16 @@ func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) 
 		existing.AcknowledgedAt, existing.AcknowledgedBy = stored.AcknowledgedAt, stored.AcknowledgedBy
 	}
 
-	e.logger.Warn("alert escalated",
-		"alert_id", existing.ID,
-		"entity", existing.EntityName,
-		"from", oldSeverity,
-		"to", evt.Severity,
-	)
+	if raised {
+		e.logger.Warn("alert escalated",
+			"alert_id", existing.ID,
+			"entity", existing.EntityName,
+			"from", oldSeverity,
+			"to", evt.Severity,
+		)
+	} else if existing.AcknowledgedAt != nil {
+		return
+	}
 
 	// Broadcast the escalation and dispatch notifications at the new severity
 	e.broadcastAlert(existing, false)
@@ -545,7 +550,7 @@ func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) 
 	// Re-evaluate escalation policies: a higher severity may match policies
 	// that did not at the previous level. The escalator dedupes per
 	// (alert, policy) so existing runs continue untouched.
-	if existing.AcknowledgedAt == nil {
+	if raised && existing.AcknowledgedAt == nil {
 		if err := e.escalator.OnAlertCreated(ctx, existing); err != nil {
 			e.logger.ErrorContext(ctx, "alert engine: OnAlertCreated hook error", "error", err, "alert_id", existing.ID)
 		}
@@ -553,7 +558,9 @@ func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) 
 
 	if e.notifier != nil {
 		payload := *existing
-		payload.Message = fmt.Sprintf("Severity raised from %s to %s: %s", oldSeverity, existing.Severity, existing.Message)
+		if raised {
+			payload.Message = fmt.Sprintf("Severity raised from %s to %s: %s", oldSeverity, existing.Severity, existing.Message)
+		}
 		e.dispatchNotifications(ctx, existing, &payload)
 	}
 }

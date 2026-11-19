@@ -441,11 +441,24 @@ func certificateAlertEvent(m map[string]any) alert.Event {
 	if s, ok := m["severity"].(string); ok && s != "" {
 		severity = s
 	}
+	msg := fmt.Sprintf("Certificate alert (%s) for %v:%v", certAlertType, m["hostname"], m["port"])
+	_, reminder := m["threshold_days"]
+	if days, ok := m["days_remaining"].(int); ok && reminder {
+		left := fmt.Sprintf("%d days", days)
+		switch {
+		case days < 1:
+			left = "less than a day"
+		case days == 1:
+			left = "1 day"
+		}
+		msg = fmt.Sprintf("Certificate for %v:%v expires in %s", m["hostname"], m["port"], left)
+	}
 	return alert.Event{
 		Source:     alert.SourceCertificate,
 		AlertType:  certAlertType,
 		Severity:   severity,
-		Message:    fmt.Sprintf("Certificate alert (%s) for %v:%v", certAlertType, m["hostname"], m["port"]),
+		Renotify:   reminder,
+		Message:    msg,
 		EntityType: "certificate",
 		EntityID:   toString(m["monitor_id"]),
 		EntityName: toString(m["hostname"]),

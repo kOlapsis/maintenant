@@ -65,6 +65,7 @@ type silenceFixture struct {
 	triggers  *store.TriggerStoreImpl
 	silences  *store.SilenceStoreImpl
 	escalator *createdRecorder
+	notifier  *alert.Notifier
 	engine    *alert.Engine
 	stop      context.CancelFunc
 	sentinels int
@@ -99,14 +100,15 @@ func (f *silenceFixture) start(recheck time.Duration) {
 	f.halt()
 	ctx, cancel := context.WithCancel(f.ctx)
 	f.stop = cancel
+	// Never started: the delivery row is the notification, and no send outlives the test.
+	f.notifier = alert.NewNotifier(f.channels, f.logger, true)
 	eng := alert.NewEngine(alert.EngineDeps{
 		AlertStore:   f.alerts,
 		ChannelStore: f.channels,
 		TriggerStore: f.triggers,
 		SilenceStore: f.silences,
-		// Never started: the delivery row is the notification, and no send outlives the test.
-		Notifier: alert.NewNotifier(f.channels, f.logger, true),
-		Logger:   f.logger,
+		Notifier:     f.notifier,
+		Logger:       f.logger,
 	})
 	eng.SetEscalator(f.escalator)
 	eng.SetMaintenanceSuppressor(maintenance.NewSuppressor(store.NewMaintenanceStore(f.db), f.logger))

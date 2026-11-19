@@ -63,6 +63,7 @@ type Event struct {
 	AlertType  string         // source-specific type
 	Severity   string         // "critical", "warning", "info"
 	IsRecover  bool           // true if this is a recovery event
+	Renotify   bool           // a reminder: refresh and notify a live alert again, even at the same severity
 	Message    string         // human-readable description
 	EntityType string         // "container", "endpoint", "heartbeat", "certificate"
 	EntityID   string         // UUID of the referenced entity in its source table
