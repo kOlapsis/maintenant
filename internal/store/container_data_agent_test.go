@@ -209,6 +209,62 @@ func TestContainerData_ReadsArePerAgent(t *testing.T) {
 	require.NoError(t, err, "the prod homonym can acknowledge the same finding on its own")
 }
 
+// The same key written for two agents makes two rows, and rewriting one agent's row leaves the other's as it was.
+func TestContainerData_SameKeyOnTwoAgents(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	seedHomonyms(t, db)
+	us := NewUpdateStore(db)
+	now := time.Now().Truncate(time.Second)
+
+	write := func(agentID, value string, recordedAt time.Time) {
+		t.Helper()
+		require.NoError(t, us.UpsertContainerCVE(ctx, &update.ContainerCVE{AgentID: agentID, ContainerID: homonym,
+			CVEID: "CVE-2026-0001", Severity: update.CVESeverityHigh, Summary: value, FirstDetectedAt: now}))
+		require.NoError(t, us.UpsertCVEEvaluation(ctx, &update.CVEEvaluation{AgentID: agentID, ContainerID: homonym,
+			Status: update.CVEEvaluationError, Error: value, EvaluatedAt: now}))
+		require.NoError(t, us.UpsertDigestBaseline(ctx, &update.DigestBaseline{AgentID: agentID, ContainerID: homonym,
+			Image: "shop/api:1.0", Tag: "1.0", RemoteDigest: value, CheckedAt: now}))
+		_, err := us.InsertRiskScoreRecord(ctx, &update.RiskScoreRecord{AgentID: agentID, ContainerID: homonym,
+			Score: 64, FactorsJSON: value, RecordedAt: recordedAt})
+		require.NoError(t, err)
+		_, err = us.InsertVersionPin(ctx, &update.VersionPin{AgentID: agentID, ContainerID: homonym,
+			Image: "shop/api", PinnedTag: "1.0", PinnedDigest: "sha256:aaa", Reason: value, PinnedAt: now})
+		require.NoError(t, err)
+	}
+	read := func(agentID string) []string {
+		t.Helper()
+		cves, err := us.ListContainerCVEs(ctx, agentID, homonym)
+		require.NoError(t, err)
+		require.Len(t, cves, 1, "CVEs of %s", agentID)
+		eval, err := us.GetCVEEvaluation(ctx, agentID, homonym)
+		require.NoError(t, err)
+		require.NotNil(t, eval)
+		baseline, err := us.GetDigestBaseline(ctx, agentID, homonym)
+		require.NoError(t, err)
+		require.NotNil(t, baseline)
+		pin, err := us.GetVersionPin(ctx, agentID, homonym)
+		require.NoError(t, err)
+		require.NotNil(t, pin)
+		history, err := us.ListRiskScoreHistory(ctx, agentID, homonym, now.Add(-time.Hour), now.Add(time.Hour))
+		require.NoError(t, err)
+		values := []string{cves[0].Summary, eval.Error, baseline.RemoteDigest, pin.Reason}
+		for _, h := range history {
+			values = append(values, h.FactorsJSON)
+		}
+		return values
+	}
+
+	write("agent-staging", "staging", now)
+	write("agent-prod", "prod", now)
+	assert.Equal(t, []string{"staging", "staging", "staging", "staging", "staging"}, read("agent-staging"))
+	assert.Equal(t, []string{"prod", "prod", "prod", "prod", "prod"}, read("agent-prod"))
+
+	write("agent-staging", "staging-2", now.Add(time.Second))
+	assert.Equal(t, []string{"staging-2", "staging-2", "staging-2", "staging-2", "staging", "staging-2"}, read("agent-staging"))
+	assert.Equal(t, []string{"prod", "prod", "prod", "prod", "prod"}, read("agent-prod"), "rewriting staging keeps prod")
+}
+
 // An external id names the local runtime when it runs it or nothing does, else its only agent; two remote agents need naming.
 func TestContainerAgent_LocalFirstThenTheOnlyRemote(t *testing.T) {
 	db := openTestDB(t)
