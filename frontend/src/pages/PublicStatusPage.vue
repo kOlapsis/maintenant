@@ -7,6 +7,7 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import StatusComponentBreakdown from '@/components/StatusComponentBreakdown.vue'
 import { useStatusPageI18n } from '@/composables/useStatusPageI18n'
+import { useVisibleInterval } from '@/composables/useVisibleInterval'
 import { guardedFetch } from '@/services/apiFetch'
 import type { MonitorRef } from '@/services/statusApi'
 import type { StatusPageDictKey } from '@/locales/status-page/en'
@@ -117,6 +118,7 @@ async function fetchStatus() {
     const res = await guardedFetch('/status/api')
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     data.value = await res.json()
+    error.value = null
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load status'
   } finally {
@@ -163,7 +165,14 @@ function connectSSE() {
   eventSource.addEventListener('status.component_changed', onComponentChanged)
   eventSource.addEventListener('status.global_changed', onGlobalChanged)
   for (const name of REFETCH_EVENTS) eventSource.addEventListener(name, () => void fetchStatus())
+  let opened = false
+  eventSource.onopen = () => {
+    if (opened) void fetchStatus()
+    opened = true
+  }
 }
+
+useVisibleInterval(fetchStatus, 60_000)
 
 onMounted(() => {
   fetchSettings()
@@ -325,7 +334,7 @@ function formatDate(iso: string) {
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" class="mx-auto max-w-3xl px-6 py-16 text-center">
+    <div v-else-if="error && !data" class="mx-auto max-w-3xl px-6 py-16 text-center">
       <p class="text-sm text-red-400">{{ error }}</p>
     </div>
 

@@ -15,6 +15,7 @@ import {
 } from '@/services/alertApi'
 import ChannelWizard from '@/components/ChannelWizard.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import InlineAlert from '@/components/ui/InlineAlert.vue'
 import FormField from '@/components/ui/FormField.vue'
 import TextInput from '@/components/ui/TextInput.vue'
 import CheckboxInput from '@/components/ui/CheckboxInput.vue'
@@ -41,6 +42,9 @@ const editingHasHeaders = ref(false)
 const HEADERS_EXAMPLE = '{"Authorization": "Bearer ..."}'
 const editingUrlOnFile = ref('')
 const submitError = ref('')
+const submitting = ref(false)
+const pending = ref('')
+const actionError = ref('')
 const testResult = ref<{ id: string; status: string; response_code?: number; error?: string } | null>(null)
 
 function resetForm() {
@@ -104,7 +108,7 @@ function channelTarget(ch: NotificationChannel): string {
 }
 
 async function submitForm() {
-  if (!editingId.value) return
+  if (!editingId.value || submitting.value) return
   // Empty url or headers keep the stored values, which the server only sends back masked.
   const payload = {
     name: form.value.name,
@@ -117,11 +121,14 @@ async function submitForm() {
     ...(isEmail.value ? { config: { subject_label: form.value.subjectLabel.trim() } } : {}),
   }
   submitError.value = ''
+  submitting.value = true
   try {
     await updateChannel(editingId.value, payload)
   } catch (e) {
     submitError.value = e instanceof Error ? e.message : 'Failed to update channel'
     return
+  } finally {
+    submitting.value = false
   }
   resetForm()
   store.fetchChannels()
@@ -130,22 +137,39 @@ async function submitForm() {
 const confirm = useConfirm()
 
 async function handleDelete(id: string) {
-  const ok = await confirm({
-    title: 'Delete channel',
-    message:
-      'Remove this notification channel? Triggers and escalation policies referencing it will lose this destination.',
-    confirmLabel: 'Delete',
-    destructive: true,
-  })
-  if (!ok) return
-  await deleteChannel(id)
-  store.fetchChannels()
+  if (pending.value) return
+  pending.value = `delete:${id}`
+  actionError.value = ''
+  try {
+    const ok = await confirm({
+      title: 'Delete channel',
+      message:
+        'Remove this notification channel? Triggers and escalation policies referencing it will lose this destination.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
+    await deleteChannel(id)
+    store.fetchChannels()
+  } catch (e) {
+    actionError.value = e instanceof Error ? e.message : 'Failed to delete channel'
+  } finally {
+    pending.value = ''
+  }
 }
 
 async function handleTest(id: string) {
+  if (pending.value) return
+  pending.value = `test:${id}`
   testResult.value = null
-  const res = await testChannel(id)
-  testResult.value = { id, ...res }
+  try {
+    const res = await testChannel(id)
+    testResult.value = { id, ...res }
+  } catch (e) {
+    testResult.value = { id, status: 'failed', error: e instanceof Error ? e.message : 'Request failed' }
+  } finally {
+    pending.value = ''
+  }
 }
 
 function maskUrl(url: string): string {
@@ -265,11 +289,13 @@ function editionLabel(edition?: string): string {
         <CheckboxInput v-model="form.enabled" label="Enabled" />
         <p v-if="submitError" class="text-xs" style="color: var(--mnt-status-down-text)">{{ submitError }}</p>
         <div class="flex gap-2">
-          <UiButton type="submit" variant="primary">Save</UiButton>
+          <UiButton type="submit" variant="primary" :loading="submitting">Save</UiButton>
           <UiButton type="button" variant="secondary" @click="resetForm">Cancel</UiButton>
         </div>
       </form>
     </div>
+
+    <InlineAlert v-if="actionError" class="mb-3" severity="critical" title="Request failed" tag="">{{ actionError }}</InlineAlert>
 
     <!-- Channel list -->
     <div class="space-y-3">
@@ -307,9 +333,9 @@ function editionLabel(edition?: string): string {
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <UiButton variant="secondary" size="sm" @click="handleTest(ch.id)">Test</UiButton>
+            <UiButton variant="secondary" size="sm" :loading="pending === `test:${ch.id}`" :disabled="!!pending" @click="handleTest(ch.id)">Test</UiButton>
             <UiButton variant="secondary" size="sm" @click="startEdit(ch)">Edit</UiButton>
-            <UiButton variant="danger-ghost" size="sm" @click="handleDelete(ch.id)">Delete</UiButton>
+            <UiButton variant="danger-ghost" size="sm" :disabled="!!pending" @click="handleDelete(ch.id)">Delete</UiButton>
           </div>
         </div>
 

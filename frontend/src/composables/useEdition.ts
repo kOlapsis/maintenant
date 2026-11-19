@@ -27,7 +27,7 @@ async function load() {
   try {
     edition.value = await fetchEdition()
   } catch {
-    edition.value = { edition: 'community', organisation_name: '', features: {} }
+    edition.value ??= { edition: 'community', organisation_name: '', features: {} }
   }
   loaded.value = true
 }

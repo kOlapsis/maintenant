@@ -215,72 +215,44 @@ export const useUpdatesStore = defineStore('updates', () => {
 
   async function fetchContainerCvesAction(containerId: string) {
     if (!hasFeature('cve_enrichment')) return
-    try {
-      const data = await fetchContainerCves(containerId)
-      containerCves.value[containerId] = data.cves || []
-    } catch {
-      // ignore
-    }
+    const data = await fetchContainerCves(containerId)
+    containerCves.value[containerId] = data.cves || []
   }
 
   async function fetchRiskScoresAction() {
     if (!hasFeature('risk_scoring')) return
-    try {
-      riskScores.value = await fetchRiskScores()
-    } catch {
-      // ignore
-    }
+    riskScores.value = await fetchRiskScores()
   }
 
   async function pinVersionAction(containerId: string, reason?: string) {
-    try {
-      await apiPinVersion(containerId, reason)
-      const idx = updates.value.findIndex(u => u.container_id === containerId)
-      const pinItem = updates.value[idx]
-      if (pinItem) pinItem.status = 'pinned'
-      await fetchSummary()
-    } catch {
-      // ignore
-    }
+    await apiPinVersion(containerId, reason)
+    const idx = updates.value.findIndex(u => u.container_id === containerId)
+    const pinItem = updates.value[idx]
+    if (pinItem) pinItem.status = 'pinned'
+    await fetchSummary()
   }
 
   async function unpinVersionAction(containerId: string) {
-    try {
-      await apiUnpinVersion(containerId)
-      const idx = updates.value.findIndex(u => u.container_id === containerId)
-      const unpinItem = updates.value[idx]
-      if (unpinItem) unpinItem.status = 'available'
-      await fetchSummary()
-    } catch {
-      // ignore
-    }
+    await apiUnpinVersion(containerId)
+    const idx = updates.value.findIndex(u => u.container_id === containerId)
+    const unpinItem = updates.value[idx]
+    if (unpinItem) unpinItem.status = 'available'
+    await fetchSummary()
   }
 
   async function fetchExclusionsAction() {
-    try {
-      const data = await fetchExclusions()
-      exclusions.value = data.exclusions || []
-    } catch {
-      // ignore
-    }
+    const data = await fetchExclusions()
+    exclusions.value = data.exclusions || []
   }
 
   async function addExclusionAction(pattern: string, patternType: string) {
-    try {
-      await apiAddExclusion(pattern, patternType)
-      await fetchExclusionsAction()
-    } catch {
-      // ignore
-    }
+    await apiAddExclusion(pattern, patternType)
+    await fetchExclusionsAction()
   }
 
   async function removeExclusionAction(id: string) {
-    try {
-      await apiRemoveExclusion(id)
-      await fetchExclusionsAction()
-    } catch {
-      // ignore
-    }
+    await apiRemoveExclusion(id)
+    await fetchExclusionsAction()
   }
 
   return {
