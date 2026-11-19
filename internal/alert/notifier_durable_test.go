@@ -392,6 +392,21 @@ func TestDurableDelivery_LastErrorIsTheErrorOfTheLastAttempt(t *testing.T) {
 	assert.Empty(t, f.row(d.ID).LastError, "a delivered notification carries no error")
 }
 
+func TestDurableDelivery_TheEventTypeOfTheRowIsTheEventSent(t *testing.T) {
+	f := newQueueFixture(t)
+	srv := newHookServer(t, always(http.StatusOK))
+	reminder := f.delivery(t, f.channel(t, srv.URL), alert.EventReminder, alert.StatusResolved)
+	recovery := f.delivery(t, f.channel(t, srv.URL), alert.EventResolved, alert.StatusActive)
+
+	f.notifier().StartUntilCleanup(f.ctx, t)
+
+	require.Eventually(t, func() bool { return len(srv.received()) == 2 }, 10*time.Second, 5*time.Millisecond)
+	assert.ElementsMatch(t, []hookRequest{
+		{Delivery: reminder.ID, Event: "alert.fired"},
+		{Delivery: recovery.ID, Event: "alert.resolved"},
+	}, srv.received(), "the stored event type decides, whatever the status in the payload")
+}
+
 func TestDurableDelivery_AnAttemptPastItsClaimLeavesTheRowAlone(t *testing.T) {
 	f := newQueueFixture(t)
 	release := make(chan struct{})

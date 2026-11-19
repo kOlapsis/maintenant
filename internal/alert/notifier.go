@@ -342,7 +342,7 @@ func (n *Notifier) processJob(ctx context.Context, job NotificationJob) {
 		return
 	}
 
-	eventType := alertEventType(job.Alert)
+	eventType := sentEvent(job)
 	sender := n.senderFor(job.Channel.Type)
 	if err := sender.Ready(); err != nil {
 		n.failDelivery(ctx, job, err.Error())
@@ -353,6 +353,17 @@ func (n *Notifier) processJob(ctx context.Context, job NotificationJob) {
 		return
 	}
 	n.deliver(ctx, job, sender, func() error { return sender.Send(ctx, job.Channel, eventType, job.Alert) })
+}
+
+// sentEvent is the event a channel receives for job, given by its delivery's event type, or by the alert's status when it has none.
+func sentEvent(job NotificationJob) string {
+	switch job.Delivery.EventType {
+	case EventResolved:
+		return event.AlertResolved
+	case EventFired, EventSeverityRaised, EventReminder:
+		return event.AlertFired
+	}
+	return alertEventType(job.Alert)
 }
 
 type deliveryIDKey struct{}
