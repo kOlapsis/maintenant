@@ -121,7 +121,7 @@ func (noopRunnerSuppressor) IsSuppressed(_ context.Context, _, _, _ string) (boo
 // --- alert.Escalator implementation ---
 
 // OnAlertCreated starts a Run for every active policy whose filters match the
-// alert and that does not already have an active run for this alert. Idempotent
+// alert and that never had a run for this alert, whatever its end. Idempotent
 // per (alertID, policyID) tuple — safe to call multiple times (e.g. on severity
 // escalation, when new policies become applicable).
 func (r *Runner) OnAlertCreated(ctx context.Context, a *alert.Alert) error {
@@ -160,7 +160,7 @@ func (r *Runner) retryUnstarted(ctx context.Context) {
 }
 
 func (r *Runner) startRuns(ctx context.Context, a *alert.Alert, now time.Time) error {
-	existing, err := r.store.SelectActiveRunsByAlert(ctx, a.ID)
+	existing, err := r.store.SelectRunsByAlert(ctx, a.ID)
 	if err != nil {
 		return fmt.Errorf("escalation: list existing runs: %w", err)
 	}

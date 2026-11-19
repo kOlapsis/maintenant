@@ -40,11 +40,15 @@ func takeFailure(n *atomic.Int32) bool {
 
 type flakyEscStore struct {
 	esc.Store
-	insertRunFails atomic.Int32
-	reserveFails   atomic.Int32
+	insertRunFails  atomic.Int32
+	reserveFails    atomic.Int32
+	refusedPolicyID atomic.Pointer[string]
 }
 
 func (s *flakyEscStore) InsertRun(ctx context.Context, r *esc.Run) (string, error) {
+	if refused := s.refusedPolicyID.Load(); refused != nil && r.PolicyID != nil && *r.PolicyID == *refused {
+		return "", errInjected
+	}
 	if takeFailure(&s.insertRunFails) {
 		return "", errInjected
 	}
@@ -197,15 +201,16 @@ func (h *dbHarness) addAlert() *alert.Alert {
 	return a
 }
 
-func (h *dbHarness) addPolicy(levels ...esc.Level) {
+func (h *dbHarness) addPolicy(levels ...esc.Level) string {
 	h.t.Helper()
-	_, err := h.store.InsertPolicy(h.ctx, &esc.Policy{
+	id, err := h.store.InsertPolicy(h.ctx, &esc.Policy{
 		Name:    "policy-" + uid.New(),
 		Active:  true,
 		Filters: esc.Filters{Severities: []string{alert.SeverityCritical}, Scopes: []esc.Scope{}},
 		Levels:  levels,
 	})
 	require.NoError(h.t, err)
+	return id
 }
 
 func (h *dbHarness) runs(a *alert.Alert) []*esc.Run {

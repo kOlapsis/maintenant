@@ -320,7 +320,7 @@ func (s *EscalationStore) TerminateRun(ctx context.Context, runID string, status
 }
 
 // SelectActiveRunsByAlert returns runs in non-terminal state for a given alert.
-// Used by ack/resolve hooks and OnAlertCreated dedup.
+// Used by ack/resolve hooks.
 func (s *EscalationStore) SelectActiveRunsByAlert(ctx context.Context, alertID string) ([]*escalation.Run, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, policy_id, policy_snapshot_json, alert_id, status,
