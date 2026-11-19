@@ -144,16 +144,22 @@ func (m *mockStore) DeleteHeartbeat(_ context.Context, id string) error {
 	return nil
 }
 
-func (m *mockStore) UpdateHeartbeatState(_ context.Context, id string,
+func (m *mockStore) TransitionHeartbeatState(_ context.Context, id string,
+	fromStatus HeartbeatStatus, fromDeadline *time.Time,
 	status HeartbeatStatus, alertState AlertState,
 	lastPingAt *time.Time, nextDeadlineAt *time.Time, currentRunStartedAt *time.Time,
 	lastExitCode *int, lastDurationMs *int64,
-	consecutiveFailures, consecutiveSuccesses int) error {
+	consecutiveFailures, consecutiveSuccesses int) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	h, ok := m.heartbeats[id]
 	if !ok {
-		return errors.New("not found")
+		return false, errors.New("not found")
+	}
+	sameDeadline := (h.NextDeadlineAt == nil && fromDeadline == nil) ||
+		(h.NextDeadlineAt != nil && fromDeadline != nil && h.NextDeadlineAt.Unix() == fromDeadline.Unix())
+	if h.Status != fromStatus || !sameDeadline {
+		return false, nil
 	}
 	h.Status = status
 	h.AlertState = alertState
@@ -165,7 +171,11 @@ func (m *mockStore) UpdateHeartbeatState(_ context.Context, id string,
 	h.ConsecutiveFailures = consecutiveFailures
 	h.ConsecutiveSuccesses = consecutiveSuccesses
 	h.UpdatedAt = time.Now()
-	return nil
+	return true, nil
+}
+
+func (m *mockStore) PostponeOverdueDeadlines(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
 }
 
 func (m *mockStore) PauseHeartbeat(_ context.Context, id string, _ time.Time) error {
@@ -887,6 +897,8 @@ func TestService_checkDeadlines_OverdueTransitionsToDown(t *testing.T) {
 	h := seedHeartbeat(store, "uuid-deadline-1", StatusUp, AlertNormal)
 
 	// Inject the heartbeat as overdue.
+	pastDeadline := time.Now().Add(-time.Minute)
+	store.heartbeats[h.ID].NextDeadlineAt = &pastDeadline
 	store.overdue = []*Heartbeat{store.heartbeats[h.ID]}
 
 	svc.checkDeadlines(context.Background())
@@ -915,6 +927,8 @@ func TestService_checkDeadlines_StartedStatusTimesOutExecution(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	pastDeadline := time.Now().Add(-time.Minute)
+	store.heartbeats[h.ID].NextDeadlineAt = &pastDeadline
 	store.overdue = []*Heartbeat{store.heartbeats[h.ID]}
 
 	svc.checkDeadlines(context.Background())

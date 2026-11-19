@@ -193,6 +193,64 @@ func (s *HeartbeatStore) UpdateHeartbeatState(ctx context.Context, id string,
 	return nil
 }
 
+// TransitionHeartbeatState writes a new state only while the row still has the status and deadline the caller read, and reports whether it did.
+func (s *HeartbeatStore) TransitionHeartbeatState(ctx context.Context, id string,
+	fromStatus heartbeat.HeartbeatStatus, fromDeadline *time.Time,
+	status heartbeat.HeartbeatStatus, alertState heartbeat.AlertState,
+	lastPingAt *time.Time, nextDeadlineAt *time.Time, currentRunStartedAt *time.Time,
+	lastExitCode *int, lastDurationMs *int64,
+	consecutiveFailures, consecutiveSuccesses int) (bool, error) {
+
+	var lastPingUnix, deadlineUnix, runStartUnix interface{}
+	if lastPingAt != nil {
+		lastPingUnix = lastPingAt.Unix()
+	}
+	if nextDeadlineAt != nil {
+		deadlineUnix = nextDeadlineAt.Unix()
+	}
+	if currentRunStartedAt != nil {
+		runStartUnix = currentRunStartedAt.Unix()
+	}
+
+	query := `UPDATE heartbeats SET status=?, alert_state=?,
+			last_ping_at=?, next_deadline_at=?, current_run_started_at=?,
+			last_exit_code=?, last_duration_ms=?,
+			consecutive_failures=?, consecutive_successes=?,
+			updated_at=?
+		WHERE id=? AND status=? AND `
+	args := []interface{}{
+		string(status), string(alertState),
+		lastPingUnix, deadlineUnix, runStartUnix,
+		lastExitCode, lastDurationMs,
+		consecutiveFailures, consecutiveSuccesses,
+		time.Now().Unix(), id, string(fromStatus),
+	}
+	if fromDeadline == nil {
+		query += `next_deadline_at IS NULL`
+	} else {
+		query += `next_deadline_at=?`
+		args = append(args, fromDeadline.Unix())
+	}
+
+	res, err := s.writer.Exec(ctx, query, args...)
+	if err != nil {
+		return false, fmt.Errorf("transition heartbeat state %s: %w", id, err)
+	}
+	return res.RowsAffected == 1, nil
+}
+
+// PostponeOverdueDeadlines moves every passed deadline of an up or started heartbeat to now plus its interval and grace.
+func (s *HeartbeatStore) PostponeOverdueDeadlines(ctx context.Context, now time.Time) (int64, error) {
+	res, err := s.writer.Exec(ctx,
+		`UPDATE heartbeats SET next_deadline_at = CAST(? AS BIGINT) + interval_seconds + grace_seconds, updated_at=?
+		WHERE status IN ('up', 'started') AND next_deadline_at IS NOT NULL AND next_deadline_at<?`,
+		now.Unix(), now.Unix(), now.Unix())
+	if err != nil {
+		return 0, fmt.Errorf("postpone overdue heartbeat deadlines: %w", err)
+	}
+	return res.RowsAffected, nil
+}
+
 const endPauseSQL = `UPDATE heartbeat_pauses SET resumed_at=? WHERE heartbeat_id=? AND resumed_at IS NULL`
 
 // PauseHeartbeat stops monitoring a heartbeat from at on, and records when the pause began.
