@@ -454,17 +454,17 @@ func (s *EndpointStore) GetSparklineData(ctx context.Context, limit int) (map[st
 		limit = 20
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT endpoint_id, response_time_ms
-		FROM (
-			SELECT endpoint_id, response_time_ms,
-				ROW_NUMBER() OVER (PARTITION BY endpoint_id ORDER BY timestamp DESC) AS rn
-			FROM check_results
-			WHERE endpoint_id IN (SELECT id FROM endpoints WHERE active=1)
-				AND response_time_ms IS NOT NULL
-		)
-		WHERE rn <= ?
-		ORDER BY endpoint_id, rn DESC
-	`, limit)
+		SELECT c.endpoint_id, c.response_time_ms
+		FROM endpoints e
+		JOIN check_results c ON c.endpoint_id = e.id
+		WHERE e.active = 1
+			AND c.response_time_ms IS NOT NULL
+			AND c.timestamp >= COALESCE((
+				SELECT timestamp FROM check_results
+				WHERE endpoint_id = e.id AND response_time_ms IS NOT NULL
+				ORDER BY timestamp DESC LIMIT 1 OFFSET ?), 0)
+		ORDER BY c.endpoint_id, c.timestamp
+	`, limit-1)
 	if err != nil {
 		return nil, fmt.Errorf("get sparkline data: %w", err)
 	}
