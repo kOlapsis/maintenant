@@ -119,17 +119,18 @@ func (s *ChannelStoreImpl) DeleteChannel(ctx context.Context, id string) error {
 
 func (s *ChannelStoreImpl) GetChannelHealth(ctx context.Context, channelID string) (string, error) {
 	var status string
+	var attempts int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT status FROM notification_deliveries
+		`SELECT status, attempts FROM notification_deliveries
 		WHERE channel_id = ? ORDER BY updated_at DESC LIMIT 1`,
-		channelID).Scan(&status)
+		channelID).Scan(&status, &attempts)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "healthy", nil
 	}
 	if err != nil {
 		return "", err
 	}
-	if status == alert.DeliveryFailed {
+	if status == alert.DeliveryFailed || (status == alert.DeliveryPending && attempts > 0) {
 		return "failing", nil
 	}
 	return "healthy", nil

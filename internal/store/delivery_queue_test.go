@@ -113,6 +113,27 @@ func TestDeliveryQueue_ARetryIsDueAtItsNextAttempt(t *testing.T) {
 	assert.Equal(t, 1, stored[0].Attempts)
 }
 
+func TestDeliveryQueue_AChannelWaitingForARetryIsFailing(t *testing.T) {
+	ctx := context.Background()
+	channels, alertID, channelID := seedDeliveryStream(t, openTestDB(t))
+	health := func() string {
+		h, err := channels.GetChannelHealth(ctx, channelID)
+		require.NoError(t, err)
+		return h
+	}
+
+	d := insertPending(t, channels, alertID, channelID, alert.EventFired)
+	assert.Equal(t, "healthy", health(), "a delivery not tried yet says nothing about the channel")
+
+	d.Attempts, d.LastError, d.NextAttemptAt = 1, "non-2xx response: 503", time.Now().Add(time.Minute)
+	require.NoError(t, channels.UpdateDelivery(ctx, d))
+	assert.Equal(t, "failing", health(), "its last attempt failed, the retry is still to come")
+
+	d.Attempts, d.Status = 2, alert.DeliveryDelivered
+	require.NoError(t, channels.UpdateDelivery(ctx, d))
+	assert.Equal(t, "healthy", health())
+}
+
 func TestDeliveryQueue_ADeliveryWaitsForTheEarlierOneOfItsStream(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)
