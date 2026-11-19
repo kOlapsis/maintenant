@@ -168,7 +168,8 @@ func (s *EndpointStore) ListEndpointsByExternalID(ctx context.Context, agentID, 
 
 func (s *EndpointStore) DeactivateEndpoint(ctx context.Context, id string) error {
 	_, err := s.writer.Exec(ctx,
-		`UPDATE endpoints SET active=0, last_seen_at=? WHERE id=?`, time.Now().Unix(), id)
+		`UPDATE endpoints SET active=0, last_seen_at=?, status='unknown', alert_state='normal',
+			consecutive_failures=0, consecutive_successes=0 WHERE id=?`, time.Now().Unix(), id)
 	if err != nil {
 		return fmt.Errorf("deactivate endpoint %s: %w", id, err)
 	}
