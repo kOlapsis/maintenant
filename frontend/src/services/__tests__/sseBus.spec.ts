@@ -15,7 +15,16 @@ class FakeEventSource {
     FakeEventSource.instances.push(this)
   }
 
-  addEventListener() {}
+  private handlers = new Map<string, Array<(e: MessageEvent) => void>>()
+
+  addEventListener(name: string, handler: (e: MessageEvent) => void) {
+    this.handlers.set(name, [...(this.handlers.get(name) ?? []), handler])
+  }
+
+  emit(name: string, data = '{}') {
+    for (const h of this.handlers.get(name) ?? []) h(new MessageEvent(name, { data }))
+  }
+
   close() {
     this.closed = true
   }
@@ -149,5 +158,37 @@ describe('sseBus visibility suspension', () => {
     setVisibility('visible')
 
     expect(FakeEventSource.instances).toHaveLength(1)
+  })
+})
+
+describe('sseBus shared handlers', () => {
+  beforeEach(() => {
+    FakeEventSource.instances = []
+    vi.stubGlobal('EventSource', FakeEventSource)
+  })
+
+  afterEach(() => {
+    openBus?.disconnect()
+    openBus = null
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps a handler subscribed twice until it is removed twice, and calls it once per event', async () => {
+    const bus = await loadBus()
+    const handler = vi.fn()
+    bus.on('alert.fired', handler)
+    bus.on('alert.fired', handler)
+    bus.connect()
+
+    FakeEventSource.last.emit('alert.fired')
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    bus.off('alert.fired', handler)
+    FakeEventSource.last.emit('alert.fired')
+    expect(handler).toHaveBeenCalledTimes(2)
+
+    bus.off('alert.fired', handler)
+    FakeEventSource.last.emit('alert.fired')
+    expect(handler).toHaveBeenCalledTimes(2)
   })
 })

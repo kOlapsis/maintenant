@@ -108,6 +108,10 @@ export const useRuntimeStore = defineStore('runtime', () => {
     void fetchStatus()
   }
 
+  function onReconnected() {
+    void fetchStatus()
+  }
+
   function onAvailabilityChanged(e: MessageEvent) {
     try {
       const data = JSON.parse(e.data) as { name: string; connected: boolean }
@@ -120,6 +124,7 @@ export const useRuntimeStore = defineStore('runtime', () => {
     sseBus.on('runtime.availability_changed', onAvailabilityChanged)
     sseBus.on('swarm.service_discovered', onServiceCountChanged)
     sseBus.on('swarm.service_removed', onServiceCountChanged)
+    sseBus.on('sse.reconnected', onReconnected)
   }
 
   function stopListening() {
@@ -127,6 +132,7 @@ export const useRuntimeStore = defineStore('runtime', () => {
     sseBus.off('runtime.availability_changed', onAvailabilityChanged)
     sseBus.off('swarm.service_discovered', onServiceCountChanged)
     sseBus.off('swarm.service_removed', onServiceCountChanged)
+    sseBus.off('sse.reconnected', onReconnected)
     if (retryTimer) {
       clearTimeout(retryTimer)
       retryTimer = null

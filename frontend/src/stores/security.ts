@@ -28,15 +28,21 @@ export const useSecurityStore = defineStore('security', () => {
     fetchAll()
   }
 
+  function onReconnected() {
+    fetchAll()
+  }
+
   function connectSSE() {
     sseBus.on('security.insights_changed', onInsightsChanged)
     sseBus.on('security.insights_resolved', onInsightsResolved)
+    sseBus.on('sse.reconnected', onReconnected)
     sseBus.connect()
   }
 
   function disconnectSSE() {
     sseBus.off('security.insights_changed', onInsightsChanged)
     sseBus.off('security.insights_resolved', onInsightsResolved)
+    sseBus.off('sse.reconnected', onReconnected)
     sseBus.disconnect()
   }
 

@@ -121,6 +121,12 @@ export const useStatusAdminStore = defineStore('statusAdmin', () => {
     fetchMaintenance()
   }
 
+  function onReconnected() {
+    fetchComponents()
+    fetchIncidents()
+    fetchMaintenance()
+  }
+
   const COMPONENT_EVENTS = [
     'status.component_created',
     'status.component_updated',
@@ -135,6 +141,7 @@ export const useStatusAdminStore = defineStore('statusAdmin', () => {
     sseBus.on('status.incident_resolved', onIncidentResolved)
     sseBus.on('status.maintenance_started', onMaintenanceStarted)
     sseBus.on('status.maintenance_ended', onMaintenanceEnded)
+    sseBus.on('sse.reconnected', onReconnected)
     sseBus.connect()
   }
 
@@ -145,6 +152,7 @@ export const useStatusAdminStore = defineStore('statusAdmin', () => {
     sseBus.off('status.incident_resolved', onIncidentResolved)
     sseBus.off('status.maintenance_started', onMaintenanceStarted)
     sseBus.off('status.maintenance_ended', onMaintenanceEnded)
+    sseBus.off('sse.reconnected', onReconnected)
     sseBus.disconnect()
   }
 

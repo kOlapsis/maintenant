@@ -25,13 +25,19 @@ export const usePostureStore = defineStore('posture', () => {
     fetchPosture()
   }
 
+  function onReconnected() {
+    fetchPosture()
+  }
+
   function connectSSE() {
     sseBus.on('security.posture_changed', onPostureChanged)
+    sseBus.on('sse.reconnected', onReconnected)
     sseBus.connect()
   }
 
   function disconnectSSE() {
     sseBus.off('security.posture_changed', onPostureChanged)
+    sseBus.off('sse.reconnected', onReconnected)
     sseBus.disconnect()
   }
 

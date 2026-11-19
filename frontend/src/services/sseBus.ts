@@ -11,7 +11,7 @@ const HIDDEN_GRACE_MS = 60_000
 
 type EventHandler = (event: MessageEvent) => void
 
-const listeners = new Map<string, Set<EventHandler>>()
+const listeners = new Map<string, Map<EventHandler, number>>()
 const registeredEvents = new Set<string>()
 let eventSource: EventSource | null = null
 let refCount = 0
@@ -28,7 +28,7 @@ export const suspended = ref(false)
 function dispatch(eventName: string, e: MessageEvent) {
   const handlers = listeners.get(eventName)
   if (handlers) {
-    for (const handler of handlers) {
+    for (const handler of handlers.keys()) {
       handler(e)
     }
   }
@@ -201,10 +201,10 @@ export function disconnect() {
 export function on(eventName: string, handler: EventHandler) {
   let handlers = listeners.get(eventName)
   if (!handlers) {
-    handlers = new Set()
+    handlers = new Map()
     listeners.set(eventName, handlers)
   }
-  handlers.add(handler)
+  handlers.set(handler, (handlers.get(handler) ?? 0) + 1)
 
   if (eventSource) {
     registerEvent(eventSource, eventName)
@@ -213,7 +213,12 @@ export function on(eventName: string, handler: EventHandler) {
 
 export function off(eventName: string, handler: EventHandler) {
   const handlers = listeners.get(eventName)
-  if (handlers) {
+  const count = handlers?.get(handler)
+  if (handlers && count !== undefined) {
+    if (count > 1) {
+      handlers.set(handler, count - 1)
+      return
+    }
     handlers.delete(handler)
     if (handlers.size === 0) {
       listeners.delete(eventName)

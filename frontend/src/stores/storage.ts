@@ -52,12 +52,18 @@ export const useStorageStore = defineStore('storage', () => {
     }
   }
 
+  function onReconnected() {
+    void fetchStatus()
+  }
+
   function startListening() {
     sseBus.on('storage.availability_changed', onAvailabilityChanged)
+    sseBus.on('sse.reconnected', onReconnected)
   }
 
   function stopListening() {
     sseBus.off('storage.availability_changed', onAvailabilityChanged)
+    sseBus.off('sse.reconnected', onReconnected)
   }
 
   return {

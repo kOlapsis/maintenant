@@ -372,6 +372,11 @@ export const useDashboardStore = defineStore('dashboard', () => {
     if (kubernetesInScope.value) kubernetes.fetchWorkloadsList()
   }
 
+  function onAgentConnectivityChanged() {
+    containers.fetchContainers()
+    endpoints.fetchEndpoints()
+  }
+
   function connectAllSSE() {
     containers.connectSSE()
     endpoints.connectSSE()
@@ -381,6 +386,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
     resourcesStore.connectSSE()
     sseBus.on('kubernetes.workload_changed', onWorkloadTopologyChanged)
     sseBus.on('kubernetes.topology_changed', onWorkloadTopologyChanged)
+    sseBus.on('agent.connected', onAgentConnectivityChanged)
+    sseBus.on('agent.disconnected', onAgentConnectivityChanged)
 
     // Refresh sparklines every 60s
     if (!sparklineInterval) {
@@ -398,6 +405,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
     resourcesStore.disconnectSSE()
     sseBus.off('kubernetes.workload_changed', onWorkloadTopologyChanged)
     sseBus.off('kubernetes.topology_changed', onWorkloadTopologyChanged)
+    sseBus.off('agent.connected', onAgentConnectivityChanged)
+    sseBus.off('agent.disconnected', onAgentConnectivityChanged)
 
     if (sparklineInterval) {
       clearInterval(sparklineInterval)

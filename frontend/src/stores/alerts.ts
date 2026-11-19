@@ -177,6 +177,7 @@ export const useAlertsStore = defineStore('alerts', () => {
 
   function onReconnected() {
     fetchActiveAlerts()
+    fetchSilenceRules()
   }
 
   function connectSSE() {

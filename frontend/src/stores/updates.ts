@@ -115,6 +115,12 @@ export const useUpdatesStore = defineStore('updates', () => {
     fetchSummary()
   }
 
+  function onReconnected() {
+    fetchSummary()
+    fetchAllUpdates()
+    fetchHostOSAction()
+  }
+
   function connectSSE() {
     sseBus.on('update.scan_started', onScanStarted)
     sseBus.on('update.scan_completed', onScanCompleted)
@@ -124,6 +130,7 @@ export const useUpdatesStore = defineStore('updates', () => {
     sseBus.on('cve.detected', onCveDetected)
     sseBus.on('risk.updated', onRiskUpdated)
     sseBus.on('agent.updated', onAgentUpdated)
+    sseBus.on('sse.reconnected', onReconnected)
     sseBus.connect()
   }
 
@@ -136,6 +143,7 @@ export const useUpdatesStore = defineStore('updates', () => {
     sseBus.off('cve.detected', onCveDetected)
     sseBus.off('risk.updated', onRiskUpdated)
     sseBus.off('agent.updated', onAgentUpdated)
+    sseBus.off('sse.reconnected', onReconnected)
     sseBus.disconnect()
   }
 
