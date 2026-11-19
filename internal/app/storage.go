@@ -161,7 +161,7 @@ func (a *App) startInstanceHeartbeat(ctx context.Context) {
 	}
 	a.reportPeers(ctx)
 
-	go func() {
+	a.background.Go(func() {
 		beat := time.NewTicker(instanceBeatInterval)
 		purge := time.NewTicker(instancePurgeInterval)
 		defer beat.Stop()
@@ -182,7 +182,7 @@ func (a *App) startInstanceHeartbeat(ctx context.Context) {
 				}
 			}
 		}
-	}()
+	})
 }
 
 // reportPeers refreshes the peer count and says so, once per transition into
@@ -225,7 +225,7 @@ func (a *App) startStorageSupervisor(ctx context.Context) {
 	}
 	a.broadcastStorageAvailability()
 
-	go func() {
+	a.background.Go(func() {
 		ticker := time.NewTicker(storageProbeInterval)
 		defer ticker.Stop()
 		for {
@@ -247,7 +247,7 @@ func (a *App) startStorageSupervisor(ctx context.Context) {
 				a.broadcastStorageAvailability()
 			}
 		}
-	}()
+	})
 }
 
 // broadcastStorageAvailability pushes the storage state to connected clients.

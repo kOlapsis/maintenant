@@ -164,12 +164,12 @@ func (a *App) reconcile(ctx context.Context) {
 func (a *App) startEventStream(ctx context.Context) <-chan struct{} {
 	done := make(chan struct{})
 	eventCh := a.rt.StreamEvents(ctx)
-	go func() {
+	a.background.Go(func() {
 		defer close(done)
 		for evt := range eventCh {
 			a.dispatchRuntimeEvent(ctx, evt)
 		}
-	}()
+	})
 	return done
 }
 
@@ -181,7 +181,7 @@ func (a *App) dispatchRuntimeEvent(ctx context.Context, evt runtime.RuntimeEvent
 		if m != nil {
 			m.events.ProcessEvent(ctx, evt)
 			if evt.ResourceType == runtime.ResourceService && evt.Action == "update" {
-				go m.updateTracker.CheckService(ctx, evt.ExternalID)
+				a.background.Go(func() { m.updateTracker.CheckService(ctx, evt.ExternalID) })
 			}
 		}
 		return
@@ -217,7 +217,9 @@ func (a *App) dispatchRuntimeEvent(ctx context.Context, evt runtime.RuntimeEvent
 		a.certSvc.SyncFromLabels(ctx, evt.ExternalID, evt.Labels)
 
 		if dr, ok := a.rt.(*docker.Runtime); ok {
-			go ScanContainerSecurity(ctx, dr, a.containerSvc, a.securitySvc, evt.ExternalID, a.logger)
+			a.background.Go(func() {
+				ScanContainerSecurity(ctx, dr, a.containerSvc, a.securitySvc, evt.ExternalID, a.logger)
+			})
 		}
 	case "stop", "die":
 		a.endpointSvc.HandleContainerStop(ctx, evt.ExternalID)
@@ -444,7 +446,7 @@ func (a *App) startRetentionCleanup(ctx context.Context) {
 	})
 
 	// Alert retention cleanup (90 days)
-	go func() {
+	a.background.Go(func() {
 		ticker := time.NewTicker(24 * time.Hour)
 		defer ticker.Stop()
 		for {
@@ -461,10 +463,10 @@ func (a *App) startRetentionCleanup(ctx context.Context) {
 				}
 			}
 		}
-	}()
+	})
 
 	// Update retention cleanup (30 days)
-	go func() {
+	a.background.Go(func() {
 		ticker := time.NewTicker(24 * time.Hour)
 		defer ticker.Stop()
 		for {
@@ -481,11 +483,11 @@ func (a *App) startRetentionCleanup(ctx context.Context) {
 				}
 			}
 		}
-	}()
+	})
 
 	// Escalation run retention (90 days, nightly at 03:00).
 	if a.escalationSvc != nil {
-		go a.escalationSvc.RunRetentionLoop(ctx)
+		a.background.Go(func() { a.escalationSvc.RunRetentionLoop(ctx) })
 	}
 }
 
@@ -614,12 +616,12 @@ func (a *App) activateSwarm(ctx context.Context, dr *docker.Runtime) {
 func (a *App) wireContainerMonitoring(ctx context.Context) <-chan struct{} {
 	a.reconcile(ctx)
 	streamDone := a.startEventStream(ctx)
-	go a.startContainerReconcile(ctx, streamDone)
+	a.background.Go(func() { a.startContainerReconcile(ctx, streamDone) })
 	if a.swarmDetector != nil {
 		a.requestSwarmRecheck()
 	}
 	if src, ok := a.rt.(kubernetes.SnapshotSource); ok {
-		go a.startKubernetesReconcile(ctx, src, streamDone)
+		a.background.Go(func() { a.startKubernetesReconcile(ctx, src, streamDone) })
 	}
 	return streamDone
 }
@@ -645,11 +647,11 @@ func (a *App) startRuntimeSupervisor(ctx context.Context) {
 	if a.rt.IsConnected() {
 		// Comportement nominal : câblage immédiat + supervision de fond.
 		streamDone := a.wireContainerMonitoring(ctx)
-		go a.supervisorLoop(ctx, streamDone, retry.New(runtimeRetryMin, runtimeRetryMax, 0))
+		a.background.Go(func() { a.supervisorLoop(ctx, streamDone, retry.New(runtimeRetryMin, runtimeRetryMax, 0)) })
 	} else {
 		// Dégradé au boot : reconnexion de fond.
 		a.logger.Info("container runtime unavailable, monitoring suspended", "runtime", a.rt.Name())
-		go a.supervisorLoop(ctx, nil, retry.New(runtimeRetryMin, runtimeRetryMax, 0))
+		a.background.Go(func() { a.supervisorLoop(ctx, nil, retry.New(runtimeRetryMin, runtimeRetryMax, 0)) })
 	}
 }
 

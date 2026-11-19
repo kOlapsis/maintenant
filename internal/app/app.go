@@ -116,6 +116,8 @@ type App struct {
 	// it before closing the database.
 	retentionStopped <-chan struct{}
 
+	background sync.WaitGroup
+
 	// Background services
 	checkEngine    *endpoint.CheckEngine
 	maintScheduler status.MaintenanceRunner
@@ -935,22 +937,22 @@ func (a *App) Start(ctx context.Context) error {
 
 	// Sustained container downtime (opt-in via MAINTENANT_CONTAINER_DOWN_AFTER).
 	if a.downDetector != nil {
-		go a.startContainerDownCheck(ctx)
+		a.background.Go(func() { a.startContainerDownCheck(ctx) })
 	}
 
 	if a.scorer != nil && a.scorer.Threshold() > 0 {
-		go a.startPostureCheck(ctx)
+		a.background.Go(func() { a.startPostureCheck(ctx) })
 	}
 
 	a.startOSEOL(ctx)
 
 	a.seedRestartAlertTracking(ctx)
-	go a.containerSvc.RunRestartRecoveryLoop(ctx)
+	a.background.Go(func() { a.containerSvc.RunRestartRecoveryLoop(ctx) })
 	a.seedKubernetesAlertTracking(ctx)
 
 	// Swarm context recheck (60s) — detects swarm activation/deactivation.
 	if a.swarmDetector != nil {
-		go a.startSwarmRecheck(ctx)
+		a.background.Go(func() { a.startSwarmRecheck(ctx) })
 	}
 
 	// Retention cleanup
@@ -992,7 +994,7 @@ func (a *App) enforceModeGate() error {
 func (a *App) startWebhookObserver(ctx context.Context) {
 	webhookObserverCh := make(chan v1.SSEEvent, 64)
 	a.broker.AddObserver(webhookObserverCh)
-	go func() {
+	a.background.Go(func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -1004,7 +1006,7 @@ func (a *App) startWebhookObserver(ctx context.Context) {
 				a.webhookDispatcher.HandleEvent(ctx, evt.Type, evt.Data)
 			}
 		}
-	}()
+	})
 }
 
 // startBackgroundServices starts the loops that always run, regardless of runtime availability.
@@ -1014,13 +1016,13 @@ func (a *App) startBackgroundServices(ctx context.Context) {
 	go a.subscribeRL.Start(ctx)
 	go a.pingRL.Start(ctx)
 	go a.pingTokenRL.Start(ctx)
-	go a.resourceSvc.Start(ctx)
-	go a.certSvc.Start(ctx)
+	a.background.Go(func() { a.resourceSvc.Start(ctx) })
+	a.background.Go(func() { a.certSvc.Start(ctx) })
 	if a.maintScheduler != nil {
-		go a.maintScheduler.Start(ctx)
+		a.background.Go(func() { a.maintScheduler.Start(ctx) })
 	}
-	go a.subscriberSvc.Start(ctx)
-	go a.updateSvc.Start(ctx)
+	a.background.Go(func() { a.subscriberSvc.Start(ctx) })
+	a.background.Go(func() { a.updateSvc.Start(ctx) })
 }
 
 // startAgentWatchers starts the agent session ring-buffer tick and stale watcher.
@@ -1040,7 +1042,7 @@ func (a *App) startEnrollmentTokenGC(ctx context.Context) {
 	if a.agentStore == nil {
 		return
 	}
-	go func() {
+	a.background.Go(func() {
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for {
@@ -1053,7 +1055,7 @@ func (a *App) startEnrollmentTokenGC(ctx context.Context) {
 				}
 			}
 		}
-	}()
+	})
 }
 
 // startAgentServer serves the agent gRPC server where multi-host is open, then schedules the embedded agent.
@@ -1156,6 +1158,8 @@ func (a *App) Shutdown() error {
 		}
 	}
 
+	a.waitBackground(shutdownCtx)
+
 	a.stopWriter()
 
 	// Drop this instance's row before closing: a clean restart must not see
@@ -1171,6 +1175,23 @@ func (a *App) Shutdown() error {
 
 	a.logger.Info("maintenant stopped")
 	return nil
+}
+
+// waitBackground waits for the loops started with a.background and the Swarm manager's loops, until ctx expires.
+func (a *App) waitBackground(ctx context.Context) {
+	stopped := make(chan struct{})
+	go func() {
+		a.background.Wait()
+		if m := a.swarmMgr.Load(); m != nil {
+			m.loops.Wait()
+		}
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-ctx.Done():
+		a.logger.Warn("background loops still running at shutdown, closing the database anyway")
+	}
 }
 
 // startEmbeddedAgent launches a local agent goroutine connecting to the local gRPC endpoint.
@@ -1230,7 +1251,7 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 		SpoolMaxAgeSeconds:  a.cfg.MultiHost.AgentSpoolMaxAgeSeconds,
 	}
 
-	go func() {
+	a.background.Go(func() {
 		// Short delay to let the gRPC server open its listener.
 		select {
 		case <-ctx.Done():
@@ -1240,7 +1261,7 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 		if err := agent.Run(ctx, agentCfg, a.logger.With("component", "embedded-agent")); err != nil && !errors.Is(err, context.Canceled) {
 			a.logger.Error("embedded agent exited", "err", err)
 		}
-	}()
+	})
 
 	a.logger.Info("embedded agent scheduled", "grpc_url", grpcURL)
 }
