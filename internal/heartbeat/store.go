@@ -21,16 +21,18 @@ type HeartbeatStore interface {
 	DeleteHeartbeat(ctx context.Context, id string) error
 
 	// State updates
-	UpdateHeartbeatState(ctx context.Context, id string, status HeartbeatStatus, alertState AlertState,
+	TransitionHeartbeatState(ctx context.Context, id string, fromStatus HeartbeatStatus, fromDeadline *time.Time,
+		status HeartbeatStatus, alertState AlertState,
 		lastPingAt *time.Time, nextDeadlineAt *time.Time, currentRunStartedAt *time.Time,
 		lastExitCode *int, lastDurationMs *int64,
-		consecutiveFailures, consecutiveSuccesses int) error
+		consecutiveFailures, consecutiveSuccesses int) (bool, error)
 	PauseHeartbeat(ctx context.Context, id string, at time.Time) error
 	ResumeHeartbeat(ctx context.Context, id string, at, nextDeadlineAt time.Time) error
 	EndPause(ctx context.Context, id string, at time.Time) error
 
 	// Deadline scanning
 	ListOverdueHeartbeats(ctx context.Context, now time.Time) ([]*Heartbeat, error)
+	PostponeOverdueDeadlines(ctx context.Context, now time.Time) (int64, error)
 
 	// License gating
 	CountActiveHeartbeats(ctx context.Context) (int, error)

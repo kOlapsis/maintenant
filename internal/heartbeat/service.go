@@ -45,6 +45,7 @@ var (
 	ErrLimitReached      = errors.New("heartbeat limit reached")
 	ErrInvalidInput      = errors.New("invalid input")
 	ErrInvalidExitCode   = errors.New("invalid exit code")
+	ErrStateConflict     = errors.New("heartbeat state kept changing")
 )
 
 // Deps holds all dependencies for the heartbeat Service.
@@ -277,7 +278,6 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 	s.logger.Debug("heartbeat: ping received", "heartbeat_id", h.ID, "source_ip", sourceIP)
 
 	now := time.Now()
-	previousStatus := h.Status
 
 	// Record ping
 	storedPayload := s.filterPayload(payload)
@@ -295,23 +295,43 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 
 	// State transition
 	newStatus := StatusUp
-	deadline := now.Add(time.Duration(h.IntervalSeconds+h.GraceSeconds) * time.Second)
-	h.LastPingAt = &now
-	h.NextDeadlineAt = &deadline
-	h.ConsecutiveSuccesses++
-	h.ConsecutiveFailures = 0
+	var runDuration *int64
+	var alertState AlertState
+	var recovering bool
+	h, previousStatus, _, err := s.commitState(ctx, h, func(h *Heartbeat) (HeartbeatStatus, AlertState, bool) {
+		deadline := now.Add(time.Duration(h.IntervalSeconds+h.GraceSeconds) * time.Second)
+		h.LastPingAt = &now
+		h.NextDeadlineAt = &deadline
+		h.ConsecutiveSuccesses++
+		h.ConsecutiveFailures = 0
 
-	// Handle started → up (completion ping)
-	if previousStatus == StatusStarted && h.CurrentRunStartedAt != nil {
-		durationMs := now.Sub(*h.CurrentRunStartedAt).Milliseconds()
-		h.LastDurationMs = &durationMs
-		h.CurrentRunStartedAt = nil
-		s.logger.Debug("heartbeat: execution completed", "heartbeat_id", h.ID, "duration_ms", durationMs)
+		// Handle started → up (completion ping)
+		runDuration = nil
+		if h.Status == StatusStarted && h.CurrentRunStartedAt != nil {
+			d := now.Sub(*h.CurrentRunStartedAt).Milliseconds()
+			runDuration = &d
+			h.LastDurationMs = &d
+			h.CurrentRunStartedAt = nil
+		}
 
-		// Complete current execution
+		// Recover from a missed deadline or from an alerting state left
+		// by a start/finish pair (down -> start -> finish never crosses StatusDown here).
+		alertState = h.AlertState
+		recovering = h.Status == StatusDown || h.AlertState == AlertAlerting
+		if recovering {
+			alertState = AlertNormal
+		}
+		return newStatus, alertState, true
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if runDuration != nil {
+		s.logger.Debug("heartbeat: execution completed", "heartbeat_id", h.ID, "duration_ms", *runDuration)
 		exec, err := s.store.GetCurrentExecution(ctx, h.ID)
 		if err == nil && exec != nil {
-			if err := s.store.UpdateExecution(ctx, exec.ID, &now, &durationMs, nil, OutcomeSuccess, storedPayload); err != nil {
+			if err := s.store.UpdateExecution(ctx, exec.ID, &now, runDuration, nil, OutcomeSuccess, storedPayload); err != nil {
 				s.logger.Error("update execution", "execution_id", exec.ID, "error", err)
 			}
 		}
@@ -326,21 +346,6 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 		if _, err := s.store.InsertExecution(ctx, exec); err != nil {
 			s.logger.Error("insert execution", "heartbeat_id", h.ID, "error", err)
 		}
-	}
-
-	// Update state. Recover from a missed deadline or from an alerting state left
-	// by a start/finish pair (down -> start -> finish never crosses StatusDown here).
-	alertState := h.AlertState
-	recovering := previousStatus == StatusDown || h.AlertState == AlertAlerting
-	if recovering {
-		alertState = AlertNormal
-	}
-
-	if err := s.store.UpdateHeartbeatState(ctx, h.ID, newStatus, alertState,
-		h.LastPingAt, h.NextDeadlineAt, h.CurrentRunStartedAt,
-		h.LastExitCode, h.LastDurationMs,
-		h.ConsecutiveFailures, h.ConsecutiveSuccesses); err != nil {
-		return nil, fmt.Errorf("update heartbeat state: %w", err)
 	}
 	s.endPause(ctx, h.ID, previousStatus, now)
 
@@ -406,6 +411,18 @@ func (s *Service) ProcessStartPing(ctx context.Context, token string, sourceIP, 
 		s.logger.Error("insert start ping", "heartbeat_id", h.ID, "error", err)
 	}
 
+	// Update state
+	newStatus := StatusStarted
+	h, previousStatus, _, err := s.commitState(ctx, h, func(h *Heartbeat) (HeartbeatStatus, AlertState, bool) {
+		deadline := now.Add(time.Duration(h.IntervalSeconds+h.GraceSeconds) * time.Second)
+		h.NextDeadlineAt = &deadline
+		h.CurrentRunStartedAt = &now
+		return newStatus, h.AlertState, true
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	// Close any in-progress execution as timeout
 	currentExec, err := s.store.GetCurrentExecution(ctx, h.ID)
 	if err == nil && currentExec != nil {
@@ -423,18 +440,6 @@ func (s *Service) ProcessStartPing(ctx context.Context, token string, sourceIP, 
 	}
 	if _, err := s.store.InsertExecution(ctx, exec); err != nil {
 		s.logger.Error("insert start execution", "heartbeat_id", h.ID, "error", err)
-	}
-
-	// Update state
-	newStatus := StatusStarted
-	deadline := now.Add(time.Duration(h.IntervalSeconds+h.GraceSeconds) * time.Second)
-	previousStatus := h.Status
-
-	if err := s.store.UpdateHeartbeatState(ctx, h.ID, newStatus, h.AlertState,
-		h.LastPingAt, &deadline, &now,
-		h.LastExitCode, h.LastDurationMs,
-		h.ConsecutiveFailures, h.ConsecutiveSuccesses); err != nil {
-		return nil, fmt.Errorf("update heartbeat state: %w", err)
 	}
 	s.endPause(ctx, h.ID, previousStatus, now)
 
@@ -454,8 +459,6 @@ func (s *Service) ProcessStartPing(ctx context.Context, token string, sourceIP, 
 	}
 
 	h.Status = newStatus
-	h.CurrentRunStartedAt = &now
-	h.NextDeadlineAt = &deadline
 	return h, nil
 }
 
@@ -475,7 +478,6 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCod
 	s.logger.Debug("heartbeat: exit code ping received", "heartbeat_id", h.ID, "exit_code", exitCode)
 
 	now := time.Now()
-	previousStatus := h.Status
 
 	// Record ping
 	storedPayload := s.filterPayload(payload)
@@ -492,37 +494,48 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCod
 		s.logger.Error("insert exit code ping", "heartbeat_id", h.ID, "error", err)
 	}
 
-	// Reset deadline (job did run)
 	newStatus := StatusUp
-	deadline := now.Add(time.Duration(h.IntervalSeconds+h.GraceSeconds) * time.Second)
-	h.LastPingAt = &now
-	h.NextDeadlineAt = &deadline
-	h.LastExitCode = &exitCode
-
-	// Handle started → up (completion)
 	var durationMs *int64
-	if previousStatus == StatusStarted && h.CurrentRunStartedAt != nil {
-		d := now.Sub(*h.CurrentRunStartedAt).Milliseconds()
-		durationMs = &d
-		h.LastDurationMs = &d
-		h.CurrentRunStartedAt = nil
-	}
-
-	// Determine outcome and alert state
 	var outcome ExecutionOutcome
-	alertState := h.AlertState
-	if exitCode == 0 {
-		outcome = OutcomeSuccess
-		h.ConsecutiveSuccesses++
-		h.ConsecutiveFailures = 0
-		if alertState == AlertAlerting {
-			alertState = AlertNormal
+	var alertState AlertState
+	var recovering bool
+	h, previousStatus, _, err := s.commitState(ctx, h, func(h *Heartbeat) (HeartbeatStatus, AlertState, bool) {
+		// Reset deadline (job did run)
+		deadline := now.Add(time.Duration(h.IntervalSeconds+h.GraceSeconds) * time.Second)
+		h.LastPingAt = &now
+		h.NextDeadlineAt = &deadline
+		h.LastExitCode = &exitCode
+
+		// Handle started → up (completion)
+		durationMs = nil
+		if h.Status == StatusStarted && h.CurrentRunStartedAt != nil {
+			d := now.Sub(*h.CurrentRunStartedAt).Milliseconds()
+			durationMs = &d
+			h.LastDurationMs = &d
+			h.CurrentRunStartedAt = nil
 		}
-	} else {
-		outcome = OutcomeFailure
-		h.ConsecutiveFailures++
-		h.ConsecutiveSuccesses = 0
-		alertState = AlertAlerting
+
+		// Determine outcome and alert state
+		alertState = h.AlertState
+		recovering = false
+		if exitCode == 0 {
+			outcome = OutcomeSuccess
+			h.ConsecutiveSuccesses++
+			h.ConsecutiveFailures = 0
+			if alertState == AlertAlerting {
+				alertState = AlertNormal
+			}
+			recovering = h.Status == StatusDown || h.AlertState == AlertAlerting
+		} else {
+			outcome = OutcomeFailure
+			h.ConsecutiveFailures++
+			h.ConsecutiveSuccesses = 0
+			alertState = AlertAlerting
+		}
+		return newStatus, alertState, true
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	// Update or create execution record
@@ -543,14 +556,6 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCod
 		if _, err := s.store.InsertExecution(ctx, exec); err != nil {
 			s.logger.Error("insert execution", "heartbeat_id", h.ID, "error", err)
 		}
-	}
-
-	// Update state
-	if err := s.store.UpdateHeartbeatState(ctx, h.ID, newStatus, alertState,
-		h.LastPingAt, h.NextDeadlineAt, h.CurrentRunStartedAt,
-		h.LastExitCode, h.LastDurationMs,
-		h.ConsecutiveFailures, h.ConsecutiveSuccesses); err != nil {
-		return nil, fmt.Errorf("update heartbeat state: %w", err)
 	}
 	s.endPause(ctx, h.ID, previousStatus, now)
 
@@ -587,7 +592,7 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCod
 				"message":      fmt.Sprintf("exit code %d", exitCode),
 			})
 		}
-	} else if previousStatus == StatusDown || h.AlertState == AlertAlerting {
+	} else if recovering {
 		s.emitEvent(event.HeartbeatRecovery, map[string]interface{}{
 			"heartbeat_id": h.ID,
 			"name":         h.Name,
@@ -608,6 +613,11 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCod
 // --- Deadline Checker ---
 
 func (s *Service) StartDeadlineChecker(ctx context.Context) {
+	if n, err := s.store.PostponeOverdueDeadlines(ctx, time.Now()); err != nil {
+		s.logger.Error("postpone deadlines passed while stopped", "error", err)
+	} else if n > 0 {
+		s.logger.Info("heartbeat: deadlines passed while stopped postponed", "count", n)
+	}
 	go func() {
 		s.logger.Info("heartbeat: deadline checker started")
 		ticker := time.NewTicker(15 * time.Second)
@@ -634,25 +644,28 @@ func (s *Service) checkDeadlines(ctx context.Context) {
 	}
 
 	for _, h := range overdue {
-		previousStatus := h.Status
+		h, previousStatus, applied, err := s.commitState(ctx, h, func(h *Heartbeat) (HeartbeatStatus, AlertState, bool) {
+			if !isOverdue(h, now) {
+				return "", "", false
+			}
+			h.ConsecutiveFailures++
+			h.ConsecutiveSuccesses = 0
+			return StatusDown, AlertAlerting, true
+		})
+		if err != nil {
+			s.logger.Error("update overdue heartbeat", "heartbeat_id", h.ID, "error", err)
+			continue
+		}
+		if !applied {
+			continue
+		}
 
 		alertMsg := "Heartbeat missed deadline"
 		if previousStatus == StatusStarted {
 			alertMsg = "Job started but never finished"
 		}
-
 		h.Status = StatusDown
 		h.AlertState = AlertAlerting
-		h.ConsecutiveFailures++
-		h.ConsecutiveSuccesses = 0
-
-		if err := s.store.UpdateHeartbeatState(ctx, h.ID, StatusDown, AlertAlerting,
-			h.LastPingAt, h.NextDeadlineAt, h.CurrentRunStartedAt,
-			h.LastExitCode, h.LastDurationMs,
-			h.ConsecutiveFailures, h.ConsecutiveSuccesses); err != nil {
-			s.logger.Error("update overdue heartbeat", "heartbeat_id", h.ID, "error", err)
-			continue
-		}
 
 		// Mark in-progress execution as timeout
 		if previousStatus == StatusStarted {
@@ -693,6 +706,47 @@ func (s *Service) checkDeadlines(ctx context.Context) {
 	}
 
 	s.logger.Debug("heartbeat: deadline check completed", "overdue_count", len(overdue))
+}
+
+func isOverdue(h *Heartbeat, now time.Time) bool {
+	return (h.Status == StatusUp || h.Status == StatusStarted) && h.NextDeadlineAt != nil && h.NextDeadlineAt.Before(now)
+}
+
+const maxStateAttempts = 5
+
+// commitState applies compute to h and writes the result only if the row still holds the status and deadline h was
+// read with; when a concurrent write got there first it re-reads the row and computes again. compute reports false to
+// give up on the fresh row. It returns the row it wrote (or last read), the status that row had before, and whether it wrote.
+func (s *Service) commitState(ctx context.Context, h *Heartbeat,
+	compute func(h *Heartbeat) (HeartbeatStatus, AlertState, bool)) (*Heartbeat, HeartbeatStatus, bool, error) {
+	for attempt := 1; ; attempt++ {
+		fromStatus, fromDeadline := h.Status, h.NextDeadlineAt
+		status, alertState, ok := compute(h)
+		if !ok {
+			return h, fromStatus, false, nil
+		}
+		won, err := s.store.TransitionHeartbeatState(ctx, h.ID, fromStatus, fromDeadline, status, alertState,
+			h.LastPingAt, h.NextDeadlineAt, h.CurrentRunStartedAt,
+			h.LastExitCode, h.LastDurationMs,
+			h.ConsecutiveFailures, h.ConsecutiveSuccesses)
+		if err != nil {
+			return h, fromStatus, false, fmt.Errorf("update heartbeat state: %w", err)
+		}
+		if won {
+			return h, fromStatus, true, nil
+		}
+		if attempt == maxStateAttempts {
+			return h, fromStatus, false, fmt.Errorf("update heartbeat state: %w", ErrStateConflict)
+		}
+		fresh, err := s.store.GetHeartbeatByID(ctx, h.ID)
+		if err != nil {
+			return h, fromStatus, false, err
+		}
+		if fresh == nil {
+			return h, fromStatus, false, ErrHeartbeatNotFound
+		}
+		h = fresh
+	}
 }
 
 // --- Pause / Resume ---
