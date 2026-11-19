@@ -217,6 +217,7 @@ func (f *storeErrorFixture) barrier(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return len(f.activeRows(id)) == 1
 	}, 10*time.Second, 5*time.Millisecond, "the engine must get past the events sent before the barrier")
+	f.engine.Settle()
 }
 
 func (f *storeErrorFixture) activeRows(entityID string) []*alert.Alert {
