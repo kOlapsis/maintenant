@@ -620,9 +620,13 @@ func (e *Engine) dispatchNotifications(ctx context.Context, routeBy *Alert, payl
 
 	// Resolve channels from active alert triggers.
 	if e.triggerStore != nil {
-		triggers, err := e.triggerStore.ListEnabledTriggers(ctx)
-		if err != nil {
-			e.logger.Error("alert engine: list triggers", "error", err)
+		var triggers []*AlertTrigger
+		if err := withRetry(ctx, func() (err error) {
+			triggers, err = e.triggerStore.ListEnabledTriggers(ctx)
+			return err
+		}); err != nil {
+			e.logger.Warn("alert engine: alert not notified, alert triggers unreadable", "error", err, "alert_id", routeBy.ID)
+			return
 		}
 		for _, t := range triggers {
 			if !matchesTrigger(t, routeBy) {
@@ -632,9 +636,12 @@ func (e *Engine) dispatchNotifications(ctx context.Context, routeBy *Alert, payl
 				if dispatched[chID] {
 					continue
 				}
-				ch, chErr := e.channelStore.GetChannel(ctx, chID)
-				if chErr != nil {
-					e.logger.Error("alert engine: get trigger channel", "error", chErr, "channel_id", chID)
+				var ch *NotificationChannel
+				if err := withRetry(ctx, func() (err error) {
+					ch, err = e.channelStore.GetChannel(ctx, chID)
+					return err
+				}); err != nil {
+					e.logger.Warn("alert engine: channel not notified, channel unreadable", "error", err, "alert_id", routeBy.ID, "channel_id", chID)
 					continue
 				}
 				if ch == nil || !ch.Enabled {
