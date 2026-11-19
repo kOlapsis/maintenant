@@ -57,6 +57,14 @@ const (
 	DeliverySuspended = "suspended"
 )
 
+// Notification event types, what a delivery tells its channel.
+const (
+	EventFired          = "fired"
+	EventSeverityRaised = "severity_raised"
+	EventReminder       = "reminder"
+	EventResolved       = "resolved"
+)
+
 // Event represents a unified alert event sent via Go channel from any monitoring service.
 type Event struct {
 	Source     string         // "container", "endpoint", "heartbeat", "certificate", "resource"
@@ -142,14 +150,17 @@ type AlertTrigger struct {
 
 // NotificationDelivery represents a delivery attempt record.
 type NotificationDelivery struct {
-	ID        string    `json:"id"`
-	AlertID   string    `json:"alert_id"`
-	ChannelID string    `json:"channel_id"`
-	Status    string    `json:"status"`
-	Attempts  int       `json:"attempts"`
-	LastError string    `json:"last_error,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID            string    `json:"id"`
+	AlertID       string    `json:"alert_id"`
+	ChannelID     string    `json:"channel_id"`
+	EventType     string    `json:"event_type"`
+	Status        string    `json:"status"`
+	Attempts      int       `json:"attempts"`
+	LastError     string    `json:"last_error,omitempty"`
+	NextAttemptAt time.Time `json:"next_attempt_at"`
+	Payload       *Alert    `json:"-"` // the alert exactly as notified
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // SilenceRule represents a time-bounded notification suppression.
@@ -234,6 +245,14 @@ type ChannelStore interface {
 	InsertDelivery(ctx context.Context, d *NotificationDelivery) (string, error)
 	UpdateDelivery(ctx context.Context, d *NotificationDelivery) error
 	ListDeliveriesByAlert(ctx context.Context, alertID string) ([]*NotificationDelivery, error)
+}
+
+// DeliveryQueue is the durable queue a ChannelStore keeps of its pending deliveries.
+type DeliveryQueue interface {
+	// ListDueDeliveries lists up to limit pending deliveries due at now, without those that wait behind a pending delivery of the same alert to the same channel.
+	ListDueDeliveries(ctx context.Context, now time.Time, limit int) ([]*NotificationDelivery, error)
+	// ClaimDelivery holds the attempt due at d.NextAttemptAt until until, and reports false when d has moved on or waits behind an earlier delivery.
+	ClaimDelivery(ctx context.Context, d *NotificationDelivery, until time.Time) (bool, error)
 }
 
 // TriggerStore defines the persistence interface for AlertTrigger objects

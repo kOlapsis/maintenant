@@ -433,14 +433,18 @@ CREATE TABLE notification_deliveries (
     id            TEXT PRIMARY KEY NOT NULL,
     alert_id      TEXT NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
     channel_id    TEXT NOT NULL REFERENCES notification_channels(id) ON DELETE CASCADE,
+    event_type    TEXT NOT NULL DEFAULT '',
     status        TEXT NOT NULL DEFAULT 'pending',
     attempts      INTEGER NOT NULL DEFAULT 0,
     last_error    TEXT,
+    payload       TEXT,
+    next_attempt_at BIGINT NOT NULL DEFAULT 0,
     created_at    BIGINT NOT NULL DEFAULT 0,
     updated_at    BIGINT NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_deliveries_alert ON notification_deliveries(alert_id);
 CREATE INDEX idx_deliveries_channel_status ON notification_deliveries(channel_id, status);
+CREATE INDEX idx_deliveries_due ON notification_deliveries(status, next_attempt_at);
 
 CREATE TABLE silence_rules (
     id            TEXT PRIMARY KEY NOT NULL,

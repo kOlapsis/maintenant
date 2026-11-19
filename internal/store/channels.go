@@ -6,6 +6,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -136,25 +137,36 @@ func (s *ChannelStoreImpl) GetChannelHealth(ctx context.Context, channelID strin
 
 // --- Notification Deliveries ---
 
+// InsertDelivery stores d as a pending delivery due at once, and sets its id and dates.
 func (s *ChannelStoreImpl) InsertDelivery(ctx context.Context, d *alert.NotificationDelivery) (string, error) {
-	d.ID = uid.New()
+	payload := ""
+	if d.Payload != nil {
+		b, err := json.Marshal(d.Payload)
+		if err != nil {
+			return "", fmt.Errorf("encode delivery payload: %w", err)
+		}
+		payload = string(b)
+	}
+	id := uid.New()
 	now := time.Now().Unix()
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO notification_deliveries (id, alert_id, channel_id, status, attempts, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		d.ID, d.AlertID, d.ChannelID, d.Status, d.Attempts, now, now,
+		`INSERT INTO notification_deliveries (id, alert_id, channel_id, event_type, status, attempts, payload, next_attempt_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, d.AlertID, d.ChannelID, d.EventType, d.Status, d.Attempts, NullableString(payload), now, now, now,
 	)
 	if err != nil {
 		return "", fmt.Errorf("insert delivery: %w", err)
 	}
+	d.ID = id
+	d.CreatedAt, d.UpdatedAt, d.NextAttemptAt = time.Unix(now, 0), time.Unix(now, 0), time.Unix(now, 0)
 	return d.ID, nil
 }
 
 func (s *ChannelStoreImpl) UpdateDelivery(ctx context.Context, d *alert.NotificationDelivery) error {
 	_, err := s.writer.Exec(ctx,
-		`UPDATE notification_deliveries SET status=?, attempts=?, last_error=?, updated_at=?
+		`UPDATE notification_deliveries SET status=?, attempts=?, last_error=?, next_attempt_at=?, updated_at=?
 		WHERE id=?`,
-		d.Status, d.Attempts, NullableString(d.LastError),
+		d.Status, d.Attempts, NullableString(d.LastError), d.NextAttemptAt.Unix(),
 		time.Now().Unix(), d.ID,
 	)
 	if err != nil {
@@ -163,13 +175,57 @@ func (s *ChannelStoreImpl) UpdateDelivery(ctx context.Context, d *alert.Notifica
 	return nil
 }
 
+// ClaimDelivery holds the attempt of d due at d.NextAttemptAt until until, unless another worker took it, d moved on,
+// or a delivery of the same alert to the same channel created before d is still pending.
+func (s *ChannelStoreImpl) ClaimDelivery(ctx context.Context, d *alert.NotificationDelivery, until time.Time) (bool, error) {
+	res, err := s.writer.Exec(ctx,
+		`UPDATE notification_deliveries SET next_attempt_at = ?, updated_at = ?
+		WHERE id = ? AND status = ? AND next_attempt_at = ?
+		AND NOT EXISTS (SELECT 1 FROM notification_deliveries p
+			WHERE p.alert_id = ? AND p.channel_id = ? AND p.status = ? AND p.id < ?)`,
+		until.Unix(), time.Now().Unix(),
+		d.ID, alert.DeliveryPending, d.NextAttemptAt.Unix(),
+		d.AlertID, d.ChannelID, alert.DeliveryPending, d.ID,
+	)
+	if err != nil {
+		return false, fmt.Errorf("claim delivery: %w", err)
+	}
+	if res.RowsAffected != 1 {
+		return false, nil
+	}
+	d.NextAttemptAt = time.Unix(until.Unix(), 0)
+	return true, nil
+}
+
+// ListDueDeliveries lists up to limit pending deliveries due at now, oldest due first, without those that wait
+// behind an earlier pending delivery of the same alert to the same channel.
+func (s *ChannelStoreImpl) ListDueDeliveries(ctx context.Context, now time.Time, limit int) ([]*alert.NotificationDelivery, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+deliveryColumns+` FROM notification_deliveries d
+		WHERE d.status = ? AND d.next_attempt_at <= ?
+		AND NOT EXISTS (SELECT 1 FROM notification_deliveries p
+			WHERE p.alert_id = d.alert_id AND p.channel_id = d.channel_id AND p.status = ? AND p.id < d.id)
+		ORDER BY d.next_attempt_at, d.id LIMIT ?`,
+		alert.DeliveryPending, now.Unix(), alert.DeliveryPending, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list due deliveries: %w", err)
+	}
+	return scanDeliveries(rows)
+}
+
 func (s *ChannelStoreImpl) ListDeliveriesByAlert(ctx context.Context, alertID string) ([]*alert.NotificationDelivery, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, alert_id, channel_id, status, attempts, last_error, created_at, updated_at
-		FROM notification_deliveries WHERE alert_id = ? ORDER BY created_at ASC`, alertID)
+		`SELECT `+deliveryColumns+` FROM notification_deliveries d WHERE d.alert_id = ? ORDER BY d.created_at ASC, d.id ASC`, alertID)
 	if err != nil {
 		return nil, fmt.Errorf("list deliveries: %w", err)
 	}
+	return scanDeliveries(rows)
+}
+
+const deliveryColumns = `d.id, d.alert_id, d.channel_id, d.event_type, d.status, d.attempts, d.last_error, d.payload,
+	d.next_attempt_at, d.created_at, d.updated_at`
+
+func scanDeliveries(rows *sql.Rows) ([]*alert.NotificationDelivery, error) {
 	defer func(rows *sql.Rows) {
 		_ = rows.Close()
 	}(rows)
@@ -177,14 +233,22 @@ func (s *ChannelStoreImpl) ListDeliveriesByAlert(ctx context.Context, alertID st
 	var deliveries []*alert.NotificationDelivery
 	for rows.Next() {
 		d := &alert.NotificationDelivery{}
-		var lastError sql.NullString
-		var createdAt, updatedAt int64
-		if err := rows.Scan(&d.ID, &d.AlertID, &d.ChannelID, &d.Status, &d.Attempts, &lastError, &createdAt, &updatedAt); err != nil {
+		var lastError, payload sql.NullString
+		var nextAttemptAt, createdAt, updatedAt int64
+		if err := rows.Scan(&d.ID, &d.AlertID, &d.ChannelID, &d.EventType, &d.Status, &d.Attempts, &lastError, &payload,
+			&nextAttemptAt, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		if lastError.Valid {
 			d.LastError = lastError.String
 		}
+		if payload.Valid {
+			a := &alert.Alert{}
+			if json.Unmarshal([]byte(payload.String), a) == nil {
+				d.Payload = a
+			}
+		}
+		d.NextAttemptAt = time.Unix(nextAttemptAt, 0)
 		d.CreatedAt = time.Unix(createdAt, 0)
 		d.UpdatedAt = time.Unix(updatedAt, 0)
 		deliveries = append(deliveries, d)
