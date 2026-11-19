@@ -96,6 +96,7 @@ export const useTriggersStore = defineStore('triggers', () => {
     sseBus.off('trigger.created', onTriggerCreated)
     sseBus.off('trigger.updated', onTriggerUpdated)
     sseBus.off('trigger.deleted', onTriggerDeleted)
+    sseBus.disconnect()
   }
 
   return {
