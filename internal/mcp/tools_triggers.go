@@ -117,7 +117,7 @@ func validateTriggerCommon(t *triggerInput) error {
 		}
 		seen[id] = true
 	}
-	return nil
+	return alert.ValidateSeverityFilter(t.FilterSeverities)
 }
 
 // --- handlers ---

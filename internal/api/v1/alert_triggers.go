@@ -255,7 +255,7 @@ func validateTriggerInput(t *triggerInput) error {
 		}
 		seen[id] = true
 	}
-	return nil
+	return alert.ValidateSeverityFilter(t.FilterSeverities)
 }
 
 // refuseAdvancedFilters writes the edition refusal when a request sets a scope
