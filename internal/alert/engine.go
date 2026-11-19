@@ -270,7 +270,10 @@ func (e *Engine) reloadSilencedAlerts(ctx context.Context) error {
 		e.mu.RLock()
 		_, active := e.activeAlerts[key]
 		e.mu.RUnlock()
-		if active || !e.covered(ctx, rules, eventOf(a)) {
+		if active {
+			continue
+		}
+		if covered, err := e.covered(ctx, rules, eventOf(a)); err == nil && !covered {
 			continue
 		}
 		e.silenced[key] = a
@@ -306,7 +309,12 @@ func (e *Engine) promoteUncovered(ctx context.Context) {
 		return
 	}
 	for key, a := range e.silenced {
-		if !e.covered(ctx, rules, eventOf(a)) {
+		covered, err := e.covered(ctx, rules, eventOf(a))
+		if err != nil {
+			e.logger.Error("alert engine: maintenance suppressor error, alert kept silenced", "error", err, "alert_id", a.ID)
+			continue
+		}
+		if !covered {
 			e.promote(ctx, key, a)
 		}
 	}
@@ -720,11 +728,15 @@ func (e *Engine) checkSilenceRules(ctx context.Context, evt Event) bool {
 		e.logger.Error("alert engine: get silence rules", "error", err)
 		return false
 	}
-	return e.covered(ctx, rules, evt)
+	covered, err := e.covered(ctx, rules, evt)
+	if err != nil {
+		e.logger.Error("alert engine: maintenance suppressor error", "error", err)
+	}
+	return covered
 }
 
 // covered reports whether one of rules or a maintenance window covers the event's entity.
-func (e *Engine) covered(ctx context.Context, rules []*SilenceRule, evt Event) bool {
+func (e *Engine) covered(ctx context.Context, rules []*SilenceRule, evt Event) (bool, error) {
 	for _, rule := range rules {
 		if matchesSilenceRule(rule, evt) {
 			e.logger.Debug("alert: silence rule matched",
@@ -732,24 +744,23 @@ func (e *Engine) covered(ctx context.Context, rules []*SilenceRule, evt Event) b
 				"source", evt.Source,
 				"entity_type", evt.EntityType,
 			)
-			return true
+			return true, nil
 		}
 	}
 
 	// Consult maintenance suppressor extension (Pro: calendar-based suppression)
 	suppressed, err := e.suppressor.IsSuppressed(ctx, evt.Source, evt.EntityType, evt.EntityID)
 	if err != nil {
-		e.logger.Error("alert engine: maintenance suppressor error", "error", err)
-	} else if suppressed {
+		return false, err
+	}
+	if suppressed {
 		e.logger.Debug("alert: suppressed by maintenance window",
 			"source", evt.Source,
 			"entity_type", evt.EntityType,
 			"entity_id", evt.EntityID,
 		)
-		return true
 	}
-
-	return false
+	return suppressed, nil
 }
 
 func matchesSilenceRule(rule *SilenceRule, evt Event) bool {
