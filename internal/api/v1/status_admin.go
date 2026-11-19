@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/mail"
 	"strconv"
@@ -57,7 +56,7 @@ func NewStatusAdminHandler(
 func (h *StatusAdminHandler) HandleListComponents(w http.ResponseWriter, r *http.Request) {
 	components, err := h.components.ListComponents(r.Context())
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		writeStoreError(w, err, "internal", "Failed to list components")
 		return
 	}
 	for i := range components {
@@ -148,7 +147,7 @@ func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *htt
 	if limit := extension.Limit(extension.ResourceStatusComponents); limit >= 0 {
 		existing, err := h.components.ListComponents(r.Context())
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+			writeStoreError(w, err, "internal", "Failed to list components")
 			return
 		}
 		if len(existing) >= limit {
@@ -172,8 +171,7 @@ func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *htt
 		AutoIncident:    req.AutoIncident,
 	}
 	if _, err := h.components.CreateComponent(r.Context(), c); err != nil {
-		slog.Error("failed to create status component", "error", err)
-		WriteError(w, http.StatusInternalServerError, "internal", "Failed to create component")
+		writeStoreError(w, err, "internal", "Failed to create component")
 		return
 	}
 	c.EffectiveStatus = h.statusSvc.DeriveComponentStatus(r.Context(), c)
@@ -188,7 +186,11 @@ func (h *StatusAdminHandler) HandleUpdateComponent(w http.ResponseWriter, r *htt
 		return
 	}
 	existing, err := h.components.GetComponent(r.Context(), id)
-	if err != nil || existing == nil {
+	if err != nil {
+		writeStoreError(w, err, "internal", "Failed to get component")
+		return
+	}
+	if existing == nil {
 		WriteError(w, http.StatusNotFound, "not_found", "Component not found")
 		return
 	}
@@ -271,7 +273,7 @@ func (h *StatusAdminHandler) HandleUpdateComponent(w http.ResponseWriter, r *htt
 	}
 
 	if err := h.components.UpdateComponent(r.Context(), existing); err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		writeStoreError(w, err, "internal", "Failed to update component")
 		return
 	}
 	existing.DerivedStatus = h.statusSvc.DeriveComponentStatus(r.Context(), existing)
@@ -292,11 +294,11 @@ func (h *StatusAdminHandler) HandleDeleteComponent(w http.ResponseWriter, r *htt
 	}
 	existing, err := h.components.GetComponent(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		writeStoreError(w, err, "internal", "Failed to get component")
 		return
 	}
 	if err := h.components.DeleteComponent(r.Context(), id); err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		writeStoreError(w, err, "internal", "Failed to delete component")
 		return
 	}
 	h.statusSvc.AnnounceComponentChange(r.Context(), event.StatusComponentDeleted, id, existing != nil && existing.Visible)
@@ -318,7 +320,7 @@ func (h *StatusAdminHandler) HandleListIncidents(w http.ResponseWriter, r *http.
 	}
 	incidents, total, err := h.incidents.ListIncidents(r.Context(), opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		writeStoreError(w, err, "internal", "Failed to list incidents")
 		return
 	}
 	WriteJSON(w, http.StatusOK, map[string]any{
@@ -364,7 +366,7 @@ func (h *StatusAdminHandler) HandleCreateIncident(w http.ResponseWriter, r *http
 	}
 	id, err := h.incidents.CreateIncident(r.Context(), inc, req.ComponentIDs, req.Message)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		writeStoreError(w, err, "internal", "Failed to create incident")
 		return
 	}
 	created, _ := h.incidents.GetIncident(r.Context(), id)
@@ -383,7 +385,11 @@ func (h *StatusAdminHandler) HandlePostUpdate(w http.ResponseWriter, r *http.Req
 		return
 	}
 	inc, err := h.incidents.GetIncident(r.Context(), id)
-	if err != nil || inc == nil {
+	if err != nil {
+		writeStoreError(w, err, "internal", "Failed to get incident")
+		return
+	}
+	if inc == nil {
 		WriteError(w, http.StatusNotFound, "not_found", "Incident not found")
 		return
 	}
@@ -410,7 +416,7 @@ func (h *StatusAdminHandler) HandlePostUpdate(w http.ResponseWriter, r *http.Req
 	}
 	updateID, err := h.incidents.CreateUpdate(r.Context(), upd)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		writeStoreError(w, err, "internal", "Failed to post incident update")
 		return
 	}
 	upd.ID = updateID
@@ -426,7 +432,11 @@ func (h *StatusAdminHandler) HandleUpdateIncident(w http.ResponseWriter, r *http
 		return
 	}
 	inc, err := h.incidents.GetIncident(r.Context(), id)
-	if err != nil || inc == nil {
+	if err != nil {
+		writeStoreError(w, err, "internal", "Failed to get incident")
+		return
+	}
+	if inc == nil {
 		WriteError(w, http.StatusNotFound, "not_found", "Incident not found")
 		return
 	}
@@ -453,7 +463,7 @@ func (h *StatusAdminHandler) HandleUpdateIncident(w http.ResponseWriter, r *http
 		return
 	}
 	if err := h.incidents.UpdateIncident(r.Context(), inc, req.ComponentIDs); err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		writeStoreError(w, err, "internal", "Failed to update incident")
 		return
 	}
 	updated, _ := h.incidents.GetIncident(r.Context(), id)
@@ -470,7 +480,7 @@ func (h *StatusAdminHandler) HandleDeleteIncident(w http.ResponseWriter, r *http
 		return
 	}
 	if err := h.incidents.DeleteIncident(r.Context(), id); err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		writeStoreError(w, err, "internal", "Failed to delete incident")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -486,7 +496,7 @@ func (h *StatusAdminHandler) HandleListMaintenance(w http.ResponseWriter, r *htt
 	}
 	windows, err := h.maintenance.ListMaintenance(r.Context(), statusFilter, limit)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		writeStoreError(w, err, "internal", "Failed to list maintenance windows")
 		return
 	}
 	WriteJSON(w, http.StatusOK, windows)
@@ -533,7 +543,7 @@ func (h *StatusAdminHandler) HandleCreateMaintenance(w http.ResponseWriter, r *h
 	}
 	id, err := h.maintenance.CreateMaintenance(r.Context(), mw, req.ComponentIDs)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		writeStoreError(w, err, "internal", "Failed to create maintenance window")
 		return
 	}
 	created, _ := h.maintenance.GetMaintenance(r.Context(), id)
@@ -550,7 +560,11 @@ func (h *StatusAdminHandler) HandleUpdateMaintenance(w http.ResponseWriter, r *h
 		return
 	}
 	existing, err := h.maintenance.GetMaintenance(r.Context(), id)
-	if err != nil || existing == nil {
+	if err != nil {
+		writeStoreError(w, err, "internal", "Failed to get maintenance window")
+		return
+	}
+	if existing == nil {
 		WriteError(w, http.StatusNotFound, "not_found", "Maintenance window not found")
 		return
 	}
@@ -599,7 +613,7 @@ func (h *StatusAdminHandler) HandleUpdateMaintenance(w http.ResponseWriter, r *h
 		return
 	}
 	if err := h.maintenance.UpdateMaintenance(r.Context(), existing, req.ComponentIDs); err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		writeStoreError(w, err, "internal", "Failed to update maintenance window")
 		return
 	}
 	updated, _ := h.maintenance.GetMaintenance(r.Context(), id)
@@ -622,7 +636,7 @@ func (h *StatusAdminHandler) HandleDeleteMaintenance(w http.ResponseWriter, r *h
 		err = h.maintenance.DeleteMaintenance(r.Context(), id)
 	}
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		writeStoreError(w, err, "internal", "Failed to delete maintenance window")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -637,7 +651,7 @@ func (h *StatusAdminHandler) componentIDsExist(w http.ResponseWriter, r *http.Re
 		WriteError(w, http.StatusBadRequest, "validation", invalid.Error())
 		return false
 	case err != nil:
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		writeStoreError(w, err, "internal", "Failed to check components")
 		return false
 	}
 	return true
@@ -648,12 +662,12 @@ func (h *StatusAdminHandler) componentIDsExist(w http.ResponseWriter, r *http.Re
 func (h *StatusAdminHandler) HandleListSubscribers(w http.ResponseWriter, r *http.Request) {
 	subs, err := h.subscribers.ListSubscribers(r.Context())
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		writeStoreError(w, err, "internal", "Failed to list subscribers")
 		return
 	}
 	stats, err := h.subscribers.GetSubscriberStats(r.Context())
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		writeStoreError(w, err, "internal", "Failed to count subscribers")
 		return
 	}
 

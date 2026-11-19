@@ -378,7 +378,7 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := h.channelStore.UpdateChannel(r.Context(), ch); err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update channel")
+		WriteStoreError(w, err, "Failed to update channel")
 		return
 	}
 

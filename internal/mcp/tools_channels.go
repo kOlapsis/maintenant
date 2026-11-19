@@ -169,7 +169,7 @@ func listChannelsHandler(svc *Services) gomcp.ToolHandlerFor[listChannelsInput, 
 		}
 		channels, err := svc.Channels.ListChannels(ctx)
 		if err != nil {
-			return nil, nil, fmt.Errorf("list channels: %w", err)
+			return storeErrResult(err, "list channels")
 		}
 		out := make([]*alert.NotificationChannel, 0, len(channels))
 		for _, ch := range channels {
@@ -189,7 +189,7 @@ func getChannelHandler(svc *Services) gomcp.ToolHandlerFor[getChannelInput, any]
 		}
 		ch, err := svc.Channels.GetChannel(ctx, input.ID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("get channel: %w", err)
+			return storeErrResult(err, "get channel")
 		}
 		if ch == nil {
 			return errResult("channel not found")
@@ -204,7 +204,7 @@ func getChannelHandler(svc *Services) gomcp.ToolHandlerFor[getChannelInput, any]
 		if svc.Triggers != nil {
 			triggers, err := svc.Triggers.ListTriggersForChannel(ctx, ch.ID)
 			if err != nil {
-				return nil, nil, fmt.Errorf("get channel: triggers: %w", err)
+				return storeErrResult(err, "get channel: triggers")
 			}
 			if triggers == nil {
 				triggers = []*alert.AlertTrigger{}
@@ -262,11 +262,11 @@ func createChannelHandler(svc *Services) gomcp.ToolHandlerFor[createChannelInput
 			if store.IsUniqueViolation(err) {
 				return errResult("a channel with this name already exists")
 			}
-			return nil, nil, fmt.Errorf("create channel: %w", err)
+			return storeErrResult(err, "create channel")
 		}
 		stored, err := readBackChannel(ctx, svc, id)
 		if err != nil {
-			return nil, nil, fmt.Errorf("create channel: read back: %w", err)
+			return storeErrResult(err, "create channel: read back")
 		}
 		svc.broadcast(event.ChannelCreated, stored)
 		return jsonResult(stored)
@@ -280,7 +280,7 @@ func updateChannelHandler(svc *Services) gomcp.ToolHandlerFor[updateChannelInput
 		}
 		ch, err := svc.Channels.GetChannel(ctx, input.ID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("update channel: lookup: %w", err)
+			return storeErrResult(err, "update channel: lookup")
 		}
 		if ch == nil {
 			return errResult("channel not found")
@@ -315,11 +315,11 @@ func updateChannelHandler(svc *Services) gomcp.ToolHandlerFor[updateChannelInput
 		}
 
 		if err := svc.Channels.UpdateChannel(ctx, ch); err != nil {
-			return nil, nil, fmt.Errorf("update channel: %w", err)
+			return storeErrResult(err, "update channel")
 		}
 		stored, err := readBackChannel(ctx, svc, input.ID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("update channel: read back: %w", err)
+			return storeErrResult(err, "update channel: read back")
 		}
 		svc.broadcast(event.ChannelUpdated, stored)
 		return jsonResult(stored)
@@ -333,13 +333,13 @@ func deleteChannelHandler(svc *Services) gomcp.ToolHandlerFor[deleteChannelInput
 		}
 		ch, err := svc.Channels.GetChannel(ctx, input.ID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("delete channel: lookup: %w", err)
+			return storeErrResult(err, "delete channel: lookup")
 		}
 		if ch == nil {
 			return errResult("channel not found")
 		}
 		if err := svc.Channels.DeleteChannel(ctx, input.ID); err != nil {
-			return nil, nil, fmt.Errorf("delete channel: %w", err)
+			return storeErrResult(err, "delete channel")
 		}
 
 		svc.broadcast(event.ChannelDeleted, map[string]any{"id": input.ID})
@@ -357,7 +357,7 @@ func testChannelHandler(svc *Services) gomcp.ToolHandlerFor[testChannelInput, an
 		}
 		ch, err := svc.Channels.GetChannel(ctx, input.ID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("test channel: lookup: %w", err)
+			return storeErrResult(err, "test channel: lookup")
 		}
 		if ch == nil {
 			return errResult("channel not found")

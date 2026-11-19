@@ -145,11 +145,11 @@ func listEscalationPoliciesHandler(svc *Services) gomcp.ToolHandlerFor[listEscal
 		}
 		limits, err := svc.EscalationSvc.GetPlanLimits(ctx)
 		if err != nil {
-			return nil, nil, fmt.Errorf("list escalation policies: get limits: %w", err)
+			return storeErrResult(err, "list escalation policies: get limits")
 		}
 		policies, err := svc.EscalationSvc.ListPolicies(ctx, input.ActiveOnly)
 		if err != nil {
-			return nil, nil, fmt.Errorf("list escalation policies: %w", err)
+			return storeErrResult(err, "list escalation policies")
 		}
 		return jsonResult(map[string]any{
 			"policies": policies,
@@ -168,7 +168,7 @@ func getEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[getEscalatio
 		}
 		policy, err := svc.EscalationSvc.GetPolicy(ctx, input.ID)
 		if err != nil {
-			return errResult(fmt.Sprintf("policy_not_found: %s", err.Error()))
+			return escalationReadErr("get escalation policy", err)
 		}
 		return jsonResult(policy)
 	}
@@ -208,7 +208,7 @@ func createEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[createEsc
 
 		policy, err := svc.EscalationSvc.CreatePolicy(ctx, req)
 		if err != nil {
-			return escalationWriteErr("create_failed", err)
+			return escalationWriteErr("create escalation policy", err)
 		}
 		return jsonResult(map[string]any{
 			"id":                   policy.ID,
@@ -227,7 +227,17 @@ func escalationWriteErr(failure string, err error) (*gomcp.CallToolResult, any, 
 	if errors.Is(err, escalation.ErrValidationFailed) {
 		return errResult(fmt.Sprintf("validation_failed: %s", err.Error()))
 	}
-	return errResult(fmt.Sprintf("%s: %s", failure, err.Error()))
+	return escalationReadErr(failure, err)
+}
+
+func escalationReadErr(action string, err error) (*gomcp.CallToolResult, any, error) {
+	switch {
+	case errors.Is(err, escalation.ErrPolicyNotFound):
+		return errResult("policy_not_found: policy not found")
+	case errors.Is(err, escalation.ErrRunNotFound):
+		return errResult("run_not_found: run not found")
+	}
+	return storeErrResult(err, action)
 }
 
 func deleteEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[deleteEscalationPolicyInput, any] {
@@ -239,7 +249,7 @@ func deleteEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[deleteEsc
 			return errResult("escalation service not available")
 		}
 		if err := svc.EscalationSvc.DeletePolicy(ctx, input.ID); err != nil {
-			return errResult(fmt.Sprintf("policy_not_found: %s", err.Error()))
+			return escalationReadErr("delete escalation policy", err)
 		}
 		return jsonResult(map[string]any{
 			"id":      input.ID,
@@ -258,7 +268,7 @@ func listAlertEscalationRunsHandler(svc *Services) gomcp.ToolHandlerFor[listAler
 		}
 		runs, err := svc.EscalationSvc.ListRunsForAlert(ctx, input.AlertID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("list alert escalation runs: %w", err)
+			return storeErrResult(err, "list alert escalation runs")
 		}
 		return jsonResult(map[string]any{"runs": runs})
 	}
@@ -274,7 +284,7 @@ func getEscalationRunHandler(svc *Services) gomcp.ToolHandlerFor[getEscalationRu
 		}
 		run, err := svc.EscalationSvc.GetRun(ctx, input.ID)
 		if err != nil {
-			return errResult(fmt.Sprintf("run_not_found: %s", err.Error()))
+			return escalationReadErr("get escalation run", err)
 		}
 		return jsonResult(run)
 	}
@@ -307,7 +317,7 @@ func updateEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[updateEsc
 		}
 		policy, err := svc.EscalationSvc.UpdatePolicy(ctx, input.ID, req)
 		if err != nil {
-			return escalationWriteErr("update_failed", err)
+			return escalationWriteErr("update escalation policy", err)
 		}
 		return jsonResult(policy)
 	}
@@ -323,7 +333,7 @@ func setEscalationPolicyActiveHandler(svc *Services) gomcp.ToolHandlerFor[setEsc
 		}
 		policy, err := svc.EscalationSvc.SetPolicyActive(ctx, input.ID, input.Active)
 		if err != nil {
-			return errResult(fmt.Sprintf("set_active_failed: %s", err.Error()))
+			return escalationWriteErr("set escalation policy active", err)
 		}
 		return jsonResult(map[string]any{
 			"id":         policy.ID,
