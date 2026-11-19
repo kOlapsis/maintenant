@@ -41,7 +41,7 @@ func checkPosture(ctx context.Context, scorer security.PostureScorer, containers
 	}
 	infos := make([]security.ContainerInfo, len(list))
 	for i, c := range list {
-		infos[i] = security.ContainerInfo{ID: c.ID, ExternalID: c.ExternalID, Name: c.Name}
+		infos[i] = security.ContainerInfo{ID: c.ID, AgentID: c.AgentID, ExternalID: c.ExternalID, Name: c.Name}
 	}
 	if _, err := scorer.ScoreInfrastructure(ctx, infos); err != nil {
 		logger.Warn("security posture check failed", "error", err)

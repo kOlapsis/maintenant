@@ -29,7 +29,7 @@ type mockCVEReader struct {
 	cves map[string][]security.CVEInfo
 }
 
-func (m *mockCVEReader) ListCVEsForContainer(_ context.Context, containerExternalID string) ([]security.CVEInfo, error) {
+func (m *mockCVEReader) ListCVEsForContainer(_ context.Context, _, containerExternalID string) ([]security.CVEInfo, error) {
 	return m.cves[containerExternalID], nil
 }
 
@@ -37,7 +37,7 @@ type mockCVEEvalReader struct {
 	states map[string]string
 }
 
-func (m *mockCVEEvalReader) GetCVEEvaluation(_ context.Context, containerExternalID string) (*security.CVEEvaluationInfo, error) {
+func (m *mockCVEEvalReader) GetCVEEvaluation(_ context.Context, _, containerExternalID string) (*security.CVEEvaluationInfo, error) {
 	state, ok := m.states[containerExternalID]
 	if !ok {
 		return nil, nil
@@ -65,7 +65,7 @@ func (m *mockAckStore) DeleteAcknowledgment(_ context.Context, _ string) error {
 	return nil
 }
 
-func (m *mockAckStore) ListAcknowledgments(_ context.Context, _ string) ([]*security.RiskAcknowledgment, error) {
+func (m *mockAckStore) ListAcknowledgments(_ context.Context, _, _ string) ([]*security.RiskAcknowledgment, error) {
 	return nil, nil
 }
 
@@ -73,7 +73,7 @@ func (m *mockAckStore) GetAcknowledgment(_ context.Context, _ string) (*security
 	return nil, nil
 }
 
-func (m *mockAckStore) IsAcknowledged(_ context.Context, containerExternalID, findingType, findingKey string) (bool, error) {
+func (m *mockAckStore) IsAcknowledged(_ context.Context, _, containerExternalID, findingType, findingKey string) (bool, error) {
 	if m.acks == nil {
 		return false, nil
 	}
@@ -332,7 +332,7 @@ func TestScorerScoreContainer(t *testing.T) {
 		Acks:           &mockAckStore{},
 	})
 
-	score, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test-container")
+	score, err := scorer.ScoreContainer(ctx, security.ContainerInfo{ID: "c1", ExternalID: "ext-1", Name: "test-container"})
 	require.NoError(t, err)
 	require.NotNil(t, score)
 
@@ -353,7 +353,7 @@ func TestScorerWeightRedistribution(t *testing.T) {
 	})
 
 	scorer := NewScorer(ScorerDeps{Insights: secSvc, Acks: &mockAckStore{}})
-	score, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
+	score, err := scorer.ScoreContainer(ctx, security.ContainerInfo{ID: "c1", ExternalID: "ext-1", Name: "test"})
 	require.NoError(t, err)
 	require.NotNil(t, score)
 
@@ -379,12 +379,12 @@ func TestScorerCache(t *testing.T) {
 	scorer := NewScorer(ScorerDeps{CVEs: cveReader, Insights: secSvc, Acks: &mockAckStore{}})
 
 	// Wrap to count calls (we test via timing)
-	_, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
+	_, err := scorer.ScoreContainer(ctx, security.ContainerInfo{ID: "c1", ExternalID: "ext-1", Name: "test"})
 	require.NoError(t, err)
 	callCount++
 
 	// Second call should return cached
-	score2, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
+	score2, err := scorer.ScoreContainer(ctx, security.ContainerInfo{ID: "c1", ExternalID: "ext-1", Name: "test"})
 	require.NoError(t, err)
 	// Should get the same (cached) result
 	require.NotNil(t, score2)
@@ -409,7 +409,7 @@ func TestScorerAcknowledgedFindingsExcluded(t *testing.T) {
 
 	scorer := NewScorer(ScorerDeps{Insights: secSvc, Acks: ackStore})
 
-	score, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
+	score, err := scorer.ScoreContainer(ctx, security.ContainerInfo{ID: "c1", ExternalID: "ext-1", Name: "test"})
 	require.NoError(t, err)
 	require.NotNil(t, score)
 
@@ -454,7 +454,7 @@ func TestScorerNoDataReturnsNil(t *testing.T) {
 
 	// All readers nil including security service → no applicable categories → nil score
 	scorer := NewScorer(ScorerDeps{Acks: &mockAckStore{}})
-	score, err := scorer.ScoreContainer(ctx, "c99", "nonexistent", "ghost")
+	score, err := scorer.ScoreContainer(ctx, security.ContainerInfo{ID: "c99", ExternalID: "nonexistent", Name: "ghost"})
 	require.NoError(t, err)
 	assert.Nil(t, score, "container with no data for any category should return nil")
 }
@@ -465,7 +465,7 @@ func TestScorerWithSecurityServiceNoInsights(t *testing.T) {
 
 	// Security service exists but no insights for this container → network_exposure applicable with score 100
 	scorer := NewScorer(ScorerDeps{Insights: secSvc, Acks: &mockAckStore{}})
-	score, err := scorer.ScoreContainer(ctx, "c99", "nonexistent", "ghost")
+	score, err := scorer.ScoreContainer(ctx, security.ContainerInfo{ID: "c99", ExternalID: "nonexistent", Name: "ghost"})
 	require.NoError(t, err)
 	require.NotNil(t, score)
 	assert.Equal(t, 100, score.TotalScore, "no issues means perfect score")
@@ -498,7 +498,7 @@ func TestScorerCVENeverEvaluated(t *testing.T) {
 		Acks:           &mockAckStore{},
 	})
 
-	score, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
+	score, err := scorer.ScoreContainer(ctx, security.ContainerInfo{ID: "c1", ExternalID: "ext-1", Name: "test"})
 	require.NoError(t, err)
 	require.NotNil(t, score)
 
@@ -520,7 +520,7 @@ func TestScorerCVEEvaluatedWithNoFindings(t *testing.T) {
 		Acks:           &mockAckStore{},
 	})
 
-	score, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
+	score, err := scorer.ScoreContainer(ctx, security.ContainerInfo{ID: "c1", ExternalID: "ext-1", Name: "test"})
 	require.NoError(t, err)
 	require.NotNil(t, score)
 
@@ -542,7 +542,7 @@ func TestScorerCVEUnsupportedImage(t *testing.T) {
 		Acks:           &mockAckStore{},
 	})
 
-	score, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
+	score, err := scorer.ScoreContainer(ctx, security.ContainerInfo{ID: "c1", ExternalID: "ext-1", Name: "test"})
 	require.NoError(t, err)
 	require.NotNil(t, score)
 
@@ -566,7 +566,7 @@ func TestScorerCVEEvaluatedWithFindings(t *testing.T) {
 		Acks:           &mockAckStore{},
 	})
 
-	score, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
+	score, err := scorer.ScoreContainer(ctx, security.ContainerInfo{ID: "c1", ExternalID: "ext-1", Name: "test"})
 	require.NoError(t, err)
 	require.NotNil(t, score)
 

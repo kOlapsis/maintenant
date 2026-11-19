@@ -23,8 +23,8 @@ import (
 
 type stubPostureScorer struct{}
 
-func (stubPostureScorer) ScoreContainer(_ context.Context, id, _, name string) (*security.SecurityScore, error) {
-	return &security.SecurityScore{ContainerID: id, ContainerName: name}, nil
+func (stubPostureScorer) ScoreContainer(_ context.Context, c security.ContainerInfo) (*security.SecurityScore, error) {
+	return &security.SecurityScore{ContainerID: c.ID, ContainerName: c.Name}, nil
 }
 
 func (stubPostureScorer) ScoreContainers(_ context.Context, cs []security.ContainerInfo) ([]*security.SecurityScore, error) {

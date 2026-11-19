@@ -15,6 +15,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/store"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // PostureHandler handles security posture HTTP endpoints.
@@ -51,6 +52,7 @@ func (h *PostureHandler) HandleGetPosture(w http.ResponseWriter, r *http.Request
 	for i, c := range containers {
 		infos[i] = security.ContainerInfo{
 			ID:         c.ID,
+			AgentID:    c.AgentID,
 			ExternalID: c.ExternalID,
 			Name:       c.Name,
 		}
@@ -83,7 +85,7 @@ func (h *PostureHandler) HandleGetContainerPosture(w http.ResponseWriter, r *htt
 		return
 	}
 
-	score, err := h.scorer.ScoreContainer(r.Context(), c.ID, c.ExternalID, c.Name)
+	score, err := h.scorer.ScoreContainer(r.Context(), security.ContainerInfo{ID: c.ID, AgentID: c.AgentID, ExternalID: c.ExternalID, Name: c.Name})
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to compute score")
 		return
@@ -127,7 +129,7 @@ func (h *PostureHandler) HandleListContainerPostures(w http.ResponseWriter, r *h
 
 	infos := make([]security.ContainerInfo, len(containers))
 	for i, c := range containers {
-		infos[i] = security.ContainerInfo{ID: c.ID, ExternalID: c.ExternalID, Name: c.Name}
+		infos[i] = security.ContainerInfo{ID: c.ID, AgentID: c.AgentID, ExternalID: c.ExternalID, Name: c.Name}
 	}
 	scores, err := h.scorer.ScoreContainers(r.Context(), infos)
 	if err != nil {
@@ -211,7 +213,7 @@ func (h *PostureHandler) HandleCreateAcknowledgment(w http.ResponseWriter, r *ht
 	}
 
 	// Check if already acknowledged
-	acked, err := h.ackStore.IsAcknowledged(r.Context(), c.ExternalID, req.FindingType, req.FindingKey)
+	acked, err := h.ackStore.IsAcknowledged(r.Context(), c.AgentID, c.ExternalID, req.FindingType, req.FindingKey)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to check acknowledgment")
 		return
@@ -223,6 +225,7 @@ func (h *PostureHandler) HandleCreateAcknowledgment(w http.ResponseWriter, r *ht
 
 	ack := &security.RiskAcknowledgment{
 		ContainerExternalID: c.ExternalID,
+		AgentID:             uid.Agent(c.AgentID),
 		FindingType:         req.FindingType,
 		FindingKey:          req.FindingKey,
 		AcknowledgedBy:      req.AcknowledgedBy,
@@ -267,7 +270,7 @@ func (h *PostureHandler) tryAcknowledgeSecurityAlert(ctx context.Context, c *con
 	// Check if every insight is acknowledged
 	for _, insight := range ci.Insights {
 		key := security.InsightFindingKey(insight)
-		acked, err := h.ackStore.IsAcknowledged(ctx, c.ExternalID, string(insight.Type), key)
+		acked, err := h.ackStore.IsAcknowledged(ctx, c.AgentID, c.ExternalID, string(insight.Type), key)
 		if err != nil || !acked {
 			return
 		}
@@ -312,7 +315,7 @@ func (h *PostureHandler) HandleDeleteAcknowledgment(w http.ResponseWriter, r *ht
 
 // HandleListAcknowledgments handles GET /api/v1/security/acknowledgments.
 func (h *PostureHandler) HandleListAcknowledgments(w http.ResponseWriter, r *http.Request) {
-	var containerExternalID string
+	var agentID, containerExternalID string
 
 	if cid := r.URL.Query().Get("container_id"); cid != "" {
 		c, err := h.containerSvc.GetContainer(r.Context(), cid)
@@ -321,11 +324,11 @@ func (h *PostureHandler) HandleListAcknowledgments(w http.ResponseWriter, r *htt
 			return
 		}
 		if c != nil {
-			containerExternalID = c.ExternalID
+			agentID, containerExternalID = c.AgentID, c.ExternalID
 		}
 	}
 
-	acks, err := h.ackStore.ListAcknowledgments(r.Context(), containerExternalID)
+	acks, err := h.ackStore.ListAcknowledgments(r.Context(), agentID, containerExternalID)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list acknowledgments")
 		return

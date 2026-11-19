@@ -193,7 +193,7 @@ type fixedContainerInfo struct {
 	info update.ContainerInfo
 }
 
-func (f fixedContainerInfo) GetContainerInfo(context.Context, string) (update.ContainerInfo, error) {
+func (f fixedContainerInfo) GetContainerInfo(context.Context, string, string) (update.ContainerInfo, error) {
 	return f.info, nil
 }
 

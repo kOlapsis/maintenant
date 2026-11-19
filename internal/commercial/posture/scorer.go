@@ -91,8 +91,8 @@ func NewScorer(d ScorerDeps) *Scorer {
 }
 
 // ScoreContainer computes the security score for a single container.
-func (s *Scorer) ScoreContainer(ctx context.Context, containerID string, containerExternalID string, containerName string) (*security.SecurityScore, error) {
-	scores, err := s.ScoreContainers(ctx, []security.ContainerInfo{{ID: containerID, ExternalID: containerExternalID, Name: containerName}})
+func (s *Scorer) ScoreContainer(ctx context.Context, c security.ContainerInfo) (*security.SecurityScore, error) {
+	scores, err := s.ScoreContainers(ctx, []security.ContainerInfo{c})
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,7 @@ func (s *Scorer) ScoreContainers(ctx context.Context, containers []security.Cont
 
 	for _, i := range pending {
 		c := containers[i]
-		score, err := s.computeContainerScore(ctx, in, c.ID, c.ExternalID, c.Name)
+		score, err := s.computeContainerScore(ctx, in, c.ID, c.AgentID, c.ExternalID, c.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -163,7 +163,7 @@ func (s *Scorer) readInputs(ctx context.Context, containerExternalIDs []string) 
 	return in, nil
 }
 
-func (s *Scorer) computeContainerScore(ctx context.Context, in *scoringInputs, containerID string, containerExternalID string, containerName string) (*security.SecurityScore, error) {
+func (s *Scorer) computeContainerScore(ctx context.Context, in *scoringInputs, containerID, agentID, containerExternalID, containerName string) (*security.SecurityScore, error) {
 	type categoryResult struct {
 		name       string
 		weight     int
@@ -190,7 +190,7 @@ func (s *Scorer) computeContainerScore(ctx context.Context, in *scoringInputs, c
 	// --- CVEs ---
 	cveResult := categoryResult{name: CategoryCVEs, weight: WeightCVEs}
 	if s.cves != nil {
-		state, err := s.cveEvaluationState(ctx, containerExternalID)
+		state, err := s.cveEvaluationState(ctx, agentID, containerExternalID)
 		if err != nil {
 			return nil, fmt.Errorf("reading cve evaluation for container %s: %w", containerID, err)
 		}
@@ -198,13 +198,13 @@ func (s *Scorer) computeContainerScore(ctx context.Context, in *scoringInputs, c
 
 		switch state {
 		case security.EvaluationEvaluated:
-			cves, err := s.cves.ListCVEsForContainer(ctx, containerExternalID)
+			cves, err := s.cves.ListCVEsForContainer(ctx, agentID, containerExternalID)
 			if err != nil {
 				return nil, fmt.Errorf("scoring cves for container %s: %w", containerID, err)
 			}
 			cveResult.applicable = true
 			if len(cves) > 0 {
-				filtered := filterAcknowledgedCVEs(ctx, cves, containerExternalID, s.acks)
+				filtered := filterAcknowledgedCVEs(ctx, cves, agentID, containerExternalID, s.acks)
 				cveResult.subScore, cveResult.issueCount, cveResult.summary = scoreCVEs(filtered, len(cves)-len(filtered))
 			} else {
 				cveResult.subScore = 100
@@ -247,7 +247,7 @@ func (s *Scorer) computeContainerScore(ctx context.Context, in *scoringInputs, c
 		ci := s.sec.GetContainerInsights(containerID)
 		if ci != nil && len(ci.Insights) > 0 {
 			// Filter out acknowledged insights
-			filtered := filterAcknowledgedInsights(ctx, ci.Insights, containerExternalID, s.acks)
+			filtered := filterAcknowledgedInsights(ctx, ci.Insights, agentID, containerExternalID, s.acks)
 			netResult.applicable = true
 			netResult.subScore, netResult.issueCount, netResult.summary = scoreNetworkExposure(filtered, len(ci.Insights)-len(filtered))
 		} else {
@@ -323,11 +323,11 @@ func (s *Scorer) computeContainerScore(ctx context.Context, in *scoringInputs, c
 
 // cveEvaluationState reports how the container's last CVE analysis went; a
 // missing reader or a missing row both mean it was never analysed.
-func (s *Scorer) cveEvaluationState(ctx context.Context, containerExternalID string) (string, error) {
+func (s *Scorer) cveEvaluationState(ctx context.Context, agentID, containerExternalID string) (string, error) {
 	if s.cveEval == nil {
 		return security.EvaluationNotEvaluated, nil
 	}
-	eval, err := s.cveEval.GetCVEEvaluation(ctx, containerExternalID)
+	eval, err := s.cveEval.GetCVEEvaluation(ctx, agentID, containerExternalID)
 	if err != nil {
 		return "", err
 	}
@@ -741,13 +741,13 @@ func scoreImageAge(updates []security.UpdateInfo) (subScore int, issueCount int,
 
 // --- Helper functions ---
 
-func filterAcknowledgedCVEs(ctx context.Context, cves []security.CVEInfo, containerExternalID string, acks security.AcknowledgmentStore) []security.CVEInfo {
+func filterAcknowledgedCVEs(ctx context.Context, cves []security.CVEInfo, agentID, containerExternalID string, acks security.AcknowledgmentStore) []security.CVEInfo {
 	if acks == nil {
 		return cves
 	}
 	filtered := make([]security.CVEInfo, 0, len(cves))
 	for _, c := range cves {
-		acked, err := acks.IsAcknowledged(ctx, containerExternalID, "cve", c.CVEID)
+		acked, err := acks.IsAcknowledged(ctx, agentID, containerExternalID, "cve", c.CVEID)
 		if err != nil || !acked {
 			filtered = append(filtered, c)
 		}
@@ -755,14 +755,14 @@ func filterAcknowledgedCVEs(ctx context.Context, cves []security.CVEInfo, contai
 	return filtered
 }
 
-func filterAcknowledgedInsights(ctx context.Context, insights []security.Insight, containerExternalID string, acks security.AcknowledgmentStore) []security.Insight {
+func filterAcknowledgedInsights(ctx context.Context, insights []security.Insight, agentID, containerExternalID string, acks security.AcknowledgmentStore) []security.Insight {
 	if acks == nil {
 		return insights
 	}
 	filtered := make([]security.Insight, 0, len(insights))
 	for _, i := range insights {
 		key := security.InsightFindingKey(i)
-		acked, err := acks.IsAcknowledged(ctx, containerExternalID, string(i.Type), key)
+		acked, err := acks.IsAcknowledged(ctx, agentID, containerExternalID, string(i.Type), key)
 		if err != nil || !acked {
 			filtered = append(filtered, i)
 		}

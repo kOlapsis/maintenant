@@ -31,6 +31,14 @@ func (h *CVEHandler) HandleListCVEs(w http.ResponseWriter, r *http.Request) {
 		Severity:    r.URL.Query().Get("severity"),
 		ContainerID: r.URL.Query().Get("container_id"),
 	}
+	if opts.ContainerID != "" {
+		agentID, err := requestAgent(r, h.store, opts.ContainerID)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list CVEs")
+			return
+		}
+		opts.AgentID = agentID
+	}
 
 	cves, err := h.store.ListAllActiveCVEs(r.Context(), opts)
 	if err != nil {
@@ -92,7 +100,12 @@ func (h *CVEHandler) HandleGetContainerCVEs(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	cves, err := h.store.ListContainerCVEs(r.Context(), containerID)
+	agentID, err := requestAgent(r, h.store, containerID)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get container CVEs")
+		return
+	}
+	cves, err := h.store.ListContainerCVEs(r.Context(), agentID, containerID)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get container CVEs")
 		return

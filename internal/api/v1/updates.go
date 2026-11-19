@@ -17,7 +17,7 @@ import (
 
 // ContainerInfoProvider returns container metadata needed for command generation.
 type ContainerInfoProvider interface {
-	GetContainerInfo(ctx context.Context, externalID string) (update.ContainerInfo, error)
+	GetContainerInfo(ctx context.Context, agentID, externalID string) (update.ContainerInfo, error)
 }
 
 // UpdateHandler handles update intelligence HTTP endpoints.
@@ -103,7 +103,7 @@ func (h *UpdateHandler) HandleListUpdates(w http.ResponseWriter, r *http.Request
 		m := imageUpdateToMap(u)
 		enrichAgentFields(m, u.AgentID, names)
 		if u.Status == update.StatusPinned {
-			if pin, _ := h.store.GetVersionPin(r.Context(), u.ContainerID); pin != nil {
+			if pin, _ := h.store.GetVersionPin(r.Context(), u.AgentID, u.ContainerID); pin != nil {
 				m["pin_reason"] = pin.Reason
 			}
 		}
@@ -170,7 +170,12 @@ func (h *UpdateHandler) HandleGetContainerUpdate(w http.ResponseWriter, r *http.
 		return
 	}
 
-	u, err := h.service.GetImageUpdateByContainer(r.Context(), containerID)
+	agentID, err := requestAgent(r, h.store, containerID)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get update")
+		return
+	}
+	u, err := h.service.GetAgentImageUpdate(r.Context(), agentID, containerID)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get update")
 		return
@@ -181,7 +186,7 @@ func (h *UpdateHandler) HandleGetContainerUpdate(w http.ResponseWriter, r *http.
 	}
 
 	// Check if pinned
-	pin, _ := h.store.GetVersionPin(r.Context(), containerID)
+	pin, _ := h.store.GetVersionPin(r.Context(), agentID, containerID)
 
 	resp := imageUpdateToMap(u)
 	enrichAgentFields(resp, u.AgentID, h.agentNames(r.Context()))
@@ -191,7 +196,7 @@ func (h *UpdateHandler) HandleGetContainerUpdate(w http.ResponseWriter, r *http.
 	}
 
 	// Generate commands on-the-fly from container metadata
-	ci, ciErr := h.containers.GetContainerInfo(r.Context(), containerID)
+	ci, ciErr := h.containers.GetContainerInfo(r.Context(), agentID, containerID)
 	if ciErr == nil {
 		resp["update_command"] = h.service.GenerateUpdateCommand(ci, u.LatestTag, u.LatestDigest)
 		if cmd := h.service.GenerateRollbackCommand(ci, u); cmd != "" {
@@ -213,7 +218,7 @@ func (h *UpdateHandler) HandleGetContainerUpdate(w http.ResponseWriter, r *http.
 		resp["changelog_summary"] = u.ChangelogSummary
 		resp["has_breaking_changes"] = u.HasBreakingChanges
 
-		if cves, err := h.store.ListContainerCVEs(r.Context(), containerID); err == nil {
+		if cves, err := h.store.ListContainerCVEs(r.Context(), agentID, containerID); err == nil {
 			cveMaps := make([]map[string]interface{}, 0, len(cves))
 			for _, c := range cves {
 				cveMap := map[string]interface{}{
@@ -334,8 +339,13 @@ func (h *UpdateHandler) HandlePinVersion(w http.ResponseWriter, r *http.Request)
 		_ = json.NewDecoder(r.Body).Decode(&input)
 	}
 
+	agentID, err := requestAgent(r, h.store, containerID)
+	if err != nil {
+		WriteStoreError(w, err, "Failed to read update data")
+		return
+	}
 	// Get current update info
-	u, err := h.store.GetImageUpdateByContainer(r.Context(), containerID)
+	u, err := h.store.GetAgentImageUpdate(r.Context(), agentID, containerID)
 	if err != nil {
 		WriteStoreError(w, err, "Failed to read update data")
 		return
@@ -347,6 +357,7 @@ func (h *UpdateHandler) HandlePinVersion(w http.ResponseWriter, r *http.Request)
 
 	pin := &update.VersionPin{
 		ContainerID:  containerID,
+		AgentID:      agentID,
 		Image:        u.Image,
 		PinnedTag:    u.CurrentTag,
 		PinnedDigest: u.CurrentDigest,
@@ -382,12 +393,17 @@ func (h *UpdateHandler) HandleUnpinVersion(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.store.DeleteVersionPin(r.Context(), containerID); err != nil {
+	agentID, err := requestAgent(r, h.store, containerID)
+	if err != nil {
+		WriteStoreError(w, err, "Failed to unpin version")
+		return
+	}
+	if err := h.store.DeleteVersionPin(r.Context(), agentID, containerID); err != nil {
 		WriteStoreError(w, err, "Failed to unpin version")
 		return
 	}
 
-	u, err := h.store.GetImageUpdateByContainer(r.Context(), containerID)
+	u, err := h.store.GetAgentImageUpdate(r.Context(), agentID, containerID)
 	if err != nil {
 		WriteStoreError(w, err, "Failed to unpin version")
 		return
@@ -485,6 +501,11 @@ func (h *UpdateHandler) HandleDeleteExclusion(w http.ResponseWriter, r *http.Req
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// requestAgent names the agent a container route acts on: the only agent that runs externalID, else the local runtime.
+func requestAgent(r *http.Request, s update.UpdateStore, externalID string) (string, error) {
+	return s.ContainerAgent(r.Context(), externalID)
 }
 
 func imageUpdateToMap(u *update.ImageUpdate) map[string]interface{} {

@@ -68,14 +68,14 @@ func (a *ContainerServiceAdapter) ListContainerInfos(ctx context.Context) ([]Con
 }
 
 // GetContainerInfo returns container metadata for a single container by external ID.
-func (a *ContainerServiceAdapter) GetContainerInfo(ctx context.Context, externalID string) (ContainerInfo, error) {
+func (a *ContainerServiceAdapter) GetContainerInfo(ctx context.Context, agentID, externalID string) (ContainerInfo, error) {
 	containers, err := a.svc.ListContainers(ctx, container.ListContainersOpts{})
 	if err != nil {
 		return ContainerInfo{}, fmt.Errorf("get container info: %w", err)
 	}
 
 	for _, c := range containers {
-		if c.ExternalID != externalID {
+		if c.ExternalID != externalID || uid.Agent(c.AgentID) != uid.Agent(agentID) {
 			continue
 		}
 		var local map[string]RuntimeDetails

@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // ContainerInfo holds the minimal container data needed for scanning.
@@ -156,7 +158,7 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 	}
 
 	// Check version pins in store
-	pin, _ := sc.store.GetVersionPin(ctx, c.ExternalID)
+	pin, _ := sc.store.GetVersionPin(ctx, c.AgentID, c.ExternalID)
 	if pin != nil {
 		sc.logger.Debug("scanner: pinned via store", "container", c.Name, "pin", pin.PinnedTag)
 		return nil, nil
@@ -250,6 +252,7 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 	result := &UpdateResult{
 		ContainerID:    c.ExternalID,
 		ContainerUID:   c.UID,
+		AgentID:        uid.Agent(c.AgentID),
 		ContainerName:  c.Name,
 		Image:          c.Image,
 		CurrentTag:     currentTag,
@@ -313,6 +316,7 @@ func (sc *Scanner) checkDigest(ctx context.Context, t scanTarget) (*UpdateResult
 	return &UpdateResult{
 		ContainerID:    c.ExternalID,
 		ContainerUID:   c.UID,
+		AgentID:        uid.Agent(c.AgentID),
 		ContainerName:  c.Name,
 		Image:          c.Image,
 		CurrentTag:     t.currentTag,
@@ -335,7 +339,7 @@ func (sc *Scanner) currentDigest(ctx context.Context, t scanTarget, remote Remot
 	c := t.container
 	current := t.runningDigest
 	if current == "" {
-		baseline, err := sc.store.GetDigestBaseline(ctx, c.ExternalID)
+		baseline, err := sc.store.GetDigestBaseline(ctx, c.AgentID, c.ExternalID)
 		if err != nil {
 			return "", fmt.Errorf("get digest baseline: %w", err)
 		}
@@ -353,6 +357,7 @@ func (sc *Scanner) currentDigest(ctx context.Context, t scanTarget, remote Remot
 	}
 	if err := sc.store.UpsertDigestBaseline(ctx, &DigestBaseline{
 		ContainerID:  c.ExternalID,
+		AgentID:      c.AgentID,
 		Image:        c.Image,
 		Tag:          t.currentTag,
 		RemoteDigest: recorded,
@@ -385,6 +390,7 @@ func runningImage(c ContainerInfo) UpdateResult {
 	return UpdateResult{
 		ContainerID:   c.ExternalID,
 		ContainerUID:  c.UID,
+		AgentID:       uid.Agent(c.AgentID),
 		ContainerName: c.Name,
 		Image:         c.Image,
 		CurrentTag:    tag,

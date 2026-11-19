@@ -77,7 +77,7 @@ func (e *ProEnricher) enrichChangelog(ctx context.Context, r *update.UpdateResul
 	}
 
 	// Update the stored record
-	u, err := e.store.GetImageUpdateByContainer(ctx, r.ContainerID)
+	u, err := e.store.GetAgentImageUpdate(ctx, r.AgentID, r.ContainerID)
 	if err != nil || u == nil {
 		return
 	}
@@ -136,6 +136,7 @@ func (e *ProEnricher) enrichCVEs(ctx context.Context, r *update.UpdateResult) []
 	for _, entry := range entries {
 		cve := &update.ContainerCVE{
 			ContainerID:     r.ContainerID,
+			AgentID:         r.AgentID,
 			CVEID:           entry.CVEID,
 			Severity:        entry.Severity,
 			CVSSScore:       entry.CVSSScore,
@@ -171,6 +172,7 @@ func (e *ProEnricher) resolveCVEQuery(ctx context.Context, r *update.UpdateResul
 
 func (e *ProEnricher) recordEvaluation(ctx context.Context, r *update.UpdateResult, eval *update.CVEEvaluation) {
 	eval.ContainerID = r.ContainerID
+	eval.AgentID = r.AgentID
 	eval.EvaluatedAt = time.Now()
 	if err := e.store.UpsertCVEEvaluation(ctx, eval); err != nil {
 		e.logger.Warn("cve: failed to persist evaluation", "container", r.ContainerName, "error", err)
@@ -190,7 +192,7 @@ func (e *ProEnricher) enrichRisk(ctx context.Context, r *update.UpdateResult, cv
 		return
 	}
 
-	u, err := e.store.GetImageUpdateByContainer(ctx, r.ContainerID)
+	u, err := e.store.GetAgentImageUpdate(ctx, r.AgentID, r.ContainerID)
 	if err != nil || u == nil {
 		return
 	}
@@ -226,6 +228,7 @@ func (e *ProEnricher) enrichRisk(ctx context.Context, r *update.UpdateResult, cv
 	// Record history
 	record := &update.RiskScoreRecord{
 		ContainerID: r.ContainerID,
+		AgentID:     r.AgentID,
 		Score:       score.Score,
 		FactorsJSON: FactorsToJSON(score.Factors),
 		RecordedAt:  time.Now(),

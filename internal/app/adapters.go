@@ -47,8 +47,8 @@ type CVEPostureAdapter struct {
 	Store update.UpdateStore
 }
 
-func (a *CVEPostureAdapter) ListCVEsForContainer(ctx context.Context, containerExternalID string) ([]security.CVEInfo, error) {
-	cves, err := a.Store.ListContainerCVEs(ctx, containerExternalID)
+func (a *CVEPostureAdapter) ListCVEsForContainer(ctx context.Context, agentID, containerExternalID string) ([]security.CVEInfo, error) {
+	cves, err := a.Store.ListContainerCVEs(ctx, agentID, containerExternalID)
 	if err != nil {
 		return nil, fmt.Errorf("list container cves: %w", err)
 	}
@@ -67,8 +67,8 @@ type CVEEvaluationPostureAdapter struct {
 	Store update.UpdateStore
 }
 
-func (a *CVEEvaluationPostureAdapter) GetCVEEvaluation(ctx context.Context, containerExternalID string) (*security.CVEEvaluationInfo, error) {
-	eval, err := a.Store.GetCVEEvaluation(ctx, containerExternalID)
+func (a *CVEEvaluationPostureAdapter) GetCVEEvaluation(ctx context.Context, agentID, containerExternalID string) (*security.CVEEvaluationInfo, error) {
+	eval, err := a.Store.GetCVEEvaluation(ctx, agentID, containerExternalID)
 	if err != nil {
 		return nil, fmt.Errorf("get cve evaluation: %w", err)
 	}

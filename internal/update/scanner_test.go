@@ -56,14 +56,13 @@ func (s *stubStore) UpdateImageUpdate(_ context.Context, _ *ImageUpdate) error {
 func (s *stubStore) GetImageUpdate(_ context.Context, _ string) (*ImageUpdate, error) {
 	return nil, nil
 }
-func (s *stubStore) GetImageUpdateByContainer(_ context.Context, _ string) (*ImageUpdate, error) {
+func (s *stubStore) GetAgentImageUpdate(_ context.Context, _, _ string) (*ImageUpdate, error) {
 	return nil, nil
 }
 func (s *stubStore) ListImageUpdates(_ context.Context, _ ListImageUpdatesOpts) ([]*ImageUpdate, error) {
 	return nil, nil
 }
-func (s *stubStore) GetUpdateSummary(_ context.Context) (*UpdateSummary, error)      { return nil, nil }
-func (s *stubStore) DeleteImageUpdatesByContainer(_ context.Context, _ string) error { return nil }
+func (s *stubStore) GetUpdateSummary(_ context.Context) (*UpdateSummary, error) { return nil, nil }
 func (s *stubStore) DeleteStaleImageUpdates(_ context.Context, _ string, _, _ []string) (int64, error) {
 	return 0, nil
 }
@@ -77,8 +76,10 @@ func (s *stubStore) DeleteOrphanImageUpdates(_ context.Context) (int64, error) {
 func (s *stubStore) InsertVersionPin(_ context.Context, _ *VersionPin) (string, error) {
 	return "", nil
 }
-func (s *stubStore) GetVersionPin(_ context.Context, _ string) (*VersionPin, error) { return nil, nil }
-func (s *stubStore) DeleteVersionPin(_ context.Context, _ string) error             { return nil }
+func (s *stubStore) GetVersionPin(_ context.Context, _, _ string) (*VersionPin, error) {
+	return nil, nil
+}
+func (s *stubStore) DeleteVersionPin(_ context.Context, _, _ string) error { return nil }
 func (s *stubStore) CreateExclusion(_ context.Context, _ *UpdateExclusion) (bool, error) {
 	return false, nil
 }
@@ -96,35 +97,33 @@ func (s *stubStore) IsCVECacheFresh(_ context.Context, _, _, _ string) (bool, er
 	return false, nil
 }
 func (s *stubStore) UpsertContainerCVE(_ context.Context, _ *ContainerCVE) error { return nil }
-func (s *stubStore) ListContainerCVEs(_ context.Context, _ string) ([]*ContainerCVE, error) {
+func (s *stubStore) ListContainerCVEs(_ context.Context, _, _ string) ([]*ContainerCVE, error) {
 	return nil, nil
 }
 func (s *stubStore) ListAllActiveCVEs(_ context.Context, _ ListCVEsOpts) ([]*ContainerCVE, error) {
 	return nil, nil
 }
-func (s *stubStore) ResolveContainerCVE(_ context.Context, _, _ string) error { return nil }
-func (s *stubStore) DeleteContainerCVEs(_ context.Context, _ string) error    { return nil }
 func (s *stubStore) GetCVESummaryCounts(_ context.Context) (map[string]int, error) {
 	return nil, nil
 }
 func (s *stubStore) UpsertCVEEvaluation(_ context.Context, _ *CVEEvaluation) error { return nil }
-func (s *stubStore) GetCVEEvaluation(_ context.Context, _ string) (*CVEEvaluation, error) {
+func (s *stubStore) GetCVEEvaluation(_ context.Context, _, _ string) (*CVEEvaluation, error) {
 	return nil, nil
 }
-func (s *stubStore) DeleteCVEEvaluation(_ context.Context, _ string) error { return nil }
 func (s *stubStore) UpsertDigestBaseline(_ context.Context, b *DigestBaseline) error {
 	s.baseline = b
 	return nil
 }
-func (s *stubStore) GetDigestBaseline(_ context.Context, _ string) (*DigestBaseline, error) {
+func (s *stubStore) GetDigestBaseline(_ context.Context, _, _ string) (*DigestBaseline, error) {
 	return s.baseline, nil
 }
 func (s *stubStore) InsertRiskScoreRecord(_ context.Context, _ *RiskScoreRecord) (string, error) {
 	return "", nil
 }
-func (s *stubStore) ListRiskScoreHistory(_ context.Context, _ string, _, _ time.Time) ([]*RiskScoreRecord, error) {
+func (s *stubStore) ListRiskScoreHistory(_ context.Context, _, _ string, _, _ time.Time) ([]*RiskScoreRecord, error) {
 	return nil, nil
 }
+func (s *stubStore) ContainerAgent(_ context.Context, _ string) (string, error)   { return "", nil }
 func (s *stubStore) CleanupExpired(_ context.Context, _ time.Time) (int64, error) { return 0, nil }
 
 // newTestScanner creates a Scanner with a fake registry and stub store.

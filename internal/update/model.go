@@ -111,6 +111,7 @@ func BaseRiskScore(ut UpdateType) int {
 type VersionPin struct {
 	ID           string    `json:"id"`
 	ContainerID  string    `json:"container_id"`
+	AgentID      string    `json:"agent_id"`
 	Image        string    `json:"image"`
 	PinnedTag    string    `json:"pinned_tag"`
 	PinnedDigest string    `json:"pinned_digest"`
@@ -130,6 +131,7 @@ type UpdateExclusion struct {
 type UpdateResult struct {
 	ContainerID        string
 	ContainerUID       string
+	AgentID            string
 	ContainerName      string
 	Image              string
 	CurrentTag         string
@@ -200,6 +202,7 @@ type CVECacheEntry struct {
 type ContainerCVE struct {
 	ID              string      `json:"id"`
 	ContainerID     string      `json:"container_id"`
+	AgentID         string      `json:"agent_id"`
 	CVEID           string      `json:"cve_id"`
 	Severity        CVESeverity `json:"severity"`
 	CVSSScore       float64     `json:"cvss_score"`
@@ -213,6 +216,7 @@ type ContainerCVE struct {
 type ListCVEsOpts struct {
 	Severity    string
 	ContainerID string
+	AgentID     string
 }
 
 // CVEEvaluationStatus records the outcome of a container's CVE analysis.
@@ -228,6 +232,7 @@ const (
 // it went, so an unevaluated container is never mistaken for a clean one.
 type CVEEvaluation struct {
 	ContainerID    string              `json:"container_id"`
+	AgentID        string              `json:"agent_id"`
 	Status         CVEEvaluationStatus `json:"status"`
 	EvaluatedAt    time.Time           `json:"evaluated_at"`
 	Ecosystem      string              `json:"ecosystem,omitempty"`
@@ -240,6 +245,7 @@ type CVEEvaluation struct {
 type RiskScoreRecord struct {
 	ID          string    `json:"id"`
 	ContainerID string    `json:"container_id"`
+	AgentID     string    `json:"agent_id"`
 	Score       int       `json:"score"`
 	FactorsJSON string    `json:"factors_json"`
 	RecordedAt  time.Time `json:"recorded_at"`
@@ -262,6 +268,7 @@ type RiskScore struct {
 // DigestBaseline records the registry digest a container runs, the reference for a floating tag when its runtime does not report it.
 type DigestBaseline struct {
 	ContainerID  string    `json:"container_id"`
+	AgentID      string    `json:"agent_id"`
 	Image        string    `json:"image"`
 	Tag          string    `json:"tag"`
 	RemoteDigest string    `json:"remote_digest"`

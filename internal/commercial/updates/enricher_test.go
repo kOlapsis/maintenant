@@ -38,7 +38,7 @@ func newEnricherStubStore() *enricherStubStore {
 	}
 }
 
-func (s *enricherStubStore) GetImageUpdateByContainer(_ context.Context, containerID string) (*update.ImageUpdate, error) {
+func (s *enricherStubStore) GetAgentImageUpdate(_ context.Context, _, containerID string) (*update.ImageUpdate, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.imageUpdate == nil || s.imageUpdate.ContainerID != containerID {

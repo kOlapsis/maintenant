@@ -100,11 +100,11 @@ func TestCleanupExpired_PurgesTheDigestBaselinesOfGoneContainers(t *testing.T) {
 	_, err := us.CleanupExpired(ctx, time.Now().Add(-30*24*time.Hour))
 	require.NoError(t, err)
 
-	live, err := us.GetDigestBaseline(ctx, "ext-live")
+	live, err := us.GetDigestBaseline(ctx, "", "ext-live")
 	require.NoError(t, err)
 	assert.NotNil(t, live, "a running container keeps its baseline")
 	for _, id := range []string{"ext-archived", "ext-never-seen"} {
-		b, err := us.GetDigestBaseline(ctx, id)
+		b, err := us.GetDigestBaseline(ctx, "", id)
 		require.NoError(t, err)
 		assert.Nil(t, b, "the baseline of %s must be purged", id)
 	}

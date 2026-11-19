@@ -10,6 +10,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/security"
+	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/kolapsis/maintenant/internal/update"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -67,6 +68,24 @@ type containerCVEList struct {
 	CVEs        []*update.ContainerCVE `json:"cves"`
 }
 
+// containerRef resolves a container_id input, the internal id of list_containers or else an external id, to its agent and external id.
+func containerRef(ctx context.Context, svc *Services, id string) (agentID, externalID string, err error) {
+	if svc.Containers != nil {
+		c, err := svc.Containers.GetContainer(ctx, id)
+		if err != nil {
+			return "", "", err
+		}
+		if c != nil {
+			return c.AgentID, c.ExternalID, nil
+		}
+	}
+	if svc.UpdateStore == nil {
+		return uid.LocalAgent, id, nil
+	}
+	agentID, err = svc.UpdateStore.ContainerAgent(ctx, id)
+	return agentID, id, err
+}
+
 func evaluationState(e *update.CVEEvaluation) string {
 	if e == nil {
 		return security.EvaluationNotEvaluated
@@ -119,11 +138,15 @@ func listCVEHandler(svc *Services) gomcp.ToolHandlerFor[listCVEInput, any] {
 			return errResult("update store not available")
 		}
 		if input.ContainerID != "" {
-			cves, err := svc.UpdateStore.ListContainerCVEs(ctx, input.ContainerID)
+			agentID, externalID, err := containerRef(ctx, svc, input.ContainerID)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to resolve the container: %w", err)
+			}
+			cves, err := svc.UpdateStore.ListContainerCVEs(ctx, agentID, externalID)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to list container CVEs: %w", err)
 			}
-			eval, err := svc.UpdateStore.GetCVEEvaluation(ctx, input.ContainerID)
+			eval, err := svc.UpdateStore.GetCVEEvaluation(ctx, agentID, externalID)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to get CVE evaluation: %w", err)
 			}
@@ -170,7 +193,11 @@ func listRiskScoresHandler(svc *Services) gomcp.ToolHandlerFor[listRiskScoresInp
 		}
 
 		if input.ContainerID != "" {
-			u, err := svc.Updates.GetImageUpdateByContainer(ctx, input.ContainerID)
+			agentID, externalID, err := containerRef(ctx, svc, input.ContainerID)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to resolve the container: %w", err)
+			}
+			u, err := svc.Updates.GetAgentImageUpdate(ctx, agentID, externalID)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to get container risk: %w", err)
 			}
@@ -213,7 +240,7 @@ func getSecurityPostureHandler(svc *Services) gomcp.ToolHandlerFor[getSecurityPo
 			if c == nil {
 				return errResult("not found: container does not exist")
 			}
-			score, err := svc.Scorer.ScoreContainer(ctx, c.ID, c.ExternalID, c.Name)
+			score, err := svc.Scorer.ScoreContainer(ctx, security.ContainerInfo{ID: c.ID, AgentID: c.AgentID, ExternalID: c.ExternalID, Name: c.Name})
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to score container: %w", err)
 			}
@@ -226,7 +253,7 @@ func getSecurityPostureHandler(svc *Services) gomcp.ToolHandlerFor[getSecurityPo
 		}
 		infos := make([]security.ContainerInfo, len(containers))
 		for i, c := range containers {
-			infos[i] = security.ContainerInfo{ID: c.ID, ExternalID: c.ExternalID, Name: c.Name}
+			infos[i] = security.ContainerInfo{ID: c.ID, AgentID: c.AgentID, ExternalID: c.ExternalID, Name: c.Name}
 		}
 		posture, err := svc.Scorer.ScoreInfrastructure(ctx, infos)
 		if err != nil {

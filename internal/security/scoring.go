@@ -34,7 +34,7 @@ type CertificateReader interface {
 
 // CVEReader provides CVE data for a container.
 type CVEReader interface {
-	ListCVEsForContainer(ctx context.Context, containerExternalID string) ([]CVEInfo, error)
+	ListCVEsForContainer(ctx context.Context, agentID, containerExternalID string) ([]CVEInfo, error)
 }
 
 // CVEEvaluationInfo reports whether a container went through CVE analysis.
@@ -44,7 +44,7 @@ type CVEEvaluationInfo struct {
 
 // CVEEvaluationReader reports the CVE analysis state of a container.
 type CVEEvaluationReader interface {
-	GetCVEEvaluation(ctx context.Context, containerExternalID string) (*CVEEvaluationInfo, error)
+	GetCVEEvaluation(ctx context.Context, agentID, containerExternalID string) (*CVEEvaluationInfo, error)
 }
 
 // UpdateReader provides the pending updates of the given containers, keyed by external ID.
@@ -56,9 +56,9 @@ type UpdateReader interface {
 type AcknowledgmentStore interface {
 	InsertAcknowledgment(ctx context.Context, ack *RiskAcknowledgment) (string, error)
 	DeleteAcknowledgment(ctx context.Context, id string) error
-	ListAcknowledgments(ctx context.Context, containerExternalID string) ([]*RiskAcknowledgment, error)
+	ListAcknowledgments(ctx context.Context, agentID, containerExternalID string) ([]*RiskAcknowledgment, error)
 	GetAcknowledgment(ctx context.Context, id string) (*RiskAcknowledgment, error)
-	IsAcknowledged(ctx context.Context, containerExternalID, findingType, findingKey string) (bool, error)
+	IsAcknowledged(ctx context.Context, agentID, containerExternalID, findingType, findingKey string) (bool, error)
 }
 
 // Category evaluation states, reported by CategoryScore.Evaluation.
@@ -90,6 +90,7 @@ func InsightFindingKey(i Insight) string {
 // ContainerInfo holds minimal container data for infrastructure scoring.
 type ContainerInfo struct {
 	ID         string
+	AgentID    string
 	ExternalID string
 	Name       string
 }
@@ -101,7 +102,7 @@ type InsightsReader interface {
 
 // PostureScorer computes container and infrastructure security posture.
 type PostureScorer interface {
-	ScoreContainer(ctx context.Context, containerID, containerExternalID, containerName string) (*SecurityScore, error)
+	ScoreContainer(ctx context.Context, c ContainerInfo) (*SecurityScore, error)
 	ScoreContainers(ctx context.Context, containers []ContainerInfo) ([]*SecurityScore, error)
 	ScoreInfrastructure(ctx context.Context, containers []ContainerInfo) (*InfrastructurePosture, error)
 	InvalidateCache(containerID string)

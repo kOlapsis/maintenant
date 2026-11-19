@@ -30,7 +30,7 @@ func TestCVEEvaluation_UpsertThenGet(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	got, err := us.GetCVEEvaluation(ctx, "c1")
+	got, err := us.GetCVEEvaluation(ctx, "", "c1")
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.Equal(t, "c1", got.ContainerID)
@@ -64,7 +64,7 @@ func TestCVEEvaluation_UpsertReplaces(t *testing.T) {
 		Error:       "osv.dev: connection refused",
 	}))
 
-	got, err := us.GetCVEEvaluation(ctx, "c1")
+	got, err := us.GetCVEEvaluation(ctx, "", "c1")
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.Equal(t, update.CVEEvaluationError, got.Status)
@@ -85,25 +85,7 @@ func TestCVEEvaluation_GetMissingIsNil(t *testing.T) {
 	ctx := context.Background()
 	us := NewUpdateStore(db)
 
-	got, err := us.GetCVEEvaluation(ctx, "does-not-exist")
-	require.NoError(t, err)
-	assert.Nil(t, got)
-}
-
-func TestCVEEvaluation_DeleteRemoves(t *testing.T) {
-	db := openTestDB(t)
-	ctx := context.Background()
-	us := NewUpdateStore(db)
-
-	require.NoError(t, us.UpsertCVEEvaluation(ctx, &update.CVEEvaluation{
-		ContainerID: "c1",
-		Status:      update.CVEUnsupported,
-		EvaluatedAt: time.Now(),
-	}))
-
-	require.NoError(t, us.DeleteCVEEvaluation(ctx, "c1"))
-
-	got, err := us.GetCVEEvaluation(ctx, "c1")
+	got, err := us.GetCVEEvaluation(ctx, "", "does-not-exist")
 	require.NoError(t, err)
 	assert.Nil(t, got)
 }

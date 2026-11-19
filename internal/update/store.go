@@ -1,6 +1,3 @@
-// Copyright 2026 Benjamin Touchard (kOlapsis)
-// SPDX-License-Identifier: Apache-2.0
-
 package update
 
 import (
@@ -8,75 +5,61 @@ import (
 	"time"
 )
 
-// UpdateStore defines the persistence interface for update intelligence data.
 type UpdateStore interface {
-	// Scan records
 	InsertScanRecord(ctx context.Context, r *ScanRecord) (string, error)
 	UpdateScanRecord(ctx context.Context, r *ScanRecord) error
 	GetScanRecord(ctx context.Context, id string) (*ScanRecord, error)
 	GetLatestScanRecord(ctx context.Context) (*ScanRecord, error)
 
-	// Image updates
 	InsertImageUpdate(ctx context.Context, u *ImageUpdate) (string, error)
 	UpdateImageUpdate(ctx context.Context, u *ImageUpdate) error
 	GetImageUpdate(ctx context.Context, id string) (*ImageUpdate, error)
-	GetImageUpdateByContainer(ctx context.Context, containerID string) (*ImageUpdate, error)
+	GetAgentImageUpdate(ctx context.Context, agentID, containerID string) (*ImageUpdate, error)
 	ListImageUpdates(ctx context.Context, opts ListImageUpdatesOpts) ([]*ImageUpdate, error)
 	GetUpdateSummary(ctx context.Context) (*UpdateSummary, error)
-	DeleteImageUpdatesByContainer(ctx context.Context, containerID string) error
 	DeleteStaleImageUpdates(ctx context.Context, scanID string, agentIDs, scannedContainerNames []string) (int64, error)
 	ListStaleImageUpdates(ctx context.Context, scanID string, agentIDs, scannedContainerNames []string) ([]StaleImageUpdate, error)
 	ListOrphanImageUpdates(ctx context.Context) ([]StaleImageUpdate, error)
 	DeleteOrphanImageUpdates(ctx context.Context) (int64, error)
 
-	// Version pins
 	InsertVersionPin(ctx context.Context, p *VersionPin) (string, error)
-	GetVersionPin(ctx context.Context, containerID string) (*VersionPin, error)
-	DeleteVersionPin(ctx context.Context, containerID string) error
+	GetVersionPin(ctx context.Context, agentID, containerID string) (*VersionPin, error)
+	DeleteVersionPin(ctx context.Context, agentID, containerID string) error
 
-	// Update exclusions
 	CreateExclusion(ctx context.Context, e *UpdateExclusion) (bool, error)
 	ListExclusions(ctx context.Context) ([]*UpdateExclusion, error)
 	DeleteExclusion(ctx context.Context, id string) error
 
-	// CVE cache
 	InsertCVECacheEntry(ctx context.Context, e *CVECacheEntry) (string, error)
 	GetCVECacheEntries(ctx context.Context, ecosystem, packageName, packageVersion string) ([]*CVECacheEntry, error)
 	IsCVECacheFresh(ctx context.Context, ecosystem, packageName, packageVersion string) (bool, error)
 
-	// Container CVEs
 	UpsertContainerCVE(ctx context.Context, c *ContainerCVE) error
-	ListContainerCVEs(ctx context.Context, containerID string) ([]*ContainerCVE, error)
+	ListContainerCVEs(ctx context.Context, agentID, containerID string) ([]*ContainerCVE, error)
 	ListAllActiveCVEs(ctx context.Context, opts ListCVEsOpts) ([]*ContainerCVE, error)
-	ResolveContainerCVE(ctx context.Context, containerID, cveID string) error
-	DeleteContainerCVEs(ctx context.Context, containerID string) error
 	GetCVESummaryCounts(ctx context.Context) (map[string]int, error)
 
-	// CVE evaluations
 	UpsertCVEEvaluation(ctx context.Context, e *CVEEvaluation) error
-	GetCVEEvaluation(ctx context.Context, containerID string) (*CVEEvaluation, error)
-	DeleteCVEEvaluation(ctx context.Context, containerID string) error
+	GetCVEEvaluation(ctx context.Context, agentID, containerID string) (*CVEEvaluation, error)
 
-	// Digest baselines (non-semver tags)
 	UpsertDigestBaseline(ctx context.Context, b *DigestBaseline) error
-	GetDigestBaseline(ctx context.Context, containerID string) (*DigestBaseline, error)
+	GetDigestBaseline(ctx context.Context, agentID, containerID string) (*DigestBaseline, error)
 
-	// Risk score history
 	InsertRiskScoreRecord(ctx context.Context, r *RiskScoreRecord) (string, error)
-	ListRiskScoreHistory(ctx context.Context, containerID string, from, to time.Time) ([]*RiskScoreRecord, error)
+	ListRiskScoreHistory(ctx context.Context, agentID, containerID string, from, to time.Time) ([]*RiskScoreRecord, error)
 
-	// Retention cleanup
+	// ContainerAgent returns the agent of the containers bearing externalID when they all run on one, else the local runtime.
+	ContainerAgent(ctx context.Context, externalID string) (string, error)
+
 	CleanupExpired(ctx context.Context, olderThan time.Time) (int64, error)
 }
 
-// ListImageUpdatesOpts contains filter parameters for listing image updates.
 type ListImageUpdatesOpts struct {
 	Status     string
 	UpdateType string
 	MinRisk    int
 }
 
-// UpdateSummary holds aggregated update counts.
 type UpdateSummary struct {
 	Critical    int `json:"critical"`
 	Recommended int `json:"recommended"`
