@@ -106,9 +106,6 @@ func watchController[T metav1.Object](r *Runtime, informer cache.SharedIndexInfo
 			return ok && r.nsFilter.IsAllowed(o.GetNamespace())
 		},
 		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				emit(toEvent("start", obj.(T)))
-			},
 			UpdateFunc: func(_, newObj interface{}) {
 				emit(toEvent("update", newObj.(T)))
 			},
