@@ -102,7 +102,8 @@ func newQueueFixture(t *testing.T) *queueFixture {
 	require.NoError(t, err)
 	return &queueFixture{
 		ctx: ctx, logger: logger, channels: store.NewChannelStore(db), payload: payload,
-		clock: &fakeClock{now: time.Now()},
+		// Ahead of the real clock the store dates rows with, so a row written later in the test is already due.
+		clock: &fakeClock{now: time.Now().Add(time.Minute)},
 	}
 }
 
