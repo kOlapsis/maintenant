@@ -285,10 +285,7 @@ func (m *Manager) check(ctx context.Context) {
 	}
 }
 
-// applyRefusal acts on a 401 or 403 only when its body is signed by the license
-// server, and reports whether it did. A payload that still grants the license
-// contradicts a refusal and is not believed either; the caller degrades as for
-// a network error.
+// applyRefusal acts on a 401 or 403 only when its body is signed by the license server and does not grant the license, and reports whether it did.
 func (m *Manager) applyRefusal(ctx context.Context, statusCode int, resp *SignedResponse, httpErr error) bool {
 	if resp == nil {
 		m.logger.Error("license refusal is not signed, ignoring it", "http_status", statusCode)
