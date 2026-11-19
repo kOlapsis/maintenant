@@ -104,6 +104,20 @@ func WithRequestTimeout(h http.Handler, timeout time.Duration) http.Handler {
 	})
 }
 
+// endStreamsWith ends every streaming request once streams is cancelled, so open dashboards do not hold a server shutdown.
+func endStreamsWith(streams context.Context, h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if IsStreamingPath(r.URL.Path) {
+			ctx, cancel := context.WithCancel(r.Context())
+			defer cancel()
+			stop := context.AfterFunc(streams, cancel)
+			defer stop()
+			r = r.WithContext(ctx)
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
 // inlineScriptRe matches a <script> element and captures its attributes and its
 // body. One carrying a src attribute is fetched from the origin and is already
 // covered by 'self'; only an inline body needs a hash.
@@ -401,6 +415,10 @@ func (a *App) buildHTTPServer() *http.Server {
 	handler := SecurityHeaders(contentSecurityPolicy(indexHTML))(
 		WithRequestTimeout(v1.DemoModeGuard(a.cfg.DemoMode, a.cfg.DemoToken)(
 			statusHostFilter(statusHost, urlHostname(a.cfg.BaseURL), hostGuard(a.cfg.AllowedHostSet(), forwardedHeadersWarning(a.logger, trusted, topMux)))), 10*time.Second))
+
+	streams, endStreams := context.WithCancel(context.Background())
+	a.endStreams = endStreams
+	handler = endStreamsWith(streams, handler)
 
 	return &http.Server{
 		Addr:         a.cfg.Addr,

@@ -90,6 +90,7 @@ type App struct {
 	router        *v1.Router
 	statusHandler *status.Handler
 	srv           *http.Server
+	endStreams    context.CancelFunc
 
 	// Stores (needed for retention cleanup and reconciliation)
 	alertStore     alert.AlertStore
@@ -1114,16 +1115,21 @@ func (a *App) Shutdown() error {
 
 	// 10s shutdown grace covers the SHM SDK's 10s HTTP timeout in flight,
 	// so an in-progress telemetry snapshot does not extend the deadline (FR-011).
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	httpCtx, cancelHTTP := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelHTTP()
 
-	if err := a.srv.Shutdown(shutdownCtx); err != nil {
+	a.endStreams()
+	if err := a.srv.Shutdown(httpCtx); err != nil {
 		a.logger.Error("HTTP server shutdown error", "error", err)
 	}
 
 	if a.licenseMgr != nil {
 		a.licenseMgr.Stop()
 	}
+
+	// A grace of its own: a slow HTTP drain must not leave the rest an expired context.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	// Drop this instance's row before closing: a clean restart must not see
 	// its own previous run as a peer until the stale purge catches up.
