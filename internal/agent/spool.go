@@ -626,8 +626,7 @@ func (s *Spool) drainOnce(ctx context.Context) error {
 	}
 }
 
-// drainMemory sends the memory buffer when there is no store; without an ack
-// an event goes out once, and stays buffered only if the send fails.
+// Without a store there is no ack: an event goes out once and stays buffered only if the send fails.
 func (s *Spool) drainMemory(ctx context.Context, sink eventSink, attachedAt time.Time) error {
 	for {
 		if err := s.limiter.Wait(ctx); err != nil {
