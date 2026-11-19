@@ -19,6 +19,8 @@ const (
 	m46Workload = "shop/Deployment/api"
 	m46Local    = "ctr-web-local"
 	m46Gone     = "ctr-gone"
+	m46Shared   = "ctr-web-shared"
+	m46Archived = "ctr-job-archived"
 )
 
 type m46Row struct{ agent, container string }
@@ -92,8 +94,9 @@ func m46Rows(t *testing.T, db *DB, table, column string) []m46Row {
 	return out
 }
 
-// A row recorded before the upgrade under an external id two agents share is
-// kept for each of them; a row whose container is unknown stays on the local runtime.
+// A row recorded before the upgrade under an external id several agents share is
+// kept for each of them, the local runtime included, and an archived container
+// still claims its row; a row whose container is unknown stays on the local runtime.
 func TestMigration46_EveryHomonymKeepsItsRows(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
@@ -105,9 +108,13 @@ func TestMigration46_EveryHomonymKeepsItsRows(t *testing.T) {
 	seedHostedContainer(t, cs, "agent-staging", m46Workload, "api", "shop/api:1.0")
 	seedHostedContainer(t, cs, "agent-prod", m46Workload, "api", "shop/api:1.0")
 	seedHostedContainer(t, cs, uid.LocalAgent, m46Local, "web", "nginx:1.27")
+	seedHostedContainer(t, cs, uid.LocalAgent, m46Shared, "web", "nginx:1.27")
+	seedHostedContainer(t, cs, "agent-prod", m46Shared, "web", "nginx:1.27")
+	archived := seedHostedContainer(t, cs, "agent-staging", m46Archived, "job", "busybox:1.37")
+	require.NoError(t, cs.ArchiveContainer(ctx, archived, time.Now()))
 
 	applyMigration46(t, db, "down")
-	for _, id := range []string{m46Workload, m46Local, m46Gone} {
+	for _, id := range []string{m46Workload, m46Local, m46Gone, m46Shared, m46Archived} {
 		insertPre46Rows(t, db, id)
 	}
 	applyMigration46(t, db, "up")
@@ -117,6 +124,9 @@ func TestMigration46_EveryHomonymKeepsItsRows(t *testing.T) {
 		{"agent-staging", m46Workload},
 		{uid.LocalAgent, m46Local},
 		{uid.LocalAgent, m46Gone},
+		{uid.LocalAgent, m46Shared},
+		{"agent-prod", m46Shared},
+		{"agent-staging", m46Archived},
 	}
 	for _, tc := range m46Tables {
 		assert.ElementsMatch(t, want, m46Rows(t, db, tc.table, tc.container), tc.table)
