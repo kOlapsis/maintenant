@@ -58,8 +58,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	if !snap.Replayed {
 		s.agentLatest.put(snap, time.Now())
 	}
-	s.processSnapshot(snap)
-	return nil
+	return s.handleSnapshot(snap)
 }
 
 const agentSnapshotTTL = 35 * time.Second

@@ -877,11 +877,11 @@ func (a *App) startOSEOL(ctx context.Context) {
 		a.logger.Warn("local os identity not stored", "error", err)
 	}
 
-	go func() {
+	a.background.Go(func() {
 		if err := a.eolSvc.Start(ctx); err != nil {
 			a.logger.Error("os end-of-support service stopped", "error", err)
 		}
-	}()
+	})
 }
 
 func onHost(containerName string, m map[string]any) string {
