@@ -253,6 +253,8 @@ type DeliveryQueue interface {
 	ListDueDeliveries(ctx context.Context, now time.Time, limit int) ([]*NotificationDelivery, error)
 	// ClaimDelivery holds the attempt due at d.NextAttemptAt until until, and reports false when d has moved on or waits behind an earlier delivery.
 	ClaimDelivery(ctx context.Context, d *NotificationDelivery, until time.Time) (bool, error)
+	// SettleDelivery records the outcome of the attempt claimed until claim, and reports false when that claim no longer holds.
+	SettleDelivery(ctx context.Context, d *NotificationDelivery, claim time.Time) (bool, error)
 }
 
 // TriggerStore defines the persistence interface for AlertTrigger objects

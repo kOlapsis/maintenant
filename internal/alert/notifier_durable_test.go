@@ -302,6 +302,52 @@ func TestDurableDelivery_TwoNotifiersSendEachAttemptOnce(t *testing.T) {
 	assert.Equal(t, want, got, "two instances on one database never send the same attempt twice")
 }
 
+func TestDurableDelivery_AnAttemptPastItsClaimLeavesTheRowAlone(t *testing.T) {
+	f := newQueueFixture(t)
+	release := make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
+	arrived := make(chan struct{}, 8)
+	var mu sync.Mutex
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requests++
+		first := requests == 1
+		mu.Unlock()
+		arrived <- struct{}{}
+		if first {
+			<-release
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	ch := f.channel(t, srv.URL)
+	d := f.delivery(t, ch, alert.EventFired, alert.StatusActive)
+
+	f.notifier().StartUntilCleanup(f.ctx, t)
+	select {
+	case <-arrived:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the first attempt never reached the destination")
+	}
+	f.clock.Advance(3 * time.Minute)
+	f.notifier().StartUntilCleanup(f.ctx, t)
+	require.Eventually(t, func() bool {
+		r := f.row(d.ID)
+		return r != nil && r.Status == alert.DeliveryDelivered
+	}, 10*time.Second, 5*time.Millisecond, "a second worker takes the attempt once the first one's claim has run out")
+
+	unblock()
+	assert.Never(t, func() bool {
+		r := f.row(d.ID)
+		return r != nil && r.Status != alert.DeliveryDelivered
+	}, 300*time.Millisecond, 5*time.Millisecond, "the late answer of the first attempt must not overwrite the row")
+}
+
 func TestDurableDelivery_ARecoveryWaitsForTheAlertItResolves(t *testing.T) {
 	f := newQueueFixture(t)
 	srv := newHookServer(t, func(n int) int {

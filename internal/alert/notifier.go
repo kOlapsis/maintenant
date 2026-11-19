@@ -53,6 +53,8 @@ type NotificationJob struct {
 	Body []byte
 	// Done, when set, receives the outcome once the last attempt is over.
 	Done func(ctx context.Context, err error)
+
+	claim time.Time // end of this worker's hold on the durable row
 }
 
 // jobAlertID returns the job's alert id for logging, or "" when the job has no
@@ -298,8 +300,9 @@ func (n *Notifier) handle(ctx context.Context, job NotificationJob) {
 		if !taken {
 			return
 		}
+		job.claim = job.Delivery.NextAttemptAt
 		if reason := n.unsendable(job); reason != "" {
-			n.failDelivery(ctx, job.Delivery, reason)
+			n.failDelivery(ctx, job, reason)
 			return
 		}
 	}
@@ -330,18 +333,14 @@ func (n *Notifier) processJob(ctx context.Context, job NotificationJob) {
 	if err := n.suspension(job.Channel); err != nil {
 		job.Delivery.Status = DeliverySuspended
 		job.Delivery.LastError = err.Error()
-		if job.Delivery.ID != "" {
-			if updateErr := n.channelStore.UpdateDelivery(ctx, job.Delivery); updateErr != nil {
-				n.logger.Error("notifier: update suspended delivery", "error", updateErr)
-			}
-		}
+		n.record(ctx, job)
 		return
 	}
 
 	eventType := alertEventType(job.Alert)
 	sender := n.senderFor(job.Channel.Type)
 	if err := sender.Ready(); err != nil {
-		n.failDelivery(ctx, job.Delivery, err.Error())
+		n.failDelivery(ctx, job, err.Error())
 		return
 	}
 	if n.durable(job) {
@@ -363,8 +362,8 @@ func (n *Notifier) attempt(ctx context.Context, job NotificationJob, sender Chan
 
 	if err == nil {
 		d.Status = DeliveryDelivered
-		if updateErr := n.channelStore.UpdateDelivery(ctx, d); updateErr != nil {
-			n.logger.Error("notifier: update delivery status", "error", updateErr)
+		if !n.record(ctx, job) {
+			return
 		}
 		n.logger.Debug("alert notifier: delivered",
 			"alert_id", jobAlertID(job), "channel_id", job.Channel.ID, "channel_type", job.Channel.Type)
@@ -375,13 +374,13 @@ func (n *Notifier) attempt(ctx context.Context, job NotificationJob, sender Chan
 		if !isPermanent(err) {
 			if next := n.now().Add(sender.RetryDelay(retryDelay(d.Attempts), err)); !next.After(d.CreatedAt.Add(deliveryMaxAge)) {
 				d.LastError, d.NextAttemptAt = sender.FailureMessage(err), next
-				if updateErr := n.channelStore.UpdateDelivery(ctx, d); updateErr != nil {
-					n.logger.Error("notifier: reschedule delivery", "error", updateErr)
-				}
+				n.record(ctx, job)
 				return
 			}
 		}
-		n.failDelivery(ctx, d, sender.FailureMessage(err))
+		if !n.failDelivery(ctx, job, sender.FailureMessage(err)) {
+			return
+		}
 	}
 	if job.Done != nil {
 		job.Done(ctx, err)
@@ -437,20 +436,38 @@ func (n *Notifier) deliver(ctx context.Context, job NotificationJob, sender Chan
 		}
 	}
 
-	n.failDelivery(ctx, job.Delivery, sender.FailureMessage(lastErr))
+	n.failDelivery(ctx, job, sender.FailureMessage(lastErr))
 	if job.Done != nil {
 		job.Done(ctx, lastErr)
 	}
 }
 
-func (n *Notifier) failDelivery(ctx context.Context, d *NotificationDelivery, errMsg string) {
-	d.Status = DeliveryFailed
-	d.LastError = errMsg
-	if d.ID != "" {
-		if updateErr := n.channelStore.UpdateDelivery(ctx, d); updateErr != nil {
-			n.logger.Error("notifier: update failed delivery", "error", updateErr)
+func (n *Notifier) failDelivery(ctx context.Context, job NotificationJob, errMsg string) bool {
+	job.Delivery.Status = DeliveryFailed
+	job.Delivery.LastError = errMsg
+	return n.record(ctx, job)
+}
+
+// record writes the outcome of job's delivery, for a durable row only while this worker's claim on it still holds.
+func (n *Notifier) record(ctx context.Context, job NotificationJob) bool {
+	d := job.Delivery
+	if !n.durable(job) {
+		if d.ID != "" {
+			if err := n.channelStore.UpdateDelivery(ctx, d); err != nil {
+				n.logger.Error("notifier: record delivery", "error", err)
+			}
 		}
+		return true
 	}
+	held, err := n.queue.SettleDelivery(ctx, d, job.claim)
+	if err != nil {
+		n.logger.Error("notifier: record delivery, it is due again once its claim runs out", "error", err, "delivery_id", d.ID)
+		return false
+	}
+	if !held {
+		n.logger.Info("notifier: delivery claimed by another worker meanwhile, outcome left to it", "delivery_id", d.ID)
+	}
+	return held
 }
 
 // suspension returns a *SuspendedError when the running edition no longer opens ch's type, warning once per channel and transition.

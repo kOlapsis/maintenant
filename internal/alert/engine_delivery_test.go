@@ -154,7 +154,9 @@ func TestEngineDelivery_ARestartSendsExactlyWhatWasDecided(t *testing.T) {
 	e := newDeliveryEngine(t, srv.URL,
 		func(c *store.ChannelStoreImpl) alert.ChannelStore { return c },
 		// Never started: the process stops before any notification leaves.
-		func(c *store.ChannelStoreImpl, logger *slog.Logger) *alert.Notifier { return alert.NewNotifier(c, logger, true) })
+		func(c *store.ChannelStoreImpl, logger *slog.Logger) *alert.Notifier {
+			return alert.NewNotifier(c, logger, true)
+		})
 
 	e.emit(alert.SeverityWarning, "api slow", false)
 	id := e.firedID(t)

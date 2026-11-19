@@ -198,6 +198,20 @@ func (s *ChannelStoreImpl) ClaimDelivery(ctx context.Context, d *alert.Notificat
 	return true, nil
 }
 
+// SettleDelivery records the outcome of the attempt of d claimed until claim, and reports false when that claim no longer holds.
+func (s *ChannelStoreImpl) SettleDelivery(ctx context.Context, d *alert.NotificationDelivery, claim time.Time) (bool, error) {
+	res, err := s.writer.Exec(ctx,
+		`UPDATE notification_deliveries SET status=?, attempts=?, last_error=?, next_attempt_at=?, updated_at=?
+		WHERE id=? AND status=? AND next_attempt_at=?`,
+		d.Status, d.Attempts, NullableString(d.LastError), d.NextAttemptAt.Unix(), time.Now().Unix(),
+		d.ID, alert.DeliveryPending, claim.Unix(),
+	)
+	if err != nil {
+		return false, fmt.Errorf("settle delivery: %w", err)
+	}
+	return res.RowsAffected == 1, nil
+}
+
 // ListDueDeliveries lists up to limit pending deliveries due at now, oldest due first, without those that wait
 // behind an earlier pending delivery of the same alert to the same channel.
 func (s *ChannelStoreImpl) ListDueDeliveries(ctx context.Context, now time.Time, limit int) ([]*alert.NotificationDelivery, error) {
