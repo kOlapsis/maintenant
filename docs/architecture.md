@@ -76,7 +76,7 @@ Two more entry points share the binary: `maintenant --mcp-stdio` relays stdin an
 
 | Technology | Purpose |
 |-----------|---------|
-| **Go** 1.26.10 | Application runtime (`go` directive of `go.mod`) |
+| **Go** 1.26.11 | Application runtime (`go` directive of `go.mod`) |
 | **`net/http`** (stdlib) | HTTP server, REST API, SSE, cross-origin protection |
 | **SQLite** (WAL mode) | Persistence by default, single-writer pattern |
 | **`github.com/mattn/go-sqlite3`** | SQLite driver (CGO, the only CGO dependency) |
