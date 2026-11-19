@@ -125,10 +125,12 @@ type EscalationDeps struct {
 	Logger     *slog.Logger
 }
 
-// Escalation holds the escalation service and, when the running edition opens it, the escalator.
+// Escalation holds the escalation service and, when the running edition opens it, the escalator
+// with the loop that holds its background sends until its context ends.
 type Escalation struct {
 	Service   escalation.Service
 	Escalator alert.Escalator
+	Run       func(ctx context.Context)
 }
 
 // EventBroadcaster pushes a server-sent event to connected browsers.

@@ -83,6 +83,7 @@ type App struct {
 	downDetector    *alert.DownDetector
 	escalationStore *store.EscalationStore
 	escalationSvc   escalation.Service
+	escalationRun   func(context.Context)
 
 	// HTTP
 	broker        *v1.SSEBroker
@@ -804,6 +805,7 @@ func (a *App) wireEscalation(maintenanceStore *store.MaintenanceStoreImpl, chann
 			Logger:     a.logger,
 		})
 		a.escalationSvc = esc.Service
+		a.escalationRun = esc.Run
 		if esc.Escalator != nil {
 			a.alertEngine.SetEscalator(esc.Escalator)
 		}
@@ -910,6 +912,9 @@ func (a *App) Start(ctx context.Context) error {
 	}
 
 	a.alertEngine.Start(ctx)
+	if a.escalationRun != nil {
+		a.background.Go(func() { a.escalationRun(ctx) })
+	}
 	// Runs here too so DB-backed monitors are swept even without a container runtime.
 	a.pruneOrphanAlerts(ctx)
 

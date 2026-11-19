@@ -12,16 +12,14 @@ import (
 // NewEscalation builds the escalation service and its escalator in every edition.
 func NewEscalation(d extpoint.EscalationDeps) extpoint.Escalation {
 	svc := NewService(d.Store, d.Channels, extension.CurrentEdition, d.Suppressor, d.Logger.With("component", "escalation"))
-	return extpoint.Escalation{
-		Service: svc,
-		Escalator: NewRunner(RunnerDeps{
-			Store:        d.Store,
-			AlertStore:   d.Alerts,
-			ChannelStore: d.Channels,
-			Notifier:     d.Notifier,
-			Suppressor:   d.Suppressor,
-			Service:      svc,
-			Logger:       d.Logger.With("component", "escalation-runner"),
-		}),
-	}
+	runner := NewRunner(RunnerDeps{
+		Store:        d.Store,
+		AlertStore:   d.Alerts,
+		ChannelStore: d.Channels,
+		Notifier:     d.Notifier,
+		Suppressor:   d.Suppressor,
+		Service:      svc,
+		Logger:       d.Logger.With("component", "escalation-runner"),
+	})
+	return extpoint.Escalation{Service: svc, Escalator: runner, Run: runner.Run}
 }
