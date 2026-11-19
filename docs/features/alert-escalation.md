@@ -12,7 +12,7 @@ Escalation policies automatically route unacknowledged alerts through a chain of
 
 When an alert fires, every active escalation policy whose filters match it starts an **escalation run**. The run tracks which notification level is due next and sends the notifications of that level when its delay has passed. The chain stops as soon as the alert is acknowledged or resolved.
 
-A level's `delay_seconds` is counted **from the start of the run** (the moment the alert fires), not from the previous level. A level with a delay of 900 fires 15 minutes after the alert, whatever the level before it had. Runs are evaluated once a minute, so a level can fire up to a minute after its delay.
+A level's `delay_seconds` is counted **from the start of the run** (the moment the alert fires), not from the previous level. A level with a delay of 900 fires 15 minutes after the alert, whatever the level before it had. Runs are evaluated once a minute, so a level can fire up to a minute after its delay. If the database cannot record a run when the alert fires, the run is started at the next evaluation with the times it would have had, as long as the alert is still active and unacknowledged and the server has not restarted in between.
 
 ```
 Alert fires (T+0)

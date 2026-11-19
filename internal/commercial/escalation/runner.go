@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	esc "github.com/kolapsis/maintenant/internal/alert/escalation"
@@ -73,6 +74,9 @@ type Runner struct {
 	logger        *slog.Logger
 	clock         func() time.Time
 	orphanTimeout time.Duration
+
+	createMu  sync.Mutex           // serializes run creation, so the engine and the retry never both start a run
+	unstarted map[string]time.Time // alert id → when its runs should have started, retried each cycle
 }
 
 // NewRunner wires a Runner. AlertStore, ChannelStore, Notifier, Service, Logger
@@ -104,6 +108,7 @@ func NewRunner(d RunnerDeps) *Runner {
 		logger:        d.Logger,
 		clock:         clock,
 		orphanTimeout: timeout,
+		unstarted:     map[string]time.Time{},
 	}
 }
 
@@ -124,7 +129,37 @@ func (r *Runner) OnAlertCreated(ctx context.Context, a *alert.Alert) error {
 	if a == nil || a.ID == "" || !extension.Allows(extension.CapAlertEscalation) {
 		return nil
 	}
+	r.createMu.Lock()
+	defer r.createMu.Unlock()
+	now := r.clock()
+	if err := r.startRuns(ctx, a, now); err != nil {
+		if _, ok := r.unstarted[a.ID]; !ok {
+			r.unstarted[a.ID] = now
+		}
+		return err
+	}
+	delete(r.unstarted, a.ID)
+	return nil
+}
 
+// retryUnstarted starts the runs that a storage error kept from starting, on the schedule of their first attempt.
+func (r *Runner) retryUnstarted(ctx context.Context) {
+	r.createMu.Lock()
+	defer r.createMu.Unlock()
+	for id, at := range r.unstarted {
+		a, err := r.alertStore.GetAlert(ctx, id)
+		if err == nil && a != nil && a.Status == alert.StatusActive && a.AcknowledgedAt == nil {
+			err = r.startRuns(ctx, a, at)
+		}
+		if err != nil {
+			r.logger.WarnContext(ctx, "escalation: run start left for the next cycle", "error", err, "alert_id", id)
+			continue
+		}
+		delete(r.unstarted, id)
+	}
+}
+
+func (r *Runner) startRuns(ctx context.Context, a *alert.Alert, now time.Time) error {
 	existing, err := r.store.SelectActiveRunsByAlert(ctx, a.ID)
 	if err != nil {
 		return fmt.Errorf("escalation: list existing runs: %w", err)
@@ -141,7 +176,7 @@ func (r *Runner) OnAlertCreated(ctx context.Context, a *alert.Alert) error {
 		return fmt.Errorf("escalation: list policies: %w", err)
 	}
 
-	now := r.clock()
+	var errs []error
 	for _, p := range policies {
 		if _, already := covered[p.ID]; already {
 			continue
@@ -171,14 +206,14 @@ func (r *Runner) OnAlertCreated(ctx context.Context, a *alert.Alert) error {
 			NextActionAt:           &nextAt,
 		}
 		if _, err := r.store.InsertRun(ctx, run); err != nil {
-			r.logger.ErrorContext(ctx, "escalation: insert run", "error", err, "alert_id", a.ID, "policy_id", p.ID)
+			errs = append(errs, fmt.Errorf("escalation: insert run of policy %s: %w", p.ID, err))
 			continue
 		}
 		r.logger.InfoContext(ctx, "escalation: run started",
 			"run_id", run.ID, "alert_id", a.ID, "policy_id", p.ID,
 			"next_action_at", nextAt.Format(time.RFC3339))
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // OnAlertAcknowledged terminates every active run attached to the alert and
@@ -275,9 +310,13 @@ func (r *Runner) OnEditionDowngraded(ctx context.Context) error {
 // recovers stuck deliveries, then steps every due run forward.
 func (r *Runner) EvaluateCycle(ctx context.Context) error {
 	if !extension.Allows(extension.CapAlertEscalation) {
+		r.createMu.Lock()
+		clear(r.unstarted)
+		r.createMu.Unlock()
 		return nil
 	}
 	now := r.clock()
+	r.retryUnstarted(ctx)
 
 	if err := r.recoverOrphans(ctx, now); err != nil {
 		r.logger.ErrorContext(ctx, "escalation: orphan recovery", "error", err)
