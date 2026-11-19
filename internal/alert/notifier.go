@@ -366,7 +366,7 @@ func (n *Notifier) attempt(ctx context.Context, job NotificationJob, sender Chan
 	cancel()
 
 	if err == nil {
-		d.Status = DeliveryDelivered
+		d.Status, d.LastError = DeliveryDelivered, ""
 		if !n.record(ctx, job) {
 			return
 		}
@@ -378,7 +378,7 @@ func (n *Notifier) attempt(ctx context.Context, job NotificationJob, sender Chan
 			"alert_id", jobAlertID(job), "error", err)
 		if !isPermanent(err) {
 			if next := n.now().Add(sender.RetryDelay(retryDelay(d.Attempts), err)); !next.After(d.CreatedAt.Add(deliveryMaxAge)) {
-				d.LastError, d.NextAttemptAt = sender.FailureMessage(err), next
+				d.LastError, d.NextAttemptAt = err.Error(), next
 				n.record(ctx, job)
 				return
 			}

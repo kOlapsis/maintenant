@@ -353,6 +353,45 @@ func TestDurableDelivery_DisablingAChannelCancelsWhatItHadToSend(t *testing.T) {
 	assert.Zero(t, f.countStatus(alert.DeliveryFailed), "the cancelled notification leaves no row")
 }
 
+// genericFailure fails its first send and, like the email sender, sums every failure up in one fixed message.
+type genericFailure struct{ sends atomic.Int32 }
+
+func (s *genericFailure) Ready() error { return nil }
+
+func (s *genericFailure) Send(context.Context, *alert.NotificationChannel, string, *alert.Alert) error {
+	if s.sends.Add(1) == 1 {
+		return errors.New("smtp dial: connection reset")
+	}
+	return nil
+}
+
+func (s *genericFailure) RetryDelay(wait time.Duration, _ error) time.Duration { return wait }
+
+func (s *genericFailure) FailureMessage(error) string { return "delivery failed after retries" }
+
+func (s *genericFailure) SendTest(context.Context, *alert.NotificationChannel, *alert.Alert) (int, error) {
+	return http.StatusOK, nil
+}
+
+func TestDurableDelivery_LastErrorIsTheErrorOfTheLastAttempt(t *testing.T) {
+	f := newQueueFixture(t)
+	id, err := f.channels.InsertChannel(f.ctx, &alert.NotificationChannel{Name: "generic", Type: "generic", URL: "ops@example.com", Enabled: true})
+	require.NoError(t, err)
+	ch, err := f.channels.GetChannel(f.ctx, id)
+	require.NoError(t, err)
+	d := f.delivery(t, ch, alert.EventFired, alert.StatusActive)
+	n := f.notifier()
+	n.RegisterChannel("generic", &genericFailure{})
+	n.StartUntilCleanup(f.ctx, t)
+
+	require.Eventually(t, func() bool { r := f.row(d.ID); return r != nil && r.Attempts == 1 }, 10*time.Second, 5*time.Millisecond)
+	assert.Equal(t, "smtp dial: connection reset", f.row(d.ID).LastError, "a retry still to come keeps the cause, not a final verdict")
+
+	f.clock.Advance(5 * time.Second)
+	require.Eventually(t, func() bool { return f.countStatus(alert.DeliveryDelivered) == 1 }, 10*time.Second, 5*time.Millisecond)
+	assert.Empty(t, f.row(d.ID).LastError, "a delivered notification carries no error")
+}
+
 func TestDurableDelivery_AnAttemptPastItsClaimLeavesTheRowAlone(t *testing.T) {
 	f := newQueueFixture(t)
 	release := make(chan struct{})
