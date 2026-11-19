@@ -40,8 +40,8 @@ func takeFailure(n *atomic.Int32) bool {
 
 type flakyEscStore struct {
 	esc.Store
-	insertRunFails      atomic.Int32
-	insertDeliveryFails atomic.Int32
+	insertRunFails atomic.Int32
+	reserveFails   atomic.Int32
 }
 
 func (s *flakyEscStore) InsertRun(ctx context.Context, r *esc.Run) (string, error) {
@@ -52,10 +52,17 @@ func (s *flakyEscStore) InsertRun(ctx context.Context, r *esc.Run) (string, erro
 }
 
 func (s *flakyEscStore) InsertDelivery(ctx context.Context, d *esc.Delivery) (string, error) {
-	if takeFailure(&s.insertDeliveryFails) {
+	if takeFailure(&s.reserveFails) {
 		return "", errInjected
 	}
 	return s.Store.InsertDelivery(ctx, d)
+}
+
+func (s *flakyEscStore) ReserveDelivery(ctx context.Context, d *esc.Delivery) (bool, error) {
+	if takeFailure(&s.reserveFails) {
+		return false, errInjected
+	}
+	return s.Store.ReserveDelivery(ctx, d)
 }
 
 type flakyChannels struct {
@@ -83,11 +90,47 @@ func (c *flakyChannels) GetChannel(ctx context.Context, id string) (*alert.Notif
 	return c.ChannelStore.GetChannel(ctx, id)
 }
 
+type hookedAlerts struct {
+	*store.AlertStoreImpl
+	mu              sync.Mutex
+	afterGet        func()
+	beforeEscalated func()
+}
+
+func (s *hookedAlerts) setHook(hook *func(), fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	*hook = fn
+}
+
+func (s *hookedAlerts) takeHook(hook *func()) func() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fn := *hook
+	*hook = nil
+	return fn
+}
+
+func (s *hookedAlerts) GetAlert(ctx context.Context, id string) (*alert.Alert, error) {
+	a, err := s.AlertStoreImpl.GetAlert(ctx, id)
+	if fn := s.takeHook(&s.afterGet); fn != nil {
+		fn()
+	}
+	return a, err
+}
+
+func (s *hookedAlerts) SetEscalatedAt(ctx context.Context, id string, at time.Time) error {
+	if fn := s.takeHook(&s.beforeEscalated); fn != nil {
+		fn()
+	}
+	return s.AlertStoreImpl.SetEscalatedAt(ctx, id, at)
+}
+
 type dbHarness struct {
 	t        *testing.T
 	ctx      context.Context
 	store    *flakyEscStore
-	alerts   *store.AlertStoreImpl
+	alerts   *hookedAlerts
 	channels *flakyChannels
 	runner   *Runner
 
@@ -105,7 +148,7 @@ func newDBHarness(t *testing.T, sender Sender) *dbHarness {
 		t:        t,
 		ctx:      context.Background(),
 		store:    &flakyEscStore{Store: store.NewEscalationStore(db)},
-		alerts:   store.NewAlertStore(db),
+		alerts:   &hookedAlerts{AlertStoreImpl: store.NewAlertStore(db)},
 		channels: &flakyChannels{ChannelStore: store.NewChannelStore(db), getFails: map[string]int{}},
 		now:      time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC),
 	}

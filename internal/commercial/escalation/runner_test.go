@@ -283,6 +283,18 @@ func (s *runStore) InsertDelivery(_ context.Context, d *esc.Delivery) (string, e
 	return d.ID, nil
 }
 
+func (s *runStore) ReserveDelivery(ctx context.Context, d *esc.Delivery) (bool, error) {
+	s.mu.Lock()
+	r, ok := s.runs[d.RunID]
+	active := ok && r.Status == esc.RunStatusActive
+	s.mu.Unlock()
+	if !active {
+		return false, nil
+	}
+	_, err := s.InsertDelivery(ctx, d)
+	return err == nil, err
+}
+
 func (s *runStore) UpdateDelivery(_ context.Context, d *esc.Delivery) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

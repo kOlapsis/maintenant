@@ -70,6 +70,8 @@ type Store interface {
 	// InsertDelivery returns ErrDeliveryDuplicate when the UNIQUE
 	// (run_id, level_index, channel_id) constraint is violated.
 	InsertDelivery(ctx context.Context, d *Delivery) (string, error)
+	// ReserveDelivery inserts like InsertDelivery while the run is active and its alert active and unacknowledged, and reports whether it did.
+	ReserveDelivery(ctx context.Context, d *Delivery) (bool, error)
 	UpdateDelivery(ctx context.Context, d *Delivery) error
 	SelectOrphanPendingDeliveries(ctx context.Context, before time.Time) ([]*Delivery, error)
 }

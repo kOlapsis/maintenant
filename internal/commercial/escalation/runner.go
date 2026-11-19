@@ -241,7 +241,7 @@ func (r *Runner) OnAlertAcknowledged(ctx context.Context, alertID string, ack al
 		r.logger.InfoContext(ctx, "escalation: run stopped by ack",
 			"run_id", run.ID, "alert_id", alertID, "by", ack.By)
 
-		if a == nil || run.LastExecutedLevelIndex < 0 {
+		if a == nil {
 			continue
 		}
 		channelIDs, cErr := r.notifiedChannels(ctx, run.ID)
@@ -386,8 +386,12 @@ func (r *Runner) processRun(ctx context.Context, run *esc.Run, now time.Time) er
 	if nextLevel >= len(policy.Levels) {
 		if run.LastExecutedLevelIndex >= 0 && run.LastExecutedLevelIndex < len(policy.Levels) {
 			exhAlert := formatExhaustedAlert(a, len(policy.Levels))
-			if err := r.dispatchLevel(ctx, run.ID, specialLevelExhausted,
-				policy.Levels[run.LastExecutedLevelIndex].ChannelIDs, exhAlert); err != nil {
+			err := r.dispatchLevel(ctx, run.ID, specialLevelExhausted,
+				policy.Levels[run.LastExecutedLevelIndex].ChannelIDs, exhAlert)
+			if errors.Is(err, errRunStopped) {
+				return nil
+			}
+			if err != nil {
 				return fmt.Errorf("exhaustion notice left due: %w", err)
 			}
 		}
@@ -395,7 +399,11 @@ func (r *Runner) processRun(ctx context.Context, run *esc.Run, now time.Time) er
 	}
 
 	level := policy.Levels[nextLevel]
-	if err := r.dispatchLevel(ctx, run.ID, nextLevel, level.ChannelIDs, a); err != nil {
+	err = r.dispatchLevel(ctx, run.ID, nextLevel, level.ChannelIDs, a)
+	if errors.Is(err, errRunStopped) {
+		return nil
+	}
+	if err != nil {
 		return fmt.Errorf("level %d left due: %w", nextLevel, err)
 	}
 	if err := r.alertStore.SetEscalatedAt(ctx, a.ID, now); err != nil {
@@ -421,16 +429,30 @@ func (r *Runner) processRun(ctx context.Context, run *esc.Run, now time.Time) er
 	return nil
 }
 
-// dispatchLevel hands a level to each of its channels and fails when one of them is left to a later attempt.
+var errRunStopped = errors.New("run stopped, or its alert acknowledged or resolved")
+
+// dispatchLevel hands a level to each of its channels; it fails when one is left to a later attempt, at once with errRunStopped.
 func (r *Runner) dispatchLevel(ctx context.Context, runID string, levelIndex int, channelIDs []string, a *alert.Alert) error {
 	now := r.clock()
 	var errs []error
 	for _, chID := range channelIDs {
-		if err := r.dispatchToChannel(ctx, runID, levelIndex, chID, a, now); err != nil {
+		err := r.dispatchToChannel(ctx, runID, levelIndex, chID, a, now)
+		if errors.Is(err, errRunStopped) {
+			return err
+		}
+		if err != nil {
 			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func (r *Runner) reserve(ctx context.Context, d *esc.Delivery) (bool, error) {
+	if d.LevelIndex == specialLevelAck { // sent once the run has stopped, so the guard would refuse it
+		_, err := r.store.InsertDelivery(ctx, d)
+		return err == nil, err
+	}
+	return r.store.ReserveDelivery(ctx, d)
 }
 
 // dispatchToChannel reserves a delivery row (UNIQUE constraint catches crash-recovery
@@ -456,11 +478,14 @@ func (r *Runner) dispatchToChannel(ctx context.Context, runID string, levelIndex
 	case !ch.Enabled:
 		delivery.Status, delivery.Error = esc.DeliveryStatusFailed, "channel disabled"
 	}
-	if _, err := r.store.InsertDelivery(ctx, delivery); err != nil {
-		if errors.Is(err, esc.ErrDeliveryDuplicate) {
-			return nil
-		}
+	reserved, err := r.reserve(ctx, delivery)
+	switch {
+	case errors.Is(err, esc.ErrDeliveryDuplicate):
+		return nil
+	case err != nil:
 		return fmt.Errorf("reserve delivery to channel %s: %w", chID, err)
+	case !reserved:
+		return errRunStopped
 	}
 	if delivery.Status == esc.DeliveryStatusPending {
 		go r.deliverAndUpdate(ctx, delivery, a, ch)

@@ -32,7 +32,7 @@ func TestLevelStaysDueWhileItsChannelCannotBeServed(t *testing.T) {
 	assert.Equal(t, -1, run.LastExecutedLevelIndex, "a channel that could not be read leaves the level due")
 	assert.Empty(t, h.deliveries(run.ID))
 
-	h.store.insertDeliveryFails.Store(1)
+	h.store.reserveFails.Store(1)
 	h.cycle()
 	assert.Equal(t, -1, h.onlyRun(a).LastExecutedLevelIndex, "a delivery that could not be reserved leaves the level due")
 	assert.Empty(t, h.deliveries(run.ID))
