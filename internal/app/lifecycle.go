@@ -296,6 +296,30 @@ func (a *App) startContainerDownCheck(ctx context.Context) {
 	}
 }
 
+var containerReconcileInterval = 30 * time.Second
+
+// startContainerReconcile re-aligns the stored local containers with the runtime
+// every tick, so a lost event or a change made while the server was down does not last.
+// It runs for one connection cycle and stops when until closes.
+func (a *App) startContainerReconcile(ctx context.Context, until <-chan struct{}) {
+	ticker := time.NewTicker(containerReconcileInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-until:
+			return
+		case <-ticker.C:
+			rctx, cancel := context.WithTimeout(ctx, containerReconcileInterval)
+			if err := a.containerSvc.Reconcile(rctx, a.rt); err != nil {
+				a.logger.Warn("container reconcile failed", "error", err)
+			}
+			cancel()
+		}
+	}
+}
+
 // startKubernetesReconcile periodically snapshots the server's own Kubernetes
 // runtime into the per-agent store under the LocalAgent id, so the store-backed
 // Workloads/Pods/Nodes views reflect the local cluster the same way they reflect
@@ -587,6 +611,7 @@ func (a *App) activateSwarm(ctx context.Context, dr *docker.Runtime) {
 func (a *App) wireContainerMonitoring(ctx context.Context) <-chan struct{} {
 	a.reconcile(ctx)
 	streamDone := a.startEventStream(ctx)
+	go a.startContainerReconcile(ctx, streamDone)
 	if a.swarmDetector != nil {
 		a.requestSwarmRecheck()
 	}
