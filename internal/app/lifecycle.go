@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"reflect"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agent"
@@ -25,7 +26,7 @@ import (
 
 // localTopologyReconcileInterval is how often the server re-snapshots its own
 // runtime's topology into the per-agent store under the LocalAgent id.
-const localTopologyReconcileInterval = 30 * time.Second
+var localTopologyReconcileInterval = 30 * time.Second
 
 // Bounds of the delay between two attempts to reach a runtime whose Connect gives up.
 const (
@@ -296,11 +297,34 @@ func (a *App) startContainerDownCheck(ctx context.Context) {
 	}
 }
 
+var containerReconcileInterval = 30 * time.Second
+
+// startContainerReconcile re-aligns the stored local containers with the runtime every tick, for one connection cycle.
+func (a *App) startContainerReconcile(ctx context.Context, until <-chan struct{}) {
+	ticker := time.NewTicker(containerReconcileInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-until:
+			return
+		case <-ticker.C:
+			rctx, cancel := context.WithTimeout(ctx, containerReconcileInterval)
+			if err := a.containerSvc.Reconcile(rctx, a.rt); err != nil {
+				a.logger.Warn("container reconcile failed", "error", err)
+			}
+			cancel()
+		}
+	}
+}
+
 // startKubernetesReconcile periodically snapshots the server's own Kubernetes
 // runtime into the per-agent store under the LocalAgent id, so the store-backed
 // Workloads/Pods/Nodes views reflect the local cluster the same way they reflect
 // remote agents. It runs for one connection cycle and stops when until closes.
 func (a *App) startKubernetesReconcile(ctx context.Context, src kubernetes.SnapshotSource, until <-chan struct{}) {
+	var announced *kubernetes.TopologySnapshot
 	reconcile := func() {
 		snap, err := kubernetes.SnapshotFromRuntime(ctx, src)
 		if err != nil {
@@ -309,6 +333,9 @@ func (a *App) startKubernetesReconcile(ctx context.Context, src kubernetes.Snaps
 		}
 		if err := a.k8sIngest.Reconcile(ctx, uid.LocalAgent, snap); err != nil {
 			a.logger.Warn("local kubernetes reconcile: store failed", "error", err)
+		} else if announced == nil || !reflect.DeepEqual(*announced, snap) {
+			announced = &snap
+			a.broker.Broadcast(v1.SSEEvent{Type: "kubernetes.topology_changed", Data: map[string]any{"agent_id": uid.LocalAgent}})
 		}
 		a.k8sAlerts.Check(snap)
 		if exposures, ok := a.rt.(serviceExposureSource); ok {
@@ -587,6 +614,7 @@ func (a *App) activateSwarm(ctx context.Context, dr *docker.Runtime) {
 func (a *App) wireContainerMonitoring(ctx context.Context) <-chan struct{} {
 	a.reconcile(ctx)
 	streamDone := a.startEventStream(ctx)
+	go a.startContainerReconcile(ctx, streamDone)
 	if a.swarmDetector != nil {
 		a.requestSwarmRecheck()
 	}

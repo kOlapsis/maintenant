@@ -16,6 +16,7 @@ import {
 import { useNamespacesStore } from '@/stores/namespaces'
 import { useResourcesStore } from '@/stores/resources'
 import { sseBus } from '@/services/sseBus'
+import { isLocalAgent } from '@/services/apiFetch'
 
 export const useKubernetesStore = defineStore('kubernetes', () => {
   const workloadGroups = ref<K8sWorkloadGroup[]>([])
@@ -121,17 +122,16 @@ export const useKubernetesStore = defineStore('kubernetes', () => {
     }
   }
 
-  // topologyMatchesScope reports whether a remote agent's topology event is
-  // relevant to the current host scope. 'local' uses the runtime's own informer
-  // events (workload/pod/node_changed), so it ignores topology_changed.
+  // topologyMatchesScope reports whether an agent's topology event is
+  // relevant to the current host scope.
   function topologyMatchesScope(agentId: string): boolean {
     const sel = useResourcesStore().selected
     if (sel === null) return true
-    if (sel === 'local') return false
+    if (sel === 'local') return isLocalAgent(agentId)
     return sel === agentId
   }
 
-  // onTopologyChanged handles a remote agent's full-snapshot reconcile: refetch
+  // onTopologyChanged handles an agent's full-snapshot reconcile: refetch
   // the lists currently in view for the matching scope.
   function onTopologyChanged(e: MessageEvent) {
     try {

@@ -104,6 +104,8 @@ type Service struct {
 	agentDetails   map[agentContainerKey]AgentDetails
 
 	localStarts sync.Map // external ID -> time.Time of the last start event
+
+	localMu sync.Mutex // serializes local runtime events against Reconcile
 }
 
 // NewService creates a new container service with all dependencies.
@@ -152,6 +154,14 @@ func (s *Service) SetEventCallback(cb EventCallback) {
 
 // ProcessEvent handles a single container/workload event.
 func (s *Service) ProcessEvent(ctx context.Context, evt ContainerEvent) {
+	if uid.Agent(evt.AgentID) == uid.LocalAgent {
+		s.localMu.Lock()
+		defer s.localMu.Unlock()
+	}
+	s.processEvent(ctx, evt)
+}
+
+func (s *Service) processEvent(ctx context.Context, evt ContainerEvent) {
 	s.logger.Debug("container: event received", "action", evt.Action, "external_id", evt.ExternalID)
 	switch evt.Action {
 	case "start":
@@ -221,7 +231,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 		}
 		// New container started after initial reconciliation — discover it.
 		s.logger.Info("new container detected, running reconciliation", "external_id", shortID(evt.ExternalID))
-		if err := s.Reconcile(ctx, s.discoverer); err != nil {
+		if err := s.reconcile(ctx, s.discoverer); err != nil {
 			s.logger.Error("on-demand reconciliation failed", "error", err)
 		}
 		return
@@ -391,9 +401,10 @@ func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
 			s.logger.Error("read timeline for replayed health change", "container_id", c.ID, "error", err)
 			return
 		}
-		if previousHealth != nil && *previousHealth == newHealth {
-			return
-		}
+	}
+	if previousHealth != nil && *previousHealth == newHealth {
+		s.logger.Debug("container: health unchanged, skipping", "container_id", c.ID, "health", string(newHealth))
+		return
 	}
 	s.logger.Debug("container: health changed", "container_id", c.ID, "name", c.Name, "previous_health", previousHealth, "new_health", string(newHealth), "replayed", evt.Replayed)
 
@@ -467,9 +478,14 @@ func (s *Service) ListContainers(ctx context.Context, opts ListContainersOpts) (
 	return s.store.ListContainers(ctx, opts)
 }
 
-// Reconcile compares stored container states with actual runtime state
-// and generates synthetic transitions for changes that occurred while maintenant was offline.
+// Reconcile aligns the stored local containers with the runtime's actual state: state, health, replica counts, labels and image.
 func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) error {
+	s.localMu.Lock()
+	defer s.localMu.Unlock()
+	return s.reconcile(ctx, discoverer)
+}
+
+func (s *Service) reconcile(ctx context.Context, discoverer RuntimeDiscoverer) error {
 	current, err := discoverer.DiscoverAll(ctx)
 	if err != nil {
 		return fmt.Errorf("reconcile discover: %w", err)
@@ -490,7 +506,7 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 		return fmt.Errorf("reconcile list stored: %w", err)
 	}
 
-	s.logger.Info("container: reconcile started", "stored_count", len(stored), "discovered_count", len(current))
+	s.logger.Debug("container: reconcile started", "stored_count", len(stored), "discovered_count", len(current))
 
 	now := time.Now()
 
@@ -517,15 +533,26 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 
 		labelsChanged := sc.adoptLabelFields(dc)
 
-		if sc.State == dc.State && (metadataChanged || labelsChanged) {
+		countsChanged := sc.PodCount != dc.PodCount || sc.ReadyCount != dc.ReadyCount || sc.ErrorDetail != dc.ErrorDetail
+		if countsChanged {
+			sc.PodCount, sc.ReadyCount, sc.ErrorDetail = dc.PodCount, dc.ReadyCount, dc.ErrorDetail
+		}
+
+		previousState := sc.State
+		stateChanged := previousState != dc.State
+		if stateChanged {
+			sc.State = dc.State
+			sc.LastStateChangeAt = now
+		}
+
+		if stateChanged || metadataChanged || labelsChanged || countsChanged {
 			if err := s.store.UpdateContainer(ctx, sc); err != nil {
 				s.logger.Error("reconcile update", "container_id", sc.ID, "error", err)
+				continue
 			}
 		}
 
-		// Check for state changes
-		if sc.State != dc.State {
-			previousState := sc.State
+		if stateChanged {
 			transition := &StateTransition{
 				ContainerID:   sc.ID,
 				PreviousState: previousState,
@@ -536,17 +563,22 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 				s.logger.Error("reconcile transition", "container_id", sc.ID, "error", err)
 			}
 
-			sc.State = dc.State
-			sc.LastStateChangeAt = now
-			if err := s.store.UpdateContainer(ctx, sc); err != nil {
-				s.logger.Error("reconcile update", "container_id", sc.ID, "error", err)
-			}
-
 			if !sc.IsIgnored {
 				s.emitEvent(event.ContainerStateChanged, map[string]interface{}{
 					"id": sc.ID, "state": dc.State, "previous_state": previousState, "timestamp": now, "agent_id": sc.AgentID,
 				})
 			}
+		}
+
+		if dc.HealthStatus != nil && (sc.HealthStatus == nil || *sc.HealthStatus != *dc.HealthStatus) {
+			s.processEvent(ctx, ContainerEvent{
+				Action:       "health_status",
+				AgentID:      sc.AgentID,
+				ExternalID:   sc.ExternalID,
+				Name:         sc.Name,
+				HealthStatus: string(*dc.HealthStatus),
+				Timestamp:    now,
+			})
 		}
 	}
 
@@ -586,7 +618,7 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 		}
 	}
 
-	s.logger.Info("container: reconcile completed")
+	s.logger.Debug("container: reconcile completed")
 
 	return nil
 }
