@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"runtime"
 	"slices"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -19,6 +20,8 @@ import (
 	"github.com/kolapsis/maintenant/internal/trust"
 )
 
+const registryResponseHeaderTimeout = 30 * time.Second
+
 // RegistryClient wraps go-containerregistry for read-only registry operations.
 type RegistryClient struct {
 	transport http.RoundTripper
@@ -26,7 +29,9 @@ type RegistryClient struct {
 
 // NewRegistryClient creates a new registry client.
 func NewRegistryClient() *RegistryClient {
-	return &RegistryClient{transport: trust.HTTPTransport()}
+	t := trust.HTTPTransport()
+	t.ResponseHeaderTimeout = registryResponseHeaderTimeout
+	return &RegistryClient{transport: t}
 }
 
 func (rc *RegistryClient) remoteOptions() []remote.Option {
@@ -42,7 +47,7 @@ func (rc *RegistryClient) ListTags(ctx context.Context, imageRef string) ([]stri
 	if err != nil {
 		return nil, fmt.Errorf("parse repository %q: %w", imageRef, err)
 	}
-	tags, err := remote.List(repo, rc.remoteOptions()...)
+	tags, err := remote.List(repo, append(rc.remoteOptions(), remote.WithContext(ctx))...)
 	if err != nil {
 		return nil, fmt.Errorf("list tags for %q: %w", imageRef, err)
 	}
@@ -95,7 +100,7 @@ func (rc *RegistryClient) GetManifest(ctx context.Context, imageRef string) (*re
 	if err != nil {
 		return nil, fmt.Errorf("parse reference %q: %w", imageRef, err)
 	}
-	desc, err := remote.Get(ref, rc.remoteOptions()...)
+	desc, err := remote.Get(ref, append(rc.remoteOptions(), remote.WithContext(ctx))...)
 	if err != nil {
 		return nil, fmt.Errorf("get manifest for %q: %w", imageRef, err)
 	}
@@ -108,7 +113,7 @@ func (rc *RegistryClient) GetConfigLabels(ctx context.Context, imageRef string) 
 	if err != nil {
 		return nil, fmt.Errorf("parse reference %q: %w", imageRef, err)
 	}
-	desc, err := remote.Get(ref, rc.remoteOptions()...)
+	desc, err := remote.Get(ref, append(rc.remoteOptions(), remote.WithContext(ctx))...)
 	if err != nil {
 		return nil, fmt.Errorf("get manifest for %q: %w", imageRef, err)
 	}
