@@ -51,6 +51,8 @@ type Service struct {
 	// are unused.
 	noAlertConfigLogged sync.Map
 
+	alertMu sync.Mutex
+
 	// rawWindow bounds how far back the rollup backfills.
 	rawWindow time.Duration
 }
@@ -208,9 +210,59 @@ func (s *Service) GetAlertConfig(ctx context.Context, containerID string) (*Reso
 	return s.store.GetAlertConfig(ctx, containerID)
 }
 
-// UpsertAlertConfig creates or updates alert configuration.
-func (s *Service) UpsertAlertConfig(ctx context.Context, cfg *ResourceAlertConfig) error {
-	return s.store.UpsertAlertConfig(ctx, cfg)
+// SetAlertConfig writes a container's thresholds and enabled flag, keeping its alert state. A nil enabled keeps the stored value.
+// Disabling a configuration that is in alert recovers each alerting metric first.
+func (s *Service) SetAlertConfig(ctx context.Context, containerID string, cpuThreshold, memThreshold float64, enabled *bool) (*ResourceAlertConfig, error) {
+	s.alertMu.Lock()
+	defer s.alertMu.Unlock()
+
+	existing, err := s.store.GetAlertConfig(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("read alert config: %w", err)
+	}
+	on := existing != nil && existing.Enabled
+	if enabled != nil {
+		on = *enabled
+	}
+
+	if !on && existing != nil && existing.AlertState != AlertStateNormal {
+		s.recoverAll(ctx, existing)
+		if err := s.store.UpdateAlertState(ctx, containerID, AlertStateNormal, 0, 0, existing.LastAlertedAt); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.store.UpdateAlertSettings(ctx, containerID, cpuThreshold, memThreshold, on); err != nil {
+		return nil, err
+	}
+	return s.store.GetAlertConfig(ctx, containerID)
+}
+
+func (s *Service) recoverAll(ctx context.Context, cfg *ResourceAlertConfig) {
+	name, agentID := "", ""
+	if s.eventCallback != nil {
+		if ct, err := s.containerSvc.GetContainer(ctx, cfg.ContainerID); err == nil && ct != nil {
+			name, agentID = ct.Name, ct.AgentID
+		}
+	}
+	now := time.Now()
+	if cfg.AlertState == AlertStateCPU || cfg.AlertState == AlertStateBoth {
+		s.emitRecovery(cfg.ContainerID, name, agentID, "cpu", 0, cfg.CPUThreshold, now)
+	}
+	if cfg.AlertState == AlertStateMemory || cfg.AlertState == AlertStateBoth {
+		s.emitRecovery(cfg.ContainerID, name, agentID, "memory", 0, cfg.MemThreshold, now)
+	}
+}
+
+func (s *Service) emitRecovery(containerID, containerName, agentID, metric string, value, threshold float64, at time.Time) {
+	s.emit(event.ResourceRecovery, map[string]interface{}{
+		"container_id":   containerID,
+		"container_name": containerName,
+		"recovered_type": metric,
+		"current_value":  value,
+		"threshold":      threshold,
+		"timestamp":      at,
+		"agent_id":       agentID,
+	})
 }
 
 // MaxTopConsumers caps how many containers a top consumers ranking returns.
@@ -317,6 +369,9 @@ func (s *Service) processSnapshot(snap *ResourceSnapshot) {
 }
 
 func (s *Service) evaluateAlerts(ctx context.Context, snap *ResourceSnapshot) {
+	s.alertMu.Lock()
+	defer s.alertMu.Unlock()
+
 	cfg, err := s.store.GetAlertConfig(ctx, snap.ContainerID)
 	if err != nil {
 		s.logger.Error("resource: get alert config", "container_id", snap.ContainerID, "error", err)
@@ -401,15 +456,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, snap *ResourceSnapshot) {
 				"agent_id":       snap.AgentID,
 			})
 		case m.was && !m.is:
-			s.emit(event.ResourceRecovery, map[string]interface{}{
-				"container_id":   snap.ContainerID,
-				"container_name": containerName,
-				"recovered_type": m.name,
-				"current_value":  m.value,
-				"threshold":      m.thresh,
-				"timestamp":      now,
-				"agent_id":       snap.AgentID,
-			})
+			s.emitRecovery(snap.ContainerID, containerName, snap.AgentID, m.name, m.value, m.thresh, now)
 		}
 	}
 
@@ -418,7 +465,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, snap *ResourceSnapshot) {
 	}
 
 	cfg.AlertState = newState
-	if err := s.store.UpsertAlertConfig(ctx, cfg); err != nil {
-		s.logger.Error("resource: update alert config", "container_id", snap.ContainerID, "error", err)
+	if err := s.store.UpdateAlertState(ctx, cfg.ContainerID, cfg.AlertState, cfg.CPUConsecutiveBreaches, cfg.MemConsecutiveBreaches, cfg.LastAlertedAt); err != nil {
+		s.logger.Error("resource: update alert state", "container_id", snap.ContainerID, "error", err)
 	}
 }

@@ -37,7 +37,8 @@ type ResourceStore interface {
 	ListDailyInRange(ctx context.Context, containerID string, from, to time.Time) ([]*ResourceSnapshot, error)
 
 	GetAlertConfig(ctx context.Context, containerID string) (*ResourceAlertConfig, error)
-	UpsertAlertConfig(ctx context.Context, cfg *ResourceAlertConfig) error
+	UpdateAlertSettings(ctx context.Context, containerID string, cpuThreshold, memThreshold float64, enabled bool) error
+	UpdateAlertState(ctx context.Context, containerID string, state AlertState, cpuBreaches, memBreaches int, lastAlertedAt *time.Time) error
 
 	DeleteSnapshotsBefore(ctx context.Context, before time.Time, batchSize int) (int64, error)
 
