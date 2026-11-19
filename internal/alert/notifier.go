@@ -34,6 +34,7 @@ const (
 	claimLease      = 2 * attemptTimeout // longer than an attempt can last, so no second worker takes it meanwhile
 	resumeInterval  = 5 * time.Second
 	resumeBatch     = 100
+	recordTimeout   = 5 * time.Second
 )
 
 var retryBackoffs = []time.Duration{
@@ -459,7 +460,14 @@ func (n *Notifier) record(ctx context.Context, job NotificationJob) bool {
 		}
 		return true
 	}
-	held, err := n.queue.SettleDelivery(ctx, d, job.claim)
+	// An outcome is still recorded once ctx ends, when the process stops right after a send.
+	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+	defer cancel()
+	var held bool
+	err := withRetry(wctx, func() (err error) {
+		held, err = n.queue.SettleDelivery(wctx, d, job.claim)
+		return err
+	})
 	if err != nil {
 		n.logger.Error("notifier: record delivery, it is due again once its claim runs out", "error", err, "delivery_id", d.ID)
 		return false

@@ -6,11 +6,13 @@ package alert_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -300,6 +302,37 @@ func TestDurableDelivery_TwoNotifiersSendEachAttemptOnce(t *testing.T) {
 		got[r.Delivery]++
 	}
 	assert.Equal(t, want, got, "two instances on one database never send the same attempt twice")
+}
+
+type settleFailsOnce struct {
+	*store.ChannelStoreImpl
+	failed atomic.Bool
+}
+
+func (s *settleFailsOnce) SettleDelivery(ctx context.Context, d *alert.NotificationDelivery, claim time.Time) (bool, error) {
+	if s.failed.CompareAndSwap(false, true) {
+		return false, errors.New("database is locked")
+	}
+	return s.ChannelStoreImpl.SettleDelivery(ctx, d, claim)
+}
+
+func TestDurableDelivery_ASentNotificationIsRecordedDespiteAStoreError(t *testing.T) {
+	f := newQueueFixture(t)
+	srv := newHookServer(t, always(http.StatusOK))
+	ch := f.channel(t, srv.URL)
+	d := f.delivery(t, ch, alert.EventFired, alert.StatusActive)
+	n := alert.NewNotifier(&settleFailsOnce{ChannelStoreImpl: f.channels}, f.logger, true)
+	n.SetClock(f.clock.Now)
+	n.SetResumeInterval(5 * time.Millisecond)
+	n.StartUntilCleanup(f.ctx, t)
+
+	require.Eventually(t, func() bool {
+		r := f.row(d.ID)
+		return r != nil && r.Status == alert.DeliveryDelivered
+	}, 10*time.Second, 5*time.Millisecond, "the write that follows a successful send is tried again")
+	f.clock.Advance(3 * time.Minute)
+	assert.Never(t, func() bool { return len(srv.received()) > 1 }, 200*time.Millisecond, 5*time.Millisecond,
+		"the notification is not sent again once the claim runs out")
 }
 
 func TestDurableDelivery_AnAttemptPastItsClaimLeavesTheRowAlone(t *testing.T) {
