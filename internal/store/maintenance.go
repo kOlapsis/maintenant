@@ -266,8 +266,7 @@ func (s *MaintenanceStoreImpl) scanMaintenanceWindows(ctx context.Context, rows 
 	return windows, nil
 }
 
-// hydrateMaintenanceComponents loads the components of a batch of windows in
-// place with a single query. The caller must have closed its own cursor.
+// The caller must have closed its own cursor: the pool is small and shared with the writer.
 func (s *MaintenanceStoreImpl) hydrateMaintenanceComponents(ctx context.Context, windows []status.MaintenanceWindow) error {
 	if len(windows) == 0 {
 		return nil
@@ -303,6 +302,10 @@ func (s *MaintenanceStoreImpl) hydrateMaintenanceComponents(ctx context.Context,
 	return rows.Err()
 }
 
+// IsEntitySuppressed returns true (with the matching window ID and end time) if at
+// least one active maintenance window currently covers the given monitor. Active
+// means starts_at ≤ now < ends_at regardless of the window's `active` flag (which
+// controls Status Page display, not suppressor logic).
 func (s *MaintenanceStoreImpl) IsEntitySuppressed(
 	ctx context.Context, monitorType string, monitorID string, now time.Time,
 ) (matched bool, windowID string, endsAt time.Time, err error) {

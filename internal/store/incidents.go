@@ -342,9 +342,7 @@ func (s *IncidentStoreImpl) scanIncidents(ctx context.Context, rows *sql.Rows) (
 	return incidents, nil
 }
 
-// hydrateIncidents loads the components and updates of a batch of incidents in
-// place, one query per relation. The caller must have closed its own cursor:
-// the pool is small and shared with the writer.
+// The caller must have closed its own cursor: the pool is small and shared with the writer.
 func (s *IncidentStoreImpl) hydrateIncidents(ctx context.Context, incs []status.Incident) error {
 	if len(incs) == 0 {
 		return nil
@@ -406,7 +404,6 @@ func (s *IncidentStoreImpl) hydrateIncidents(ctx context.Context, incs []status.
 	return updRows.Err()
 }
 
-// placeholderList returns n comma-separated "?" placeholders.
 func placeholderList(n int) string {
 	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
 }
