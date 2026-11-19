@@ -78,9 +78,27 @@ func (s *webhookSender) post(ctx context.Context, ch *NotificationChannel, body 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("non-2xx response: %d", resp.StatusCode)
+		return &HTTPStatusError{Status: resp.StatusCode}
 	}
 	return nil
+}
+
+// HTTPStatusError is a non-2xx answer from a destination.
+type HTTPStatusError struct {
+	Status int
+}
+
+func (e *HTTPStatusError) Error() string { return fmt.Sprintf("non-2xx response: %d", e.Status) }
+
+// Permanent reports a 4xx other than 408 and 429, which the destination will keep refusing.
+func (e *HTTPStatusError) Permanent() bool {
+	return e.Status >= 400 && e.Status < 500 &&
+		e.Status != http.StatusRequestTimeout && e.Status != http.StatusTooManyRequests
+}
+
+func isPermanent(err error) bool {
+	var p interface{ Permanent() bool }
+	return errors.As(err, &p) && p.Permanent()
 }
 
 func (s *webhookSender) SendTest(ctx context.Context, ch *NotificationChannel, testAlert *Alert) (int, error) {

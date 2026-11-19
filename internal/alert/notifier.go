@@ -66,6 +66,7 @@ type WebhookPayload struct {
 // Notifier dispatches alert notifications with a bounded worker pool.
 type Notifier struct {
 	queues       [notifierWorkerCount]chan NotificationJob
+	subQueues    [notifierWorkerCount]chan NotificationJob
 	channelStore ChannelStore
 	httpClient   *http.Client
 	logger       *slog.Logger
@@ -108,6 +109,7 @@ func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bo
 	}
 	for i := range n.queues {
 		n.queues[i] = make(chan NotificationJob, notifierChannelBuffer)
+		n.subQueues[i] = make(chan NotificationJob, notifierChannelBuffer)
 	}
 	return n
 }
@@ -145,15 +147,20 @@ func (n *Notifier) SMTPConfigured() bool {
 // Start begins the worker pool. Call in a goroutine.
 func (n *Notifier) Start(ctx context.Context) {
 	n.logger.Info("alert notifier: started", "workers", notifierWorkerCount)
-	for _, q := range n.queues {
-		go n.worker(ctx, q)
+	for i := range n.queues {
+		go n.worker(ctx, n.queues[i])
+		go n.worker(ctx, n.subQueues[i])
 	}
 }
 
 // Enqueue adds a notification job to the queue of its stream, whose jobs one worker delivers in order.
 func (n *Notifier) Enqueue(job NotificationJob) {
+	queues := &n.queues
+	if job.Alert == nil {
+		queues = &n.subQueues
+	}
 	select {
-	case n.queues[streamOf(job)] <- job:
+	case queues[streamOf(job)] <- job:
 	default:
 		n.logger.Warn("notifier: job queue full, dropping notification",
 			"alert_id", jobAlertID(job), "channel_id", job.Channel.ID)
@@ -249,6 +256,9 @@ func (n *Notifier) deliver(ctx context.Context, job NotificationJob, sender Chan
 		n.logger.Warn("notifier: delivery attempt failed",
 			"attempt", attempt+1, "channel_id", job.Channel.ID, "channel_type", job.Channel.Type,
 			"alert_id", jobAlertID(job), "error", lastErr)
+		if isPermanent(lastErr) {
+			break
+		}
 	}
 
 	n.failDelivery(ctx, job.Delivery, sender.FailureMessage(lastErr))
@@ -321,6 +331,9 @@ func (n *Notifier) SendNow(ctx context.Context, a *Alert, ch *NotificationChanne
 		}
 		n.logger.Warn("notifier: attempt failed",
 			"attempt", attempt+1, "channel_id", ch.ID, "channel_type", ch.Type, "alert_id", a.ID, "error", lastErr)
+		if isPermanent(lastErr) {
+			break
+		}
 	}
 	return lastErr
 }
