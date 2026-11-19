@@ -10,14 +10,18 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	esc "github.com/kolapsis/maintenant/internal/alert/escalation"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // Reserved level indices for non-step deliveries (negative values are intentional —
@@ -38,7 +42,7 @@ const (
 // Runner can be unit-tested without spinning up an HTTP server. *alert.Notifier
 // satisfies it.
 type Sender interface {
-	SendNow(ctx context.Context, a *alert.Alert, ch *alert.NotificationChannel) error
+	SendEventNow(ctx context.Context, eventType string, a *alert.Alert, ch *alert.NotificationChannel) error
 }
 
 // RunnerDeps bundles the dependencies of the concrete Pro escalator.
@@ -59,8 +63,8 @@ type RunnerDeps struct {
 // notifications via the provided alert.Notifier — its delivery rows live in
 // escalation_deliveries (separate from notification_deliveries).
 //
-// Idempotence (R4): InsertDelivery enforces a UNIQUE (run_id, level_index,
-// channel_id) constraint, so a crash between InsertDelivery and the network
+// Idempotence (R4): ReserveDelivery enforces a UNIQUE (run_id, level_index,
+// channel_id) constraint, so a crash between ReserveDelivery and the network
 // send is recovered at the next cycle without duplicate notifications.
 type Runner struct {
 	store         esc.Store
@@ -72,6 +76,9 @@ type Runner struct {
 	logger        *slog.Logger
 	clock         func() time.Time
 	orphanTimeout time.Duration
+
+	createMu  sync.Mutex           // serializes run creation, so the engine and the retry never both start a run
+	unstarted map[string]time.Time // alert id → when its runs should have started, retried each cycle
 }
 
 // NewRunner wires a Runner. AlertStore, ChannelStore, Notifier, Service, Logger
@@ -103,6 +110,7 @@ func NewRunner(d RunnerDeps) *Runner {
 		logger:        d.Logger,
 		clock:         clock,
 		orphanTimeout: timeout,
+		unstarted:     map[string]time.Time{},
 	}
 }
 
@@ -115,7 +123,7 @@ func (noopRunnerSuppressor) IsSuppressed(_ context.Context, _, _, _ string) (boo
 // --- alert.Escalator implementation ---
 
 // OnAlertCreated starts a Run for every active policy whose filters match the
-// alert and that does not already have an active run for this alert. Idempotent
+// alert and that never had a run for this alert, whatever its end. Idempotent
 // per (alertID, policyID) tuple — safe to call multiple times (e.g. on severity
 // escalation, when new policies become applicable).
 func (r *Runner) OnAlertCreated(ctx context.Context, a *alert.Alert) error {
@@ -123,8 +131,49 @@ func (r *Runner) OnAlertCreated(ctx context.Context, a *alert.Alert) error {
 	if a == nil || a.ID == "" || !extension.Allows(extension.CapAlertEscalation) {
 		return nil
 	}
+	r.createMu.Lock()
+	defer r.createMu.Unlock()
+	now := r.clock()
+	if err := r.startRuns(ctx, a, now); err != nil {
+		if _, ok := r.unstarted[a.ID]; !ok {
+			r.unstarted[a.ID] = now
+		}
+		return err
+	}
+	delete(r.unstarted, a.ID)
+	return nil
+}
 
-	existing, err := r.store.SelectActiveRunsByAlert(ctx, a.ID)
+// retryUnstarted starts the runs that a storage error kept from starting, on the schedule of their first attempt.
+func (r *Runner) retryUnstarted(ctx context.Context) {
+	r.createMu.Lock()
+	ids := slices.Collect(maps.Keys(r.unstarted))
+	r.createMu.Unlock()
+	for _, id := range ids {
+		r.retryStart(ctx, id)
+	}
+}
+
+func (r *Runner) retryStart(ctx context.Context, id string) {
+	r.createMu.Lock()
+	defer r.createMu.Unlock()
+	at, pending := r.unstarted[id]
+	if !pending {
+		return
+	}
+	a, err := r.alertStore.GetAlert(ctx, id)
+	if err == nil && a != nil && a.Status == alert.StatusActive && a.AcknowledgedAt == nil {
+		err = r.startRuns(ctx, a, at)
+	}
+	if err != nil {
+		r.logger.WarnContext(ctx, "escalation: run start left for the next cycle", "error", err, "alert_id", id)
+		return
+	}
+	delete(r.unstarted, id)
+}
+
+func (r *Runner) startRuns(ctx context.Context, a *alert.Alert, now time.Time) error {
+	existing, err := r.store.SelectRunsByAlert(ctx, a.ID)
 	if err != nil {
 		return fmt.Errorf("escalation: list existing runs: %w", err)
 	}
@@ -140,7 +189,7 @@ func (r *Runner) OnAlertCreated(ctx context.Context, a *alert.Alert) error {
 		return fmt.Errorf("escalation: list policies: %w", err)
 	}
 
-	now := r.clock()
+	var errs []error
 	for _, p := range policies {
 		if _, already := covered[p.ID]; already {
 			continue
@@ -170,14 +219,14 @@ func (r *Runner) OnAlertCreated(ctx context.Context, a *alert.Alert) error {
 			NextActionAt:           &nextAt,
 		}
 		if _, err := r.store.InsertRun(ctx, run); err != nil {
-			r.logger.ErrorContext(ctx, "escalation: insert run", "error", err, "alert_id", a.ID, "policy_id", p.ID)
+			errs = append(errs, fmt.Errorf("escalation: insert run of policy %s: %w", p.ID, err))
 			continue
 		}
 		r.logger.InfoContext(ctx, "escalation: run started",
 			"run_id", run.ID, "alert_id", a.ID, "policy_id", p.ID,
 			"next_action_at", nextAt.Format(time.RFC3339))
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // OnAlertAcknowledged terminates every active run attached to the alert and
@@ -205,7 +254,7 @@ func (r *Runner) OnAlertAcknowledged(ctx context.Context, alertID string, ack al
 		r.logger.InfoContext(ctx, "escalation: run stopped by ack",
 			"run_id", run.ID, "alert_id", alertID, "by", ack.By)
 
-		if a == nil || run.LastExecutedLevelIndex < 0 {
+		if a == nil {
 			continue
 		}
 		channelIDs, cErr := r.notifiedChannels(ctx, run.ID)
@@ -213,7 +262,9 @@ func (r *Runner) OnAlertAcknowledged(ctx context.Context, alertID string, ack al
 			r.logger.ErrorContext(ctx, "escalation: list notified channels for ack", "error", cErr, "run_id", run.ID)
 			continue
 		}
-		r.dispatchSpecial(ctx, run.ID, specialLevelAck, channelIDs, formatAckAlert(a, ack))
+		if dErr := r.dispatchLevel(ctx, run.ID, specialLevelAck, channelIDs, formatAckAlert(a, ack)); dErr != nil {
+			r.logger.ErrorContext(ctx, "escalation: ack notice", "error", dErr, "run_id", run.ID)
+		}
 	}
 	return nil
 }
@@ -272,9 +323,13 @@ func (r *Runner) OnEditionDowngraded(ctx context.Context) error {
 // recovers stuck deliveries, then steps every due run forward.
 func (r *Runner) EvaluateCycle(ctx context.Context) error {
 	if !extension.Allows(extension.CapAlertEscalation) {
+		r.createMu.Lock()
+		clear(r.unstarted)
+		r.createMu.Unlock()
 		return nil
 	}
 	now := r.clock()
+	r.retryUnstarted(ctx)
 
 	if err := r.recoverOrphans(ctx, now); err != nil {
 		r.logger.ErrorContext(ctx, "escalation: orphan recovery", "error", err)
@@ -344,14 +399,26 @@ func (r *Runner) processRun(ctx context.Context, run *esc.Run, now time.Time) er
 	if nextLevel >= len(policy.Levels) {
 		if run.LastExecutedLevelIndex >= 0 && run.LastExecutedLevelIndex < len(policy.Levels) {
 			exhAlert := formatExhaustedAlert(a, len(policy.Levels))
-			r.dispatchSpecial(ctx, run.ID, specialLevelExhausted,
+			err := r.dispatchLevel(ctx, run.ID, specialLevelExhausted,
 				policy.Levels[run.LastExecutedLevelIndex].ChannelIDs, exhAlert)
+			if errors.Is(err, errRunStopped) {
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf("exhaustion notice left due: %w", err)
+			}
 		}
 		return r.store.TerminateRun(ctx, run.ID, esc.RunStatusExhausted, now)
 	}
 
 	level := policy.Levels[nextLevel]
-	r.executeLevel(ctx, run, nextLevel, level.ChannelIDs, a)
+	err = r.dispatchLevel(ctx, run.ID, nextLevel, level.ChannelIDs, a)
+	if errors.Is(err, errRunStopped) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("level %d left due: %w", nextLevel, err)
+	}
 	if err := r.alertStore.SetEscalatedAt(ctx, a.ID, now); err != nil {
 		r.logger.ErrorContext(ctx, "escalation: set escalated_at", "error", err, "alert_id", a.ID, "run_id", run.ID)
 	}
@@ -375,62 +442,78 @@ func (r *Runner) processRun(ctx context.Context, run *esc.Run, now time.Time) er
 	return nil
 }
 
-func (r *Runner) executeLevel(ctx context.Context, run *esc.Run, levelIndex int, channelIDs []string, a *alert.Alert) {
+var errRunStopped = errors.New("run stopped, or its alert acknowledged or resolved")
+
+// dispatchLevel hands a level to each of its channels; it fails when one is left to a later attempt, at once with errRunStopped.
+func (r *Runner) dispatchLevel(ctx context.Context, runID string, levelIndex int, channelIDs []string, a *alert.Alert) error {
 	now := r.clock()
+	var errs []error
 	for _, chID := range channelIDs {
-		r.dispatchToChannel(ctx, run.ID, levelIndex, chID, a, now)
+		err := r.dispatchToChannel(ctx, runID, levelIndex, chID, a, now)
+		if errors.Is(err, errRunStopped) {
+			return err
+		}
+		if err != nil {
+			errs = append(errs, err)
+		}
 	}
+	return errors.Join(errs...)
 }
 
-func (r *Runner) dispatchSpecial(ctx context.Context, runID string, levelIndex int, channelIDs []string, a *alert.Alert) {
-	now := r.clock()
-	for _, chID := range channelIDs {
-		r.dispatchToChannel(ctx, runID, levelIndex, chID, a, now)
+func (r *Runner) reserve(ctx context.Context, d *esc.Delivery) (bool, error) {
+	if d.LevelIndex == specialLevelAck { // sent once the run has stopped, so the guard would refuse it
+		_, err := r.store.InsertDelivery(ctx, d)
+		return err == nil, err
 	}
+	return r.store.ReserveDelivery(ctx, d)
 }
 
 // dispatchToChannel reserves a delivery row (UNIQUE constraint catches crash-recovery
-// duplicates, FR-022) and dispatches the send in a goroutine if the channel is enabled.
-// One channel's failure must not block the others.
-func (r *Runner) dispatchToChannel(ctx context.Context, runID string, levelIndex int, chID string, a *alert.Alert, now time.Time) {
+// duplicates, FR-022): a pending one sent in a goroutine for an enabled channel, a failed
+// one that traces a disabled or deleted channel. One channel's failure must not block the others.
+func (r *Runner) dispatchToChannel(ctx context.Context, runID string, levelIndex int, chID string, a *alert.Alert, now time.Time) error {
 	ch, err := r.channelStore.GetChannel(ctx, chID)
 	if err != nil {
-		r.logger.ErrorContext(ctx, "escalation: get channel", "error", err, "channel_id", chID, "run_id", runID)
-		return
+		return fmt.Errorf("read channel %s: %w", chID, err)
 	}
-	if ch == nil {
-		r.logger.WarnContext(ctx, "escalation: channel not found", "channel_id", chID, "run_id", runID)
-		return
-	}
-	chIDCopy := chID
 	delivery := &esc.Delivery{
 		RunID:            runID,
 		LevelIndex:       levelIndex,
-		ChannelID:        &chIDCopy,
+		ChannelID:        &chID,
 		Status:           esc.DeliveryStatusPending,
 		AttemptStartedAt: now,
 	}
-	if _, err := r.store.InsertDelivery(ctx, delivery); err != nil {
-		if !errors.Is(err, esc.ErrDeliveryDuplicate) {
-			r.logger.ErrorContext(ctx, "escalation: insert delivery", "error", err,
-				"run_id", runID, "level_index", levelIndex, "channel_id", chID)
-		}
-		return
+	switch {
+	case ch == nil:
+		r.logger.WarnContext(ctx, "escalation: channel not found", "channel_id", chID, "run_id", runID)
+		// The foreign key refuses the channel id, so the derived row id is what keeps one trace per level.
+		delivery.ChannelID, delivery.ID = nil, uid.LevelTrace(runID, levelIndex, chID)
+		delivery.Status, delivery.Error = esc.DeliveryStatusFailed, "channel deleted: "+chID
+	case !ch.Enabled:
+		delivery.Status, delivery.Error = esc.DeliveryStatusFailed, "channel disabled"
 	}
-	if !ch.Enabled {
-		delivery.Status = esc.DeliveryStatusFailed
-		delivery.Error = "channel disabled"
-		if uErr := r.store.UpdateDelivery(ctx, delivery); uErr != nil {
-			r.logger.ErrorContext(ctx, "escalation: update disabled delivery", "error", uErr, "delivery_id", delivery.ID)
-		}
-		return
+	reserved, err := r.reserve(ctx, delivery)
+	switch {
+	case errors.Is(err, esc.ErrDeliveryDuplicate):
+		return nil
+	case err != nil:
+		return fmt.Errorf("reserve delivery to channel %s: %w", chID, err)
+	case !reserved:
+		return errRunStopped
 	}
-	go r.deliverAndUpdate(ctx, delivery, a, ch)
+	if delivery.Status == esc.DeliveryStatusPending {
+		go r.deliverAndUpdate(ctx, delivery, a, ch)
+	}
+	return nil
 }
 
 // deliverAndUpdate performs the actual network send and persists the outcome.
 func (r *Runner) deliverAndUpdate(ctx context.Context, delivery *esc.Delivery, a *alert.Alert, ch *alert.NotificationChannel) {
-	err := r.notifier.SendNow(ctx, a, ch)
+	eventType := event.AlertFired
+	if delivery.LevelIndex == specialLevelAck {
+		eventType = event.AlertAcknowledged
+	}
+	err := r.notifier.SendEventNow(ctx, eventType, a, ch)
 	if err != nil {
 		delivery.Status = esc.DeliveryStatusFailed
 		delivery.Error = truncateErr(err.Error())
@@ -454,7 +537,11 @@ func (r *Runner) recoverOrphans(ctx context.Context, now time.Time) error {
 	}
 	for _, d := range orphans {
 		run, err := r.store.SelectRun(ctx, d.RunID)
-		if err != nil || run == nil {
+		if err != nil {
+			r.keepOrphan(ctx, d, err)
+			continue
+		}
+		if run == nil {
 			r.abandonDelivery(ctx, d, "run vanished")
 			continue
 		}
@@ -464,7 +551,11 @@ func (r *Runner) recoverOrphans(ctx context.Context, now time.Time) error {
 			continue
 		}
 		a, err := r.alertStore.GetAlert(ctx, run.AlertID)
-		if err != nil || a == nil || a.Status != alert.StatusActive {
+		if err != nil {
+			r.keepOrphan(ctx, d, err)
+			continue
+		}
+		if a == nil || a.Status != alert.StatusActive {
 			r.abandonDelivery(ctx, d, "alert no longer active")
 			continue
 		}
@@ -473,13 +564,21 @@ func (r *Runner) recoverOrphans(ctx context.Context, now time.Time) error {
 			continue
 		}
 		ch, err := r.channelStore.GetChannel(ctx, *d.ChannelID)
-		if err != nil || ch == nil {
+		if err != nil {
+			r.keepOrphan(ctx, d, err)
+			continue
+		}
+		if ch == nil {
 			r.abandonDelivery(ctx, d, "channel unavailable")
 			continue
 		}
 		go r.deliverAndUpdate(ctx, d, a, ch)
 	}
 	return nil
+}
+
+func (r *Runner) keepOrphan(ctx context.Context, d *esc.Delivery, err error) {
+	r.logger.WarnContext(ctx, "escalation: orphan delivery left for the next cycle", "error", err, "delivery_id", d.ID)
 }
 
 func (r *Runner) abandonDelivery(ctx context.Context, d *esc.Delivery, reason string) {
@@ -523,11 +622,10 @@ func unmarshalPolicySnapshot(s string) (*esc.Policy, error) {
 }
 
 // formatAckAlert produces a synthetic *Alert reusing the notifier's formatting
-// pipeline. Cloning lets us override Message/Status without mutating the
+// pipeline. Cloning lets us override Message without mutating the
 // upstream alert tracked by the engine.
 func formatAckAlert(a *alert.Alert, ack alert.Acknowledgment) *alert.Alert {
 	cp := *a
-	cp.Status = alert.StatusResolved // routes the notifier through the "resolved" copy
 	at := ack.At.UTC().Format(time.RFC3339)
 	if ack.By == "" {
 		cp.Message = fmt.Sprintf("Acknowledged at %s: %s", at, a.Message)

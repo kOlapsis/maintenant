@@ -43,7 +43,7 @@ python3 receiver.py
 | `RECEIVER_REPORTS` | `reports/` next to the script | Where diagnoses are written, one file per alert |
 | `RECEIVER_TIMEOUT` | `600` | Seconds an investigation may run |
 
-The receiver answers `202` at once and queues the alert: investigations run one at a time, so a burst of alerts never starts a burst of sessions. `alert.resolved` and `test` notifications are logged and not investigated.
+The receiver answers `202` at once and queues the alert: investigations run one at a time, so a burst of alerts never starts a burst of sessions. `alert.resolved`, `alert.acknowledged` and `test` notifications are logged and not investigated.
 
 For each fired alert it runs:
 

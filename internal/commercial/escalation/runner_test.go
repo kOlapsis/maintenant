@@ -283,6 +283,18 @@ func (s *runStore) InsertDelivery(_ context.Context, d *esc.Delivery) (string, e
 	return d.ID, nil
 }
 
+func (s *runStore) ReserveDelivery(ctx context.Context, d *esc.Delivery) (bool, error) {
+	s.mu.Lock()
+	r, ok := s.runs[d.RunID]
+	active := ok && r.Status == esc.RunStatusActive
+	s.mu.Unlock()
+	if !active {
+		return false, nil
+	}
+	_, err := s.InsertDelivery(ctx, d)
+	return err == nil, err
+}
+
 func (s *runStore) UpdateDelivery(_ context.Context, d *esc.Delivery) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -432,7 +444,7 @@ func newFakeSender() *fakeSender {
 	return &fakeSender{failFor: map[string]bool{}}
 }
 
-func (f *fakeSender) SendNow(_ context.Context, a *alert.Alert, ch *alert.NotificationChannel) error {
+func (f *fakeSender) SendEventNow(_ context.Context, _ string, a *alert.Alert, ch *alert.NotificationChannel) error {
 	f.delivers.Add(1)
 	f.mu.Lock()
 	f.calls = append(f.calls, senderCall{AlertID: a.ID, ChannelID: ch.ID, Message: a.Message})

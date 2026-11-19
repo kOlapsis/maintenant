@@ -117,6 +117,9 @@ func (m *mcpEscalationStore) ResumeRunFromMaintenance(_ context.Context, _ strin
 func (m *mcpEscalationStore) InsertDelivery(_ context.Context, _ *escalation.Delivery) (string, error) {
 	return "", nil
 }
+func (m *mcpEscalationStore) ReserveDelivery(_ context.Context, _ *escalation.Delivery) (bool, error) {
+	return true, nil
+}
 func (m *mcpEscalationStore) UpdateDelivery(_ context.Context, _ *escalation.Delivery) error {
 	return nil
 }

@@ -12,7 +12,7 @@ Escalation policies automatically route unacknowledged alerts through a chain of
 
 When an alert fires, every active escalation policy whose filters match it starts an **escalation run**. The run tracks which notification level is due next and sends the notifications of that level when its delay has passed. The chain stops as soon as the alert is acknowledged or resolved.
 
-A level's `delay_seconds` is counted **from the start of the run** (the moment the alert fires), not from the previous level. A level with a delay of 900 fires 15 minutes after the alert, whatever the level before it had. Runs are evaluated once a minute, so a level can fire up to a minute after its delay.
+A level's `delay_seconds` is counted **from the start of the run** (the moment the alert fires), not from the previous level. A level with a delay of 900 fires 15 minutes after the alert, whatever the level before it had. Runs are evaluated once a minute, so a level can fire up to a minute after its delay. If the database cannot record a run when the alert fires, the run is started at the next evaluation with the times it would have had, as long as the alert is still active and unacknowledged and the server has not restarted in between.
 
 ```
 Alert fires (T+0)
@@ -26,7 +26,7 @@ Alert fires (T+0)
 
 A run keeps the policy as it was when the run started. Editing a policy changes the alerts raised afterwards, not the runs already in progress. Deactivating or deleting a policy stops its runs (`stopped_by_policy_disabled`, `stopped_by_policy_deletion`).
 
-Policies only see alerts that are active. An alert raised while a matching [silence rule](alerts.md#silence-rules) or maintenance window is in force is silenced and starts no run. If an alert becomes more severe, policies that match its new severity start a run too; runs already started continue untouched. An alert that is already acknowledged starts no new run when its severity rises, and a run still going when the alert is acknowledged stops at its next evaluation. Each time a level is sent, the alert's `escalated_at` is set to that time.
+Policies only see alerts that are active. An alert raised while a matching [silence rule](alerts.md#silence-rules) or maintenance window is in force is silenced and starts no run. If an alert becomes more severe, policies that match its new severity start a run too; runs already started continue untouched. A policy runs at most once per alert: a policy whose run for the alert has ended, exhausted or stopped, does not start again. An alert that is already acknowledged starts no new run when its severity rises, and a run still going when the alert is acknowledged stops at its next evaluation. Each time a level is sent, the alert's `escalated_at` is set to that time.
 
 ---
 
@@ -104,13 +104,13 @@ A request that breaks a rule returns `400 validation_failed` with the field in t
 
 ### Acknowledgment stops escalation
 
-When an alert is acknowledged, any active escalation run is immediately stopped with status `stopped_by_ack`. Every channel that received a notification of the run (a delivery that is `sent` or still `pending`) gets one acknowledgment notice, once, even if it appeared in several levels. The notice reuses the recovery format of the channel, and its message is:
+When an alert is acknowledged, any active escalation run is immediately stopped with status `stopped_by_ack`. Every channel that received a notification of the run (a delivery that is `sent` or still `pending`) gets one acknowledgment notice, once, even if it appeared in several levels. The notice is an acknowledgment, not a recovery: a `webhook` channel receives `"event": "alert.acknowledged"` with the alert still `active` and its `acknowledged_at` and `acknowledged_by`, Slack, Teams, Discord and Telegram title it `Acknowledged: <entity>` (Telegram also gives who acknowledged and when, without the severity), and the email subject reads `[maintenant] ACKNOWLEDGED: <message>`. Its message is:
 
 ```
 Acknowledged by <who> at <time in RFC 3339, UTC>: <original alert message>
 ```
 
-When no name was recorded, the text is `Acknowledged at <time>: <original alert message>`. A run that has not reached its first level has notified nobody, so it sends no notice.
+When no name was recorded, the text is `Acknowledged at <time>: <original alert message>`. A run with no `sent` or `pending` delivery yet has notified nobody, so it sends no notice. No level goes out once the acknowledgment or the resolution is recorded, even when an evaluation is under way at that moment: a channel whose delivery was reserved just before still receives the acknowledgment notice after it.
 
 ### Resolution stops escalation
 
@@ -130,7 +130,9 @@ Escalation exhausted after <N> level(s) without acknowledgment, human action req
 
 ### Disabled or failing channels
 
-A delivery to a disabled channel is recorded as `failed` with the error `channel disabled`, and the run goes on with the next level. A delivery to an enabled channel makes up to three attempts, at once, after 1 second and after 5 seconds, and is recorded as `failed` with the last error if all three fail.
+A delivery to a disabled channel is recorded as `failed` with the error `channel disabled`, and the run goes on with the next level. A channel deleted since the policy was written is recorded the same way, without a channel id and with the error `channel deleted: <id>`. A delivery to an enabled channel makes up to three attempts, at once, after 1 second and after 5 seconds, and is recorded as `failed` with the last error if all three fail.
+
+A level is only counted as sent once each of its channels has a delivery. If the database cannot be read or written while a level goes out, the level stays due and is tried again at the next evaluation, about a minute later: the channels it already reached are not notified a second time.
 
 ---
 

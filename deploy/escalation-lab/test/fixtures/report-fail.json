@@ -10,7 +10,7 @@
     {"level_index": -1, "channel_id": "c2", "status": "sent"}
   ],
   "webhooks": {
-    "l1": [{"event": "alert.fired", "message": "Container shop-api has been exited for 31s"}, {"event": "alert.resolved", "message": "Acknowledged by ops at 2026-10-30T10:05:00Z: Container shop-api has been exited for 31s"}],
+    "l1": [{"event": "alert.fired", "message": "Container shop-api has been exited for 31s"}, {"event": "alert.acknowledged", "message": "Acknowledged by ops at 2026-10-30T10:05:00Z: Container shop-api has been exited for 31s"}],
     "l3": []
   },
   "mails": {"oncall@lab.test": 2, "cto@lab.test": 1},

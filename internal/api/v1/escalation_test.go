@@ -120,6 +120,9 @@ func (m *escalationTestStore) ResumeRunFromMaintenance(_ context.Context, _ stri
 func (m *escalationTestStore) InsertDelivery(_ context.Context, _ *escalation.Delivery) (string, error) {
 	return "", nil
 }
+func (m *escalationTestStore) ReserveDelivery(_ context.Context, _ *escalation.Delivery) (bool, error) {
+	return true, nil
+}
 func (m *escalationTestStore) UpdateDelivery(_ context.Context, _ *escalation.Delivery) error {
 	return nil
 }

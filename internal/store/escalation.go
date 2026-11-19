@@ -290,13 +290,13 @@ func (s *EscalationStore) InsertRun(ctx context.Context, r *escalation.Run) (str
 	return r.ID, nil
 }
 
-// UpdateRunProgress advances a run's level cursor and reschedules its next action.
+// UpdateRunProgress advances the level cursor of a run still active and reschedules its next action.
 // Used by the runner after executing a level (R4 reserve-then-deliver).
 func (s *EscalationStore) UpdateRunProgress(ctx context.Context, runID string, lastExecutedLevelIndex int, nextActionAt *time.Time, status string) error {
 	_, err := s.writer.Exec(ctx,
 		`UPDATE escalation_runs
 		 SET last_executed_level_index = ?, next_action_at = ?, status = ?
-		 WHERE id = ?`,
+		 WHERE id = ? AND status = 'active'`,
 		lastExecutedLevelIndex, nullableTime(nextActionAt), status, runID,
 	)
 	if err != nil {
@@ -320,7 +320,7 @@ func (s *EscalationStore) TerminateRun(ctx context.Context, runID string, status
 }
 
 // SelectActiveRunsByAlert returns runs in non-terminal state for a given alert.
-// Used by ack/resolve hooks and OnAlertCreated dedup.
+// Used by ack/resolve hooks.
 func (s *EscalationStore) SelectActiveRunsByAlert(ctx context.Context, alertID string) ([]*escalation.Run, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, policy_id, policy_snapshot_json, alert_id, status,
@@ -386,8 +386,8 @@ func (s *EscalationStore) ResumeRunFromMaintenance(ctx context.Context, runID st
 	return nil
 }
 
-// InsertDelivery reserves a delivery slot. Returns escalation.ErrDeliveryDuplicate
-// when (run_id, level_index, channel_id) already exists — the caller treats this
+// InsertDelivery reserves a delivery slot, under d.ID when set. Returns escalation.ErrDeliveryDuplicate
+// when (run_id, level_index, channel_id) or that id already exists; the caller treats this
 // as "already attempted" (R4 reserve-then-deliver idempotence).
 func (s *EscalationStore) InsertDelivery(ctx context.Context, d *escalation.Delivery) (string, error) {
 	var channelID any
@@ -395,7 +395,9 @@ func (s *EscalationStore) InsertDelivery(ctx context.Context, d *escalation.Deli
 		channelID = *d.ChannelID
 	}
 
-	d.ID = uid.New()
+	if d.ID == "" {
+		d.ID = uid.New()
+	}
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO escalation_deliveries
 			(id, run_id, level_index, channel_id, status, error, attempt_started_at, sent_at)
@@ -410,6 +412,55 @@ func (s *EscalationStore) InsertDelivery(ctx context.Context, d *escalation.Deli
 		return "", fmt.Errorf("insert delivery: %w", err)
 	}
 	return d.ID, nil
+}
+
+// ReserveDelivery inserts d as InsertDelivery does, but only while its run is active and its alert active and unacknowledged, and reports whether it did.
+func (s *EscalationStore) ReserveDelivery(ctx context.Context, d *escalation.Delivery) (bool, error) {
+	var channelID any
+	if d.ChannelID != nil {
+		channelID = *d.ChannelID
+	}
+	id := d.ID
+	if id == "" {
+		id = uid.New()
+	}
+	reserved := false
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if err := tx.Serialize(ctx, "escalation_runs"); err != nil {
+			return err
+		}
+		var live int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM escalation_runs r JOIN alerts a ON a.id = r.alert_id
+			WHERE r.id = ? AND r.status = 'active' AND a.status = 'active' AND a.acknowledged_at IS NULL`,
+			d.RunID).Scan(&live); err != nil {
+			return fmt.Errorf("check run: %w", err)
+		}
+		if live == 0 {
+			return nil
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO escalation_deliveries
+				(id, run_id, level_index, channel_id, status, error, attempt_started_at, sent_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, d.RunID, d.LevelIndex, channelID, d.Status, NullableString(d.Error),
+			d.AttemptStartedAt.Unix(), nullableTime(d.SentAt),
+		); err != nil {
+			if IsUniqueViolation(err) {
+				return escalation.ErrDeliveryDuplicate
+			}
+			return fmt.Errorf("insert delivery: %w", err)
+		}
+		reserved = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	if reserved {
+		d.ID = id
+	}
+	return reserved, nil
 }
 
 // UpdateDelivery persists status/error/sent_at after a send attempt completes.

@@ -118,6 +118,9 @@ func (m *mockStore) ResumeRunFromMaintenance(_ context.Context, _ string, _ time
 func (m *mockStore) InsertDelivery(_ context.Context, _ *esc.Delivery) (string, error) {
 	return "", nil
 }
+func (m *mockStore) ReserveDelivery(_ context.Context, _ *esc.Delivery) (bool, error) {
+	return true, nil
+}
 func (m *mockStore) UpdateDelivery(_ context.Context, _ *esc.Delivery) error { return nil }
 func (m *mockStore) SelectOrphanPendingDeliveries(_ context.Context, _ time.Time) ([]*esc.Delivery, error) {
 	return nil, nil
