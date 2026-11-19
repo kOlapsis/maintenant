@@ -11,12 +11,16 @@ var tagOSVariants = []struct {
 	ecosystem string
 }{
 	// Alpine variants (check versioned first)
+	{"-alpine3.23", "Alpine:3.23"},
+	{"-alpine3.22", "Alpine:3.22"},
 	{"-alpine3.21", "Alpine:3.21"},
 	{"-alpine3.20", "Alpine:3.20"},
 	{"-alpine3.19", "Alpine:3.19"},
 	{"-alpine3.18", "Alpine:3.18"},
 	{"-alpine", "Alpine:3.20"},
 	// Debian variants
+	{"-slim-trixie", "Debian:13"},
+	{"-trixie", "Debian:13"},
 	{"-slim-bookworm", "Debian:12"},
 	{"-bookworm", "Debian:12"},
 	{"-slim-bullseye", "Debian:11"},
@@ -48,6 +52,8 @@ func ParseTagOSVariant(tag string) (string, bool) {
 			}
 		}
 		return "Alpine:3.20", true
+	case lower == "trixie" || lower == "trixie-slim":
+		return "Debian:13", true
 	case lower == "bookworm" || lower == "bookworm-slim":
 		return "Debian:12", true
 	case lower == "bullseye" || lower == "bullseye-slim":

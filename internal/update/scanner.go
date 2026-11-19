@@ -32,6 +32,8 @@ type ContainerInfo struct {
 	SwarmService       string   // Swarm: the service the task belongs to
 }
 
+const scanImageTimeout = 2 * time.Minute
+
 // Scanner checks containers for available updates by comparing tags and digests.
 // registryQuerier abstracts the registry operations needed by Scanner.
 // Satisfied by *RegistryClient in production; replaced by stubs in tests.
@@ -41,19 +43,21 @@ type registryQuerier interface {
 }
 
 type Scanner struct {
-	registry registryQuerier
-	store    UpdateStore
-	logger   *slog.Logger
-	delay    time.Duration
+	registry     registryQuerier
+	store        UpdateStore
+	logger       *slog.Logger
+	delay        time.Duration
+	imageTimeout time.Duration
 }
 
 // NewScanner creates a new registry scanner.
 func NewScanner(registry *RegistryClient, store UpdateStore, logger *slog.Logger) *Scanner {
 	return &Scanner{
-		registry: registry,
-		store:    store,
-		logger:   logger,
-		delay:    1 * time.Second,
+		registry:     registry,
+		store:        store,
+		logger:       logger,
+		delay:        1 * time.Second,
+		imageTimeout: scanImageTimeout,
 	}
 }
 
@@ -88,7 +92,7 @@ func (sc *Scanner) Scan(ctx context.Context, containers []ContainerInfo) ([]Upda
 			"container", c.Name, "image", c.Image,
 			"index", fmt.Sprintf("%d/%d", i+1, len(containers)))
 
-		result, err := sc.scanContainer(ctx, c, exclusions)
+		result, err := sc.scanContainerWithin(ctx, c, exclusions)
 		if err != nil {
 			scanErrors = append(scanErrors, ScanError{
 				ContainerID:   c.ExternalID,
@@ -115,6 +119,15 @@ func (sc *Scanner) Scan(ctx context.Context, containers []ContainerInfo) ([]Upda
 		"scanned", len(containers), "updates", len(results), "errors", len(scanErrors))
 
 	return results, scanErrors
+}
+
+func (sc *Scanner) scanContainerWithin(ctx context.Context, c ContainerInfo, exclusions []*UpdateExclusion) (*UpdateResult, error) {
+	if sc.imageTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, sc.imageTimeout)
+		defer cancel()
+	}
+	return sc.scanContainer(ctx, c, exclusions)
 }
 
 func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusions []*UpdateExclusion) (*UpdateResult, error) {
