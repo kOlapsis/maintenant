@@ -32,7 +32,7 @@ func mapServiceError(w http.ResponseWriter, err error) {
 	} else if errors.Is(err, escalation.ErrValidationFailed) {
 		WriteError(w, http.StatusBadRequest, "validation_failed", err.Error())
 	} else {
-		WriteError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
+		writeStoreError(w, err, "internal_error", "Internal server error")
 	}
 }
 

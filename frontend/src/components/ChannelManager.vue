@@ -275,7 +275,11 @@ function editionLabel(edition?: string): string {
             />
           </template>
         </FormField>
-        <FormField v-if="!isTelegram" label="Custom Headers (JSON)">
+        <FormField
+          v-if="!isTelegram"
+          label="Custom Headers (JSON)"
+          :hint="editingHasHeaders ? 'Changing the host of the URL erases the headers on file unless you enter new ones.' : undefined"
+        >
           <template #default="{ id, describedBy, invalid }">
             <TextInput
               :id="id"

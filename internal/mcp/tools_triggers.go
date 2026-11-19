@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -116,7 +117,7 @@ func validateTriggerCommon(t *triggerInput) error {
 		}
 		seen[id] = true
 	}
-	return nil
+	return alert.ValidateSeverityFilter(t.FilterSeverities)
 }
 
 // --- handlers ---
@@ -128,7 +129,7 @@ func listTriggersHandler(svc *Services) gomcp.ToolHandlerFor[listTriggersInput, 
 		}
 		triggers, err := svc.Triggers.ListTriggers(ctx)
 		if err != nil {
-			return nil, nil, fmt.Errorf("list triggers: %w", err)
+			return storeErrResult(err, "list triggers")
 		}
 		if triggers == nil {
 			triggers = []*alert.AlertTrigger{}
@@ -144,7 +145,7 @@ func getTriggerHandler(svc *Services) gomcp.ToolHandlerFor[getTriggerInput, any]
 		}
 		t, err := svc.Triggers.GetTrigger(ctx, input.ID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("get trigger: %w", err)
+			return storeErrResult(err, "get trigger")
 		}
 		if t == nil {
 			return errResult("trigger not found")
@@ -167,7 +168,7 @@ func createTriggerHandler(svc *Services) gomcp.ToolHandlerFor[triggerInput, any]
 		for _, id := range input.ChannelIDs {
 			ch, err := svc.Channels.GetChannel(ctx, id)
 			if err != nil {
-				return nil, nil, fmt.Errorf("validate channel: %w", err)
+				return storeErrResult(err, "validate channel")
 			}
 			if ch == nil {
 				return errResult(fmt.Sprintf("channel %s does not exist", id))
@@ -193,12 +194,13 @@ func createTriggerHandler(svc *Services) gomcp.ToolHandlerFor[triggerInput, any]
 			ChannelIDs:       input.ChannelIDs,
 		}
 		if _, err := svc.Triggers.InsertTrigger(ctx, t); err != nil {
-			return nil, nil, fmt.Errorf("create trigger: %w", err)
+			return storeErrResult(err, "create trigger")
 		}
 		stored, _ := svc.Triggers.GetTrigger(ctx, t.ID)
 		if stored != nil {
 			t = stored
 		}
+		svc.broadcast(event.TriggerCreated, t)
 		return jsonResult(t)
 	}
 }
@@ -210,7 +212,7 @@ func updateTriggerHandler(svc *Services) gomcp.ToolHandlerFor[updateTriggerInput
 		}
 		existing, err := svc.Triggers.GetTrigger(ctx, input.ID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("update trigger: lookup: %w", err)
+			return storeErrResult(err, "update trigger: lookup")
 		}
 		if existing == nil {
 			return errResult("trigger not found")
@@ -224,7 +226,7 @@ func updateTriggerHandler(svc *Services) gomcp.ToolHandlerFor[updateTriggerInput
 		for _, id := range input.ChannelIDs {
 			ch, err := svc.Channels.GetChannel(ctx, id)
 			if err != nil {
-				return nil, nil, fmt.Errorf("validate channel: %w", err)
+				return storeErrResult(err, "validate channel")
 			}
 			if ch == nil {
 				return errResult(fmt.Sprintf("channel %s does not exist", id))
@@ -244,12 +246,13 @@ func updateTriggerHandler(svc *Services) gomcp.ToolHandlerFor[updateTriggerInput
 		existing.ChannelIDs = input.ChannelIDs
 
 		if err := svc.Triggers.UpdateTrigger(ctx, existing); err != nil {
-			return nil, nil, fmt.Errorf("update trigger: %w", err)
+			return storeErrResult(err, "update trigger")
 		}
 		stored, _ := svc.Triggers.GetTrigger(ctx, existing.ID)
 		if stored != nil {
 			existing = stored
 		}
+		svc.broadcast(event.TriggerUpdated, existing)
 		return jsonResult(existing)
 	}
 }
@@ -261,14 +264,15 @@ func deleteTriggerHandler(svc *Services) gomcp.ToolHandlerFor[deleteTriggerInput
 		}
 		existing, err := svc.Triggers.GetTrigger(ctx, input.ID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("delete trigger: lookup: %w", err)
+			return storeErrResult(err, "delete trigger: lookup")
 		}
 		if existing == nil {
 			return errResult("trigger not found")
 		}
 		if err := svc.Triggers.DeleteTrigger(ctx, input.ID); err != nil {
-			return nil, nil, fmt.Errorf("delete trigger: %w", err)
+			return storeErrResult(err, "delete trigger")
 		}
+		svc.broadcast(event.TriggerDeleted, map[string]string{"id": input.ID})
 		return jsonResult(map[string]any{"deleted": true, "id": input.ID})
 	}
 }

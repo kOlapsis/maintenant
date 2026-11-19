@@ -759,20 +759,25 @@ func WriteJSON(w http.ResponseWriter, status int, v interface{}) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// WriteError writes a standard JSON error response.
-// WriteStoreError answers a failed read the way the operator needs to read it:
-// a storage outage is a 503 the interface can explain and retry, not a 500 it
-// can only render as an empty screen (FR-023). Anything else keeps the
-// existing 500.
+// WriteStoreError answers a failed store call: 503 when storage is unavailable, 409 on a unique
+// violation, otherwise 500 with message while the error goes to the log, never to the client.
 func WriteStoreError(w http.ResponseWriter, err error, message string) {
-	if store.IsUnavailable(err) {
-		WriteError(w, http.StatusServiceUnavailable, "STORAGE_UNAVAILABLE",
-			"storage temporarily unavailable")
-		return
-	}
-	WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", message)
+	writeStoreError(w, err, "INTERNAL_ERROR", message)
 }
 
+func writeStoreError(w http.ResponseWriter, err error, internalCode, message string) {
+	switch {
+	case store.IsUnavailable(err):
+		WriteError(w, http.StatusServiceUnavailable, "STORAGE_UNAVAILABLE", "storage temporarily unavailable")
+	case store.IsUniqueViolation(err):
+		WriteError(w, http.StatusConflict, "CONFLICT", "A record with the same name or identifier already exists")
+	default:
+		slog.Error("store error", "message", message, "error", err)
+		WriteError(w, http.StatusInternalServerError, internalCode, message)
+	}
+}
+
+// WriteError writes a standard JSON error response.
 func WriteError(w http.ResponseWriter, status int, code, message string) {
 	WriteJSON(w, status, ErrorResponse{
 		Error: ErrorDetail{

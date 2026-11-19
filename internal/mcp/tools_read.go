@@ -376,7 +376,7 @@ func listEndpointsHandler(svc *Services) gomcp.ToolHandlerFor[listEndpointsInput
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to list endpoints: %w", err)
 		}
-		enriched, err := enrichWithAgentLabel(ctx, svc, endpoints)
+		enriched, err := enrichWithAgentLabel(ctx, svc, endpointViews(endpoints))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to enrich endpoints: %w", err)
 		}
@@ -408,7 +408,7 @@ func listHeartbeatsHandler(svc *Services) gomcp.ToolHandlerFor[listHeartbeatsInp
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to list heartbeats: %w", err)
 		}
-		enriched, err := enrichWithAgentLabel(ctx, svc, heartbeats)
+		enriched, err := enrichWithAgentLabel(ctx, svc, heartbeatViews(heartbeats))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to enrich heartbeats: %w", err)
 		}
@@ -434,6 +434,8 @@ func listCertificatesHandler(svc *Services) gomcp.ToolHandlerFor[listCertificate
 	}
 }
 
+var changelogFields = []string{"source_url", "previous_digest", "changelog_url", "changelog_summary", "has_breaking_changes"}
+
 func getUpdatesHandler(svc *Services) gomcp.ToolHandlerFor[getUpdatesInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, _ getUpdatesInput) (*gomcp.CallToolResult, any, error) {
 		updates, err := svc.Updates.ListImageUpdates(ctx, update.ListImageUpdatesOpts{})
@@ -443,6 +445,13 @@ func getUpdatesHandler(svc *Services) gomcp.ToolHandlerFor[getUpdatesInput, any]
 		enriched, err := enrichWithAgentLabel(ctx, svc, updates)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to enrich updates: %w", err)
+		}
+		if !extension.Allows(extension.CapChangelog) {
+			for _, row := range enriched {
+				for _, field := range changelogFields {
+					delete(row, field)
+				}
+			}
 		}
 		out := map[string]any{"updates": enriched, "hosts": []map[string]any{}, "eol_table": eol.TableStatus{}}
 		if svc.EOL != nil {
@@ -510,6 +519,41 @@ func listAgentsHandler(svc *Services) gomcp.ToolHandlerFor[listAgentsInput, any]
 }
 
 // --- Helpers ---
+
+type heartbeatView struct {
+	*heartbeat.Heartbeat
+	PingToken *struct{} `json:"ping_token,omitempty"` // shadows the embedded field so the token is never serialized
+}
+
+func heartbeatViews(hbs []*heartbeat.Heartbeat) []heartbeatView {
+	views := make([]heartbeatView, len(hbs))
+	for i, hb := range hbs {
+		views[i] = heartbeatView{Heartbeat: hb}
+	}
+	return views
+}
+
+type endpointConfigView struct {
+	endpoint.EndpointConfig
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+type endpointView struct {
+	*endpoint.Endpoint
+	Config endpointConfigView `json:"config"`
+}
+
+func endpointViews(eps []*endpoint.Endpoint) []endpointView {
+	views := make([]endpointView, len(eps))
+	for i, ep := range eps {
+		headers := make(map[string]string, len(ep.Config.Headers))
+		for name := range ep.Config.Headers {
+			headers[name] = "***"
+		}
+		views[i] = endpointView{Endpoint: ep, Config: endpointConfigView{EndpointConfig: ep.Config, Headers: headers}}
+	}
+	return views
+}
 
 // enrichWithAgentLabel adds an "agent_label" field to each item in the slice
 // by looking up the agent from the AgentStore. Items without an agent_id are

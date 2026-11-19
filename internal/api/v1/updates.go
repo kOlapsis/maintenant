@@ -336,7 +336,11 @@ func (h *UpdateHandler) HandlePinVersion(w http.ResponseWriter, r *http.Request)
 
 	// Get current update info
 	u, err := h.store.GetImageUpdateByContainer(r.Context(), containerID)
-	if err != nil || u == nil {
+	if err != nil {
+		WriteStoreError(w, err, "Failed to read update data")
+		return
+	}
+	if u == nil {
 		WriteError(w, http.StatusNotFound, "NOT_FOUND", "No update data for container")
 		return
 	}
@@ -351,13 +355,15 @@ func (h *UpdateHandler) HandlePinVersion(w http.ResponseWriter, r *http.Request)
 	}
 
 	if _, err := h.store.InsertVersionPin(r.Context(), pin); err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to pin version")
+		WriteStoreError(w, err, "Failed to pin version")
 		return
 	}
 
-	// Update the image_updates status to pinned
 	u.Status = update.StatusPinned
-	_ = h.store.UpdateImageUpdate(r.Context(), u)
+	if err := h.store.UpdateImageUpdate(r.Context(), u); err != nil {
+		WriteStoreError(w, err, "Failed to pin version")
+		return
+	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"container_id":  containerID,
@@ -377,15 +383,21 @@ func (h *UpdateHandler) HandleUnpinVersion(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := h.store.DeleteVersionPin(r.Context(), containerID); err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to unpin version")
+		WriteStoreError(w, err, "Failed to unpin version")
 		return
 	}
 
-	// Restore update status to available
-	u, _ := h.store.GetImageUpdateByContainer(r.Context(), containerID)
+	u, err := h.store.GetImageUpdateByContainer(r.Context(), containerID)
+	if err != nil {
+		WriteStoreError(w, err, "Failed to unpin version")
+		return
+	}
 	if u != nil {
 		u.Status = update.StatusAvailable
-		_ = h.store.UpdateImageUpdate(r.Context(), u)
+		if err := h.store.UpdateImageUpdate(r.Context(), u); err != nil {
+			WriteStoreError(w, err, "Failed to unpin version")
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)

@@ -116,7 +116,7 @@ func (h *AlertTriggerHandler) HandleCreateTrigger(w http.ResponseWriter, r *http
 
 	if _, err := h.triggerStore.InsertTrigger(r.Context(), t); err != nil {
 		slog.Error("insert trigger", "error", err)
-		if isUniqueErr(err) {
+		if store.IsUniqueViolation(err) {
 			WriteError(w, http.StatusConflict, "name_conflict", "Trigger name already in use")
 			return
 		}
@@ -191,7 +191,7 @@ func (h *AlertTriggerHandler) HandleUpdateTrigger(w http.ResponseWriter, r *http
 
 	if err := h.triggerStore.UpdateTrigger(r.Context(), existing); err != nil {
 		slog.Error("update trigger", "error", err)
-		if isUniqueErr(err) {
+		if store.IsUniqueViolation(err) {
 			WriteError(w, http.StatusConflict, "name_conflict", "Trigger name already in use")
 			return
 		}
@@ -255,7 +255,7 @@ func validateTriggerInput(t *triggerInput) error {
 		}
 		seen[id] = true
 	}
-	return nil
+	return alert.ValidateSeverityFilter(t.FilterSeverities)
 }
 
 // refuseAdvancedFilters writes the edition refusal when a request sets a scope
@@ -281,9 +281,4 @@ func (h *AlertTriggerHandler) checkChannelsExist(r *http.Request, ids []string) 
 		}
 	}
 	return nil
-}
-
-// isUniqueErr reports a unique-constraint failure on either storage engine.
-func isUniqueErr(err error) bool {
-	return store.IsUniqueViolation(err)
 }

@@ -138,8 +138,17 @@ func (h *WebhookHandler) HandleDeleteWebhook(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := h.store.Delete(r.Context(), id); err != nil {
+	sub, err := h.store.GetByID(r.Context(), id)
+	if err != nil {
+		WriteStoreError(w, err, "Failed to get webhook")
+		return
+	}
+	if sub == nil {
 		WriteError(w, http.StatusNotFound, "not_found", "Webhook not found")
+		return
+	}
+	if err := h.store.Delete(r.Context(), id); err != nil {
+		WriteStoreError(w, err, "Failed to delete webhook")
 		return
 	}
 
@@ -150,7 +159,11 @@ func (h *WebhookHandler) HandleDeleteWebhook(w http.ResponseWriter, r *http.Requ
 func (h *WebhookHandler) HandleTestWebhook(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	testSub, err := h.store.GetByID(r.Context(), id)
-	if err != nil || testSub == nil {
+	if err != nil {
+		WriteStoreError(w, err, "Failed to get webhook")
+		return
+	}
+	if testSub == nil {
 		WriteError(w, http.StatusNotFound, "not_found", "Webhook not found")
 		return
 	}

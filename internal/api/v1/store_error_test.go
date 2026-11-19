@@ -40,10 +40,16 @@ func TestWriteStoreError(t *testing.T) {
 			wantKey:  "STORAGE_UNAVAILABLE",
 		},
 		{
-			name:     "a constraint violation is not an outage",
-			err:      fmt.Errorf("insert: %w", &pgconn.PgError{Code: "23505"}),
+			name:     "a foreign key violation is not an outage",
+			err:      fmt.Errorf("insert: %w", &pgconn.PgError{Code: "23503"}),
 			wantCode: http.StatusInternalServerError,
 			wantKey:  "INTERNAL_ERROR",
+		},
+		{
+			name:     "a unique violation is a conflict",
+			err:      fmt.Errorf("insert: %w", &pgconn.PgError{Code: "23505"}),
+			wantCode: http.StatusConflict,
+			wantKey:  "CONFLICT",
 		},
 		{
 			name:     "an ordinary error is not an outage",
