@@ -54,7 +54,12 @@ const stats = computed(() => dashboard.globalStats)
 const SLIDEOVER_TYPES = new Set<string>(['container', 'heartbeat', 'certificate'])
 
 const loading = ref(true)
-const loadError = ref<string | null>(null)
+const unavailable = computed(() => dashboard.unavailableLists)
+const loadError = computed(() =>
+  unavailable.value.failed.length === unavailable.value.total
+    ? "Couldn't load monitors. Check the agent connection, then retry."
+    : null,
+)
 const lastRefresh = ref(0)
 const now = ref(Date.now())
 
@@ -190,16 +195,13 @@ function openAttention(item: AttentionItem) {
 }
 
 async function load() {
-  loadError.value = null
   loading.value = true
   try {
     await dashboard.fetchAll()
-  } catch {
-    loadError.value = "Couldn't load monitors. Check the agent connection, then retry."
   } finally {
     loading.value = false
-    lastRefresh.value = Date.now()
     now.value = Date.now()
+    if (!unavailable.value.failed.length) lastRefresh.value = now.value
   }
 }
 
@@ -232,6 +234,8 @@ onUnmounted(() => {
         :warnings="stats.warnings"
         :ok="stats.running"
         :summary="verdictSummary"
+        :unavailable="unavailable.failed"
+        :hide-counters="!!loadError"
       />
 
       <!-- 2. Needs attention -->

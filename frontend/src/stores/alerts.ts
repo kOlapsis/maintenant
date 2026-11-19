@@ -30,6 +30,7 @@ export const useAlertsStore = defineStore('alerts', () => {
   const pinnedId = ref<string | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const activeAlertsError = ref<string | null>(null)
 
   // Silence state
   const silenceRules = ref<SilenceRule[]>([])
@@ -64,9 +65,11 @@ export const useAlertsStore = defineStore('alerts', () => {
   }
 
   async function fetchActiveAlerts() {
+    activeAlertsError.value = null
     try {
       activeAlerts.value = await getActiveAlerts()
     } catch (e) {
+      activeAlertsError.value = e instanceof Error ? e.message : 'Failed to fetch active alerts'
       console.error('Failed to fetch active alerts:', e)
     }
   }
@@ -254,6 +257,7 @@ export const useAlertsStore = defineStore('alerts', () => {
     hasMore,
     loading,
     error,
+    activeAlertsError,
     silenceRules,
     silenceLoading,
     newAlertCount,
