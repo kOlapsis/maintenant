@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -145,18 +146,29 @@ func (r *Runner) OnAlertCreated(ctx context.Context, a *alert.Alert) error {
 // retryUnstarted starts the runs that a storage error kept from starting, on the schedule of their first attempt.
 func (r *Runner) retryUnstarted(ctx context.Context) {
 	r.createMu.Lock()
-	defer r.createMu.Unlock()
-	for id, at := range r.unstarted {
-		a, err := r.alertStore.GetAlert(ctx, id)
-		if err == nil && a != nil && a.Status == alert.StatusActive && a.AcknowledgedAt == nil {
-			err = r.startRuns(ctx, a, at)
-		}
-		if err != nil {
-			r.logger.WarnContext(ctx, "escalation: run start left for the next cycle", "error", err, "alert_id", id)
-			continue
-		}
-		delete(r.unstarted, id)
+	ids := slices.Collect(maps.Keys(r.unstarted))
+	r.createMu.Unlock()
+	for _, id := range ids {
+		r.retryStart(ctx, id)
 	}
+}
+
+func (r *Runner) retryStart(ctx context.Context, id string) {
+	r.createMu.Lock()
+	defer r.createMu.Unlock()
+	at, pending := r.unstarted[id]
+	if !pending {
+		return
+	}
+	a, err := r.alertStore.GetAlert(ctx, id)
+	if err == nil && a != nil && a.Status == alert.StatusActive && a.AcknowledgedAt == nil {
+		err = r.startRuns(ctx, a, at)
+	}
+	if err != nil {
+		r.logger.WarnContext(ctx, "escalation: run start left for the next cycle", "error", err, "alert_id", id)
+		return
+	}
+	delete(r.unstarted, id)
 }
 
 func (r *Runner) startRuns(ctx context.Context, a *alert.Alert, now time.Time) error {
