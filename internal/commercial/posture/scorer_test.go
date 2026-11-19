@@ -21,7 +21,7 @@ type mockCertReader struct {
 	certs map[string][]security.CertificateInfo
 }
 
-func (m *mockCertReader) CertificatesByContainer(_ context.Context, _ []string) (map[string][]security.CertificateInfo, error) {
+func (m *mockCertReader) CertificatesByContainer(_ context.Context, _ []security.ContainerInfo) (map[string][]security.CertificateInfo, error) {
 	return m.certs, nil
 }
 
@@ -49,7 +49,7 @@ type mockUpdateReader struct {
 	updates map[string][]security.UpdateInfo
 }
 
-func (m *mockUpdateReader) UpdatesByContainer(_ context.Context, _ []string) (map[string][]security.UpdateInfo, error) {
+func (m *mockUpdateReader) UpdatesByContainer(_ context.Context, _ []security.ContainerInfo) (map[string][]security.UpdateInfo, error) {
 	return m.updates, nil
 }
 
@@ -319,13 +319,13 @@ func TestScorerScoreContainer(t *testing.T) {
 
 	scorer := NewScorer(ScorerDeps{
 		Certs: &mockCertReader{certs: map[string][]security.CertificateInfo{
-			"ext-1": {{Status: "valid", DaysRemaining: 90}},
+			"c1": {{Status: "valid", DaysRemaining: 90}},
 		}},
 		CVEs: &mockCVEReader{cves: map[string][]security.CVEInfo{
 			"ext-1": {{CVEID: "CVE-2025-001", Severity: "high"}},
 		}},
 		Updates: &mockUpdateReader{updates: map[string][]security.UpdateInfo{
-			"ext-1": {{UpdateType: "minor", PublishedAt: timePtr(time.Now().Add(-15 * 24 * time.Hour))}},
+			"c1": {{UpdateType: "minor", PublishedAt: timePtr(time.Now().Add(-15 * 24 * time.Hour))}},
 		}},
 		CVEEvaluations: &mockCVEEvalReader{states: map[string]string{"ext-1": security.EvaluationEvaluated}},
 		Insights:       secSvc,

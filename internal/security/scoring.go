@@ -27,9 +27,9 @@ type UpdateInfo struct {
 	PublishedAt *time.Time
 }
 
-// CertificateReader provides the certificates of the given containers, keyed by external ID.
+// CertificateReader provides the certificates of the given containers, keyed by container ID.
 type CertificateReader interface {
-	CertificatesByContainer(ctx context.Context, containerExternalIDs []string) (map[string][]CertificateInfo, error)
+	CertificatesByContainer(ctx context.Context, containers []ContainerInfo) (map[string][]CertificateInfo, error)
 }
 
 // CVEReader provides CVE data for a container.
@@ -47,9 +47,9 @@ type CVEEvaluationReader interface {
 	GetCVEEvaluation(ctx context.Context, agentID, containerExternalID string) (*CVEEvaluationInfo, error)
 }
 
-// UpdateReader provides the pending updates of the given containers, keyed by external ID.
+// UpdateReader provides the pending updates of the given containers, keyed by container ID.
 type UpdateReader interface {
-	UpdatesByContainer(ctx context.Context, containerExternalIDs []string) (map[string][]UpdateInfo, error)
+	UpdatesByContainer(ctx context.Context, containers []ContainerInfo) (map[string][]UpdateInfo, error)
 }
 
 // AcknowledgmentStore persists risk acknowledgments.

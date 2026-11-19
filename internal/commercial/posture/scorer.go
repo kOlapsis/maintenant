@@ -117,11 +117,11 @@ func (s *Scorer) ScoreContainers(ctx context.Context, containers []security.Cont
 		return scores, nil
 	}
 
-	externalIDs := make([]string, len(pending))
+	targets := make([]security.ContainerInfo, len(pending))
 	for j, i := range pending {
-		externalIDs[j] = containers[i].ExternalID
+		targets[j] = containers[i]
 	}
-	in, err := s.readInputs(ctx, externalIDs)
+	in, err := s.readInputs(ctx, targets)
 	if err != nil {
 		return nil, err
 	}
@@ -147,16 +147,16 @@ type scoringInputs struct {
 	updates map[string][]security.UpdateInfo
 }
 
-func (s *Scorer) readInputs(ctx context.Context, containerExternalIDs []string) (*scoringInputs, error) {
+func (s *Scorer) readInputs(ctx context.Context, containers []security.ContainerInfo) (*scoringInputs, error) {
 	in := &scoringInputs{}
 	var err error
 	if s.certs != nil {
-		if in.certs, err = s.certs.CertificatesByContainer(ctx, containerExternalIDs); err != nil {
+		if in.certs, err = s.certs.CertificatesByContainer(ctx, containers); err != nil {
 			return nil, fmt.Errorf("reading certificates for scoring: %w", err)
 		}
 	}
 	if s.updates != nil {
-		if in.updates, err = s.updates.UpdatesByContainer(ctx, containerExternalIDs); err != nil {
+		if in.updates, err = s.updates.UpdatesByContainer(ctx, containers); err != nil {
 			return nil, fmt.Errorf("reading updates for scoring: %w", err)
 		}
 	}
@@ -180,7 +180,7 @@ func (s *Scorer) computeContainerScore(ctx context.Context, in *scoringInputs, c
 	// --- TLS ---
 	tlsResult := categoryResult{name: CategoryTLS, weight: WeightTLS}
 	if s.certs != nil {
-		if certs := in.certs[containerExternalID]; len(certs) > 0 {
+		if certs := in.certs[containerID]; len(certs) > 0 {
 			tlsResult.applicable = true
 			tlsResult.subScore, tlsResult.issueCount, tlsResult.summary = scoreTLS(certs)
 		}
@@ -223,7 +223,7 @@ func (s *Scorer) computeContainerScore(ctx context.Context, in *scoringInputs, c
 	updateResult := categoryResult{name: CategoryUpdates, weight: WeightUpdates}
 	imageAgeResult := categoryResult{name: CategoryImageAge, weight: WeightImageAge}
 	if s.updates != nil {
-		updates := in.updates[containerExternalID]
+		updates := in.updates[containerID]
 		updateResult.applicable = true
 		if len(updates) > 0 {
 			updateResult.subScore, updateResult.issueCount, updateResult.summary = scoreUpdates(updates)
