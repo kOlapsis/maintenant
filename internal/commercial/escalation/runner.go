@@ -36,6 +36,7 @@ const (
 const (
 	defaultOrphanTimeout = 2 * time.Minute
 	maintenanceRecheck   = 60 * time.Second
+	recordTimeout        = 5 * time.Second
 )
 
 // Sender abstracts the synchronous-send capability of *alert.Notifier so the
@@ -79,6 +80,11 @@ type Runner struct {
 
 	createMu  sync.Mutex           // serializes run creation, so the engine and the retry never both start a run
 	unstarted map[string]time.Time // alert id → when its runs should have started, retried each cycle
+
+	life    context.Context // bounds the sends started in the background, whatever context asked for them
+	stop    context.CancelFunc
+	sendMu  sync.Mutex // orders a new background send against the stop
+	sending sync.WaitGroup
 }
 
 // NewRunner wires a Runner. AlertStore, ChannelStore, Notifier, Service, Logger
@@ -100,6 +106,7 @@ func NewRunner(d RunnerDeps) *Runner {
 	if suppressor == nil {
 		suppressor = noopRunnerSuppressor{}
 	}
+	life, stop := context.WithCancel(context.Background())
 	return &Runner{
 		store:         d.Store,
 		alertStore:    d.AlertStore,
@@ -111,7 +118,29 @@ func NewRunner(d RunnerDeps) *Runner {
 		clock:         clock,
 		orphanTimeout: timeout,
 		unstarted:     map[string]time.Time{},
+		life:          life,
+		stop:          stop,
 	}
+}
+
+// Run holds the background sends of the runner until ctx ends, then cancels them and returns once each has recorded its outcome.
+func (r *Runner) Run(ctx context.Context) {
+	<-ctx.Done()
+	r.sendMu.Lock()
+	r.stop()
+	r.sendMu.Unlock()
+	r.sending.Wait()
+}
+
+// sendInBackground sends a reserved delivery on the runner's own lifetime; once the runner has stopped,
+// the delivery stays pending for the orphan recovery of the next start.
+func (r *Runner) sendInBackground(d *esc.Delivery, a *alert.Alert, ch *alert.NotificationChannel) {
+	r.sendMu.Lock()
+	defer r.sendMu.Unlock()
+	if r.life.Err() != nil {
+		return
+	}
+	r.sending.Go(func() { r.deliverAndUpdate(d, a, ch) })
 }
 
 type noopRunnerSuppressor struct{}
@@ -502,18 +531,21 @@ func (r *Runner) dispatchToChannel(ctx context.Context, runID string, levelIndex
 		return errRunStopped
 	}
 	if delivery.Status == esc.DeliveryStatusPending {
-		go r.deliverAndUpdate(ctx, delivery, a, ch)
+		r.sendInBackground(delivery, a, ch)
 	}
 	return nil
 }
 
 // deliverAndUpdate performs the actual network send and persists the outcome.
-func (r *Runner) deliverAndUpdate(ctx context.Context, delivery *esc.Delivery, a *alert.Alert, ch *alert.NotificationChannel) {
+func (r *Runner) deliverAndUpdate(delivery *esc.Delivery, a *alert.Alert, ch *alert.NotificationChannel) {
 	eventType := event.AlertFired
 	if delivery.LevelIndex == specialLevelAck {
 		eventType = event.AlertAcknowledged
 	}
-	err := r.notifier.SendEventNow(ctx, eventType, a, ch)
+	// Over before the pending row could be taken for an orphan and sent a second time.
+	sendCtx, cancelSend := context.WithTimeout(r.life, r.orphanTimeout-recordTimeout)
+	err := r.notifier.SendEventNow(sendCtx, eventType, a, ch)
+	cancelSend()
 	if err != nil {
 		delivery.Status = esc.DeliveryStatusFailed
 		delivery.Error = truncateErr(err.Error())
@@ -522,8 +554,11 @@ func (r *Runner) deliverAndUpdate(ctx context.Context, delivery *esc.Delivery, a
 		t := r.clock()
 		delivery.SentAt = &t
 	}
-	if uErr := r.store.UpdateDelivery(ctx, delivery); uErr != nil {
-		r.logger.ErrorContext(ctx, "escalation: update delivery", "error", uErr, "delivery_id", delivery.ID)
+	// Still written when the runner stops right after the send, so the outcome is not sent again at the next start.
+	recordCtx, cancelRecord := context.WithTimeout(context.WithoutCancel(r.life), recordTimeout)
+	defer cancelRecord()
+	if uErr := r.store.UpdateDelivery(recordCtx, delivery); uErr != nil {
+		r.logger.ErrorContext(recordCtx, "escalation: update delivery", "error", uErr, "delivery_id", delivery.ID)
 	}
 }
 
@@ -572,7 +607,7 @@ func (r *Runner) recoverOrphans(ctx context.Context, now time.Time) error {
 			r.abandonDelivery(ctx, d, "channel unavailable")
 			continue
 		}
-		go r.deliverAndUpdate(ctx, d, a, ch)
+		r.sendInBackground(d, a, ch)
 	}
 	return nil
 }
