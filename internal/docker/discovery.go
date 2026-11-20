@@ -188,7 +188,7 @@ func (c *Client) inspectAndMap(ctx context.Context, dc container.Summary, labels
 	if info.Config != nil && info.Config.Healthcheck != nil && len(info.Config.Healthcheck.Test) > 0 {
 		cm.HasHealthCheck = true
 	}
-	if info.State != nil && info.State.Health != nil {
+	if info.State != nil && info.State.Running && !info.State.Restarting && info.State.Health != nil {
 		hs := mapHealthStatus(string(info.State.Health.Status))
 		cm.HealthStatus = &hs
 	}

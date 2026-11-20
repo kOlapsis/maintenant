@@ -8,6 +8,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -133,6 +134,57 @@ func TestReconcile_ConcurrentHealthEventsAndTicksAnnounceOnce(t *testing.T) {
 
 	assert.Equal(t, 1, log.count("container.health_changed"))
 	assert.Len(t, healthTransitions(store, c.ID), 1)
+}
+
+func TestReconcile_ClearsTheHealthOfAStoppedContainer(t *testing.T) {
+	store := newSvcStore()
+	c := withHealth(makeTestContainer(extID("h5"), StateCompleted), HealthUnhealthy)
+	c.ID = "67"
+	stoppedAt := time.Now().Add(-time.Hour).Truncate(time.Second)
+	c.LastStateChangeAt = stoppedAt
+	store.seed(c)
+
+	discoverer := &mockDiscoverer{containers: []*Container{makeTestContainer(c.ExternalID, StateCompleted)}}
+	var events []capturedEvent
+	svc := newTestService(store, captureEvents(&events))
+
+	require.NoError(t, svc.Reconcile(context.Background(), discoverer))
+	require.NoError(t, svc.Reconcile(context.Background(), discoverer))
+
+	assert.Nil(t, store.storedHealthStatus(c.ExternalID))
+	got, err := store.GetContainerByID(context.Background(), c.ID)
+	require.NoError(t, err)
+	assert.True(t, stoppedAt.Equal(got.LastStateChangeAt))
+	assert.Empty(t, store.transitionsFor(c.ID))
+
+	var payloads []map[string]interface{}
+	for _, e := range events {
+		if e.typ == "container.health_changed" {
+			payloads = append(payloads, e.data.(map[string]interface{}))
+		}
+	}
+	require.Len(t, payloads, 1)
+	unhealthy := HealthUnhealthy
+	assert.Equal(t, &unhealthy, payloads[0]["previous_health"])
+	assert.Nil(t, payloads[0]["health_status"])
+}
+
+func TestReconcile_KeepsTheHealthOfARunningContainerDiscoveredWithout(t *testing.T) {
+	store := newSvcStore()
+	c := withHealth(makeTestContainer(extID("h6"), StateRunning), HealthHealthy)
+	c.ID = "68"
+	store.seed(c)
+
+	discoverer := &mockDiscoverer{containers: []*Container{makeTestContainer(c.ExternalID, StateRunning)}}
+	log := newEventLog()
+	svc := newTestService(store, func(d *Deps) { d.EventCallback = log.record })
+
+	require.NoError(t, svc.Reconcile(context.Background(), discoverer))
+
+	h := store.storedHealthStatus(c.ExternalID)
+	require.NotNil(t, h)
+	assert.Equal(t, HealthHealthy, *h)
+	assert.Equal(t, 0, log.count("container.health_changed"))
 }
 
 func TestReconcile_StateLeftWrongByALostUpdateIsFixedOnce(t *testing.T) {
