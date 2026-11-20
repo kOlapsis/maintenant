@@ -683,6 +683,54 @@ func TestHandleAgentEvent_UnknownHealthOnly_InsertsRunningWithHealth(t *testing.
 	assert.Equal(t, HealthStatus("healthy"), *c.HealthStatus)
 }
 
+func TestHandleAgentEvent_StoppedReportClearsTheHealth(t *testing.T) {
+	store := newSvcStore()
+	log := newEventLog()
+	svc := newTestService(store, func(d *Deps) { d.EventCallback = log.record })
+	ctx := context.Background()
+
+	agentID := "agent-job"
+	id := extID("job")
+	seed := withHealth(makeTestContainer(id, StateCompleted), HealthUnhealthy)
+	seed.AgentID = agentID
+	seed.HasHealthCheck = true
+	store.seed(seed)
+
+	require.NoError(t, svc.HandleAgentEvent(ctx, agentID, &agentpb.ContainerEvent{
+		ContainerId:   id,
+		Name:          "job",
+		State:         agentpb.ContainerState_CONTAINER_STATE_EXITED,
+		StatusMessage: "0",
+		HealthStatus:  "unhealthy",
+	}, agentevent.Meta{ObservedAt: time.Now()}))
+
+	assert.Nil(t, store.storedHealthStatus(id))
+	assert.Equal(t, 1, log.count(event.ContainerHealthChanged))
+}
+
+func TestHandleAgentEvent_UnknownStoppedContainerIsInsertedWithoutHealth(t *testing.T) {
+	store := newSvcStore()
+	svc := newTestService(store)
+	ctx := context.Background()
+
+	agentID := "agent-job"
+	id := extID("newjob")
+	require.NoError(t, svc.HandleAgentEvent(ctx, agentID, &agentpb.ContainerEvent{
+		ContainerId:    id,
+		Name:           "newjob",
+		State:          agentpb.ContainerState_CONTAINER_STATE_EXITED,
+		StatusMessage:  "0",
+		HealthStatus:   "unhealthy",
+		HasHealthCheck: true,
+	}, agentevent.Meta{ObservedAt: time.Now()}))
+
+	c, _ := store.GetContainerByExternalID(ctx, agentID, id)
+	require.NotNil(t, c)
+	assert.Equal(t, StateCompleted, c.State)
+	assert.True(t, c.HasHealthCheck)
+	assert.Nil(t, c.HealthStatus)
+}
+
 func TestHandleAgentInventory_EmptyComplete_ArchivesFleet(t *testing.T) {
 	store := newSvcStore()
 	svc := newTestService(store)

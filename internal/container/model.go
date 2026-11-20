@@ -18,6 +18,11 @@ const (
 	StateDead       ContainerState = "dead"
 )
 
+// stopped reports whether a container in this state no longer runs its health check.
+func (s ContainerState) stopped() bool {
+	return s == StateExited || s == StateCompleted || s == StateDead
+}
+
 // HealthStatus represents the health check status of a container.
 type HealthStatus string
 

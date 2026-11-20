@@ -29,6 +29,9 @@ func TestContainerHealthEvent(t *testing.T) {
 		{"starting to healthy recovers", h(container.HealthStarting), container.HealthHealthy, true, true},
 		{"no previous health to healthy recovers", nil, container.HealthHealthy, true, true},
 		{"unhealthy to starting stays quiet", h(container.HealthUnhealthy), container.HealthStarting, false, false},
+		{"unhealthy to none recovers", h(container.HealthUnhealthy), "", true, true},
+		{"healthy to none stays quiet", h(container.HealthHealthy), "", false, false},
+		{"no previous health to none stays quiet", nil, "", false, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

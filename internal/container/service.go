@@ -450,6 +450,25 @@ func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) er
 	return transitionErr
 }
 
+// clearStoppedHealth drops the health a stopped container still holds and announces it.
+func (s *Service) clearStoppedHealth(ctx context.Context, c *Container) error {
+	previousHealth := c.HealthStatus
+	c.HealthStatus = nil
+	if err := s.store.UpdateContainer(ctx, c); err != nil {
+		s.logger.Error("clear stopped container health", "id", c.ID, "error", err)
+		return err
+	}
+	s.emitEvent(event.ContainerHealthChanged, map[string]interface{}{
+		"id":              c.ID,
+		"container_name":  c.Name,
+		"health_status":   nil,
+		"previous_health": previousHealth,
+		"timestamp":       c.LastStateChangeAt,
+		"agent_id":        c.AgentID,
+	})
+	return nil
+}
+
 func (s *Service) emitEvent(eventType string, data interface{}) {
 	if s.onEvent != nil {
 		s.onEvent(eventType, data)
@@ -575,7 +594,8 @@ func (s *Service) reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 			}
 		}
 
-		if dc.HealthStatus != nil && (sc.HealthStatus == nil || *sc.HealthStatus != *dc.HealthStatus) {
+		switch {
+		case dc.HealthStatus != nil && (sc.HealthStatus == nil || *sc.HealthStatus != *dc.HealthStatus):
 			_ = s.processEvent(ctx, ContainerEvent{
 				Action:       "health_status",
 				AgentID:      sc.AgentID,
@@ -584,6 +604,8 @@ func (s *Service) reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 				HealthStatus: string(*dc.HealthStatus),
 				Timestamp:    now,
 			})
+		case dc.HealthStatus == nil && sc.HealthStatus != nil && sc.State.stopped() && !sc.IsIgnored:
+			_ = s.clearStoppedHealth(ctx, sc)
 		}
 	}
 

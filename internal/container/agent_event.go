@@ -94,7 +94,13 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		}
 	}
 
-	if hs := ev.GetHealthStatus(); hs != "" && (meta.Replayed || c.HealthStatus == nil || string(*c.HealthStatus) != hs) {
+	stopped := agentContainerState(ev).stopped()
+	switch hs := ev.GetHealthStatus(); {
+	case stopped && c.HealthStatus != nil && !c.IsIgnored && !meta.Replayed:
+		if err := s.clearStoppedHealth(ctx, c); err != nil {
+			return err
+		}
+	case hs != "" && (meta.Replayed || c.HealthStatus == nil || string(*c.HealthStatus) != hs) && !stopped:
 		h := base
 		h.Action = "health_status"
 		h.HealthStatus = hs
@@ -233,7 +239,7 @@ func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *
 		FirstSeenAt:        now,
 		LastStateChangeAt:  now,
 	}
-	if hs := ev.GetHealthStatus(); hs != "" {
+	if hs := ev.GetHealthStatus(); hs != "" && !state.stopped() {
 		h := HealthStatus(hs)
 		c.HealthStatus = &h
 	}
