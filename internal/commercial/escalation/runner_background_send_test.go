@@ -106,8 +106,17 @@ func TestAcknowledgmentNoticeOutlivesTheRequestThatAcknowledged(t *testing.T) {
 func TestRunnerStopEndsBackgroundSendsAndKeepsTheirOutcome(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	h := newDBHarness(t, alert.NewNotifier(newChannelStoreMock(), logger, true))
+	arrived := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		<-r.Context().Done()
+		_, _ = io.Copy(io.Discard, r.Body) // net/http only sees the client go away once the body is read
+		select {
+		case arrived <- struct{}{}:
+		default:
+		}
+		select {
+		case <-r.Context().Done():
+		case <-time.After(10 * time.Second):
+		}
 	}))
 	t.Cleanup(srv.Close)
 	ch := h.addChannel("stuck", srv.URL, true)
@@ -123,6 +132,11 @@ func TestRunnerStopEndsBackgroundSendsAndKeepsTheirOutcome(t *testing.T) {
 	require.NoError(t, h.runner.OnAlertCreated(h.ctx, a))
 	h.advance(61 * time.Second)
 	h.cycle()
+	select {
+	case <-arrived:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the send never reached the server")
+	}
 
 	stop()
 	select {
