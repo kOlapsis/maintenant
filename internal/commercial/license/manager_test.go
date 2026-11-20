@@ -124,11 +124,10 @@ func TestManager_ExpiredLicense(t *testing.T) {
 }
 
 func TestManager_UnknownKey_HTTP401(t *testing.T) {
-	pub, _ := generateTestKeyPair(t)
+	pub, priv := generateTestKeyPair(t)
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"message":"Invalid license key"}`))
+		writeSignedRefusal(t, w, priv, http.StatusUnauthorized, LicensePayload{Message: "Invalid license key"})
 	}
 
 	m := testManager(t, pub, handler)
@@ -140,11 +139,11 @@ func TestManager_UnknownKey_HTTP401(t *testing.T) {
 	assert.Equal(t, "Invalid license key", state.Message)
 }
 
-func TestManager_UnknownKey_HTTP401_NoBody(t *testing.T) {
-	pub, _ := generateTestKeyPair(t)
+func TestManager_UnknownKey_HTTP401_NoMessage(t *testing.T) {
+	pub, priv := generateTestKeyPair(t)
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
+		writeSignedRefusal(t, w, priv, http.StatusUnauthorized, LicensePayload{})
 	}
 
 	m := testManager(t, pub, handler)
@@ -157,11 +156,10 @@ func TestManager_UnknownKey_HTTP401_NoBody(t *testing.T) {
 }
 
 func TestManager_ExpiredKey_HTTP403(t *testing.T) {
-	pub, _ := generateTestKeyPair(t)
+	pub, priv := generateTestKeyPair(t)
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"status":"expired","message":"Your license has expired. Renew at https://maintenant.dev/pricing"}`))
+		writeSignedRefusal(t, w, priv, http.StatusForbidden, LicensePayload{Status: "expired", Message: "Your license has expired. Renew at https://maintenant.dev/pricing"})
 	}
 
 	m := testManager(t, pub, handler)
@@ -174,11 +172,10 @@ func TestManager_ExpiredKey_HTTP403(t *testing.T) {
 }
 
 func TestManager_CanceledKey_HTTP403(t *testing.T) {
-	pub, _ := generateTestKeyPair(t)
+	pub, priv := generateTestKeyPair(t)
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"status":"canceled","message":"Your subscription has been canceled."}`))
+		writeSignedRefusal(t, w, priv, http.StatusForbidden, LicensePayload{Status: "canceled", Message: "Your subscription has been canceled."})
 	}
 
 	m := testManager(t, pub, handler)
@@ -670,8 +667,7 @@ func TestManager_HTTP401NotifiesTheTransition(t *testing.T) {
 	unauthorized := false
 	handler := func(w http.ResponseWriter, _ *http.Request) {
 		if unauthorized {
-			w.WriteHeader(http.StatusUnauthorized)
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": "unknown key"})
+			writeSignedRefusal(t, w, priv, http.StatusUnauthorized, LicensePayload{Message: "unknown key"})
 			return
 		}
 		signed := signPayload(t, priv, proPayload())
@@ -701,8 +697,7 @@ func TestManager_HTTP403NotifiesTheTransition(t *testing.T) {
 	forbidden := false
 	handler := func(w http.ResponseWriter, _ *http.Request) {
 		if forbidden {
-			w.WriteHeader(http.StatusForbidden)
-			_ = json.NewEncoder(w).Encode(map[string]string{"status": "revoked", "message": "refunded"})
+			writeSignedRefusal(t, w, priv, http.StatusForbidden, LicensePayload{Status: "revoked", Message: "refunded"})
 			return
 		}
 		signed := signPayload(t, priv, proPayload())

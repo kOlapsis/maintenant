@@ -7,7 +7,6 @@ package license
 import (
 	"context"
 	"crypto/ed25519"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -220,33 +219,7 @@ func (m *Manager) check(ctx context.Context) {
 	resp, statusCode, err := fetchLicense(ctx, m.client, serverURL, m.licenseKey, m.version)
 
 	if err != nil {
-		// HTTP 401 = unknown/invalid key — use server message verbatim
-		if statusCode == http.StatusUnauthorized {
-			var srvErr *ServerError
-			if !errors.As(err, &srvErr) {
-				srvErr = &ServerError{Message: err.Error()}
-			}
-			m.logger.Error("license key not recognized by server", "error", err)
-			deleteCache(m.dataDir)
-			m.setStateAndNotify(ctx, &State{
-				Status:  "unknown",
-				Message: srvErr.Message,
-			})
-			return
-		}
-
-		// HTTP 403 = license no longer active — use server status and message verbatim
-		if statusCode == http.StatusForbidden {
-			var srvErr *ServerError
-			if !errors.As(err, &srvErr) {
-				srvErr = &ServerError{Status: "expired", Message: err.Error()}
-			}
-			m.logger.Warn("license no longer active", "status", srvErr.Status, "error", err)
-			deleteCache(m.dataDir)
-			m.setStateAndNotify(ctx, &State{
-				Status:  srvErr.Status,
-				Message: srvErr.Message,
-			})
+		if (statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden) && m.applyRefusal(ctx, statusCode, resp, err) {
 			return
 		}
 
@@ -310,6 +283,44 @@ func (m *Manager) check(ctx context.Context) {
 			Message: "Unexpected license status: " + payload.Status,
 		})
 	}
+}
+
+// applyRefusal acts on a 401 or 403 only when its body is signed by the license server and does not grant the license, and reports whether it did.
+func (m *Manager) applyRefusal(ctx context.Context, statusCode int, resp *SignedResponse, httpErr error) bool {
+	if resp == nil {
+		m.logger.Error("license refusal is not signed, ignoring it", "http_status", statusCode)
+		return false
+	}
+	payload, err := verify(m.publicKey, *resp)
+	if err != nil {
+		m.logger.Error("license refusal signature verification failed, ignoring it", "http_status", statusCode, "error", err)
+		return false
+	}
+	if payload.Status == "active" || payload.Status == "grace" {
+		m.logger.Error("license refusal carries a granting payload, ignoring it", "http_status", statusCode, "status", payload.Status)
+		return false
+	}
+
+	message := payload.Message
+	if message == "" {
+		message = httpErr.Error()
+	}
+
+	if statusCode == http.StatusUnauthorized {
+		m.logger.Error("license key not recognized by server", "message", message)
+		deleteCache(m.dataDir)
+		m.setStateAndNotify(ctx, &State{Status: "unknown", Message: message})
+		return true
+	}
+
+	status := payload.Status
+	if status == "" {
+		status = "expired"
+	}
+	m.logger.Warn("license no longer active", "status", status, "message", message)
+	deleteCache(m.dataDir)
+	m.setStateAndNotify(ctx, &State{Status: status, Message: message})
+	return true
 }
 
 // applyPayload sets the license state from a verified payload.

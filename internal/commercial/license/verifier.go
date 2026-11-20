@@ -38,17 +38,6 @@ type SignedResponse struct {
 	Signature string `json:"signature"`
 }
 
-// ServerError is returned by fetchLicense when the server responds with a
-// non-200 status and a parseable error body. It carries the HTTP status code,
-// the server-provided status string, and the human-readable message.
-type ServerError struct {
-	HTTPStatus int
-	Status     string
-	Message    string
-}
-
-func (e *ServerError) Error() string { return e.Message }
-
 // LicensePayload is the decoded and verified license payload.
 //
 // Edition is optional: licenses issued before the three-edition model carry no
@@ -148,7 +137,9 @@ func verify(publicKey ed25519.PublicKey, resp SignedResponse) (*LicensePayload, 
 }
 
 // fetchLicense calls the license server with the given key and returns the
-// signed response. The caller is responsible for verifying the signature.
+// signed response. The caller is responsible for verifying the signature. On a
+// non-200 status the error is set and the response is the body when it looks
+// signed, still unverified.
 func fetchLicense(ctx context.Context, client *http.Client, serverURL, licenseKey, version string) (*SignedResponse, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/api/v1/license/verify", serverURL), nil)
 	if err != nil {
@@ -172,17 +163,12 @@ func fetchLicense(ctx context.Context, client *http.Client, serverURL, licenseKe
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		var p LicensePayload
+		refusal := fmt.Errorf("license server returned HTTP %d", resp.StatusCode)
 		var signed SignedResponse
 		if json.Unmarshal(body, &signed) == nil && signed.Payload != "" {
-			_ = json.Unmarshal([]byte(signed.Payload), &p)
-		} else {
-			_ = json.Unmarshal(body, &p)
+			return &signed, resp.StatusCode, refusal
 		}
-		if p.Message != "" {
-			return nil, resp.StatusCode, &ServerError{HTTPStatus: resp.StatusCode, Status: p.Status, Message: p.Message}
-		}
-		return nil, resp.StatusCode, fmt.Errorf("license server returned HTTP %d", resp.StatusCode)
+		return nil, resp.StatusCode, refusal
 	}
 
 	var signed SignedResponse
