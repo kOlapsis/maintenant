@@ -92,6 +92,9 @@ func (f *Fetcher) fetchProduct(ctx context.Context, product string) ([]Cycle, er
 
 	cycles := make([]Cycle, 0, len(payload.Result.Releases))
 	for _, release := range payload.Result.Releases {
+		if release.EolFrom == nil && isImageProduct(product) {
+			continue
+		}
 		cycle, err := toCycle(release)
 		if err != nil {
 			return nil, fmt.Errorf("product %s: %w", product, err)

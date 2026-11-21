@@ -20,7 +20,7 @@ maintenant raises alerts from every monitoring subsystem. An alert is identified
 | `certificate` | `expired`, `chain_invalid`, `hostname_mismatch` | `certificate` | Critical | The first scan that no longer shows the problem |
 | `certificate` | `ocsp_revoked` (Personal) | `certificate` | Critical | The first scan that no longer reports the staple as revoked |
 | `resource` | `cpu_threshold`, `memory_threshold` | `container` | Warning | The metric is back under its threshold |
-| `update` | `update_available` | `container` | Info, Critical for a major update | A scan no longer finds the update |
+| `update` | `update_available` | `container` | Info, Warning or Critical by the risk score of the update | A scan no longer finds the update |
 | `agent` | `disconnected` | `agent` | Warning | The agent reconnects; revoking or deleting it clears the alert |
 | `host` | `os_eol` | `agent` | Warning, then Critical | The host reports a supported version |
 | `security` | `dangerous_configuration` | `container` | Critical, Warning or Info, by the worst insight | The container has no insight left |
@@ -59,7 +59,7 @@ CPU and memory are independent alerts, `cpu_threshold` and `memory_threshold`, a
 
 ### Update alerts
 
-`update_available` fires when a scan finds an update for a running container. Its severity is Critical for a major update and Info for every other one, and the `maintenant.update.alert_on` label can narrow which updates raise it. See [Update Intelligence](updates.md#update-alerts).
+`update_available` fires when a scan finds an update for a running container. Its severity follows the risk score of the update: Critical from 81, Warning from 61, Info below. The `maintenant.update.alert_on` label can narrow which updates raise it. See [Update Intelligence](updates.md#update-alerts).
 
 ### Agent and host alerts
 

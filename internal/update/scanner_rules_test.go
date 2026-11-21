@@ -5,6 +5,8 @@ package update
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -40,20 +42,21 @@ func TestScanner_OfficialImageOnLatest_IsChecked(t *testing.T) {
 
 func TestScanner_TrackLabels_LimitTheVersionJump(t *testing.T) {
 	cases := []struct {
-		name     string
-		labels   map[string]string
-		wantTag  string
-		wantType UpdateType
+		name      string
+		labels    map[string]string
+		wantTag   string
+		wantType  UpdateType
+		wantMajor string
 	}{
-		{"no label", nil, "2.0.0", UpdateTypeMajor},
-		{"track major", map[string]string{"maintenant.update.track": "major"}, "2.0.0", UpdateTypeMajor},
-		{"track minor", map[string]string{"maintenant.update.track": "minor"}, "1.3.1", UpdateTypeMinor},
-		{"track patch", map[string]string{"maintenant.update.track": "patch"}, "1.2.5", UpdateTypePatch},
-		{"ignore_major", map[string]string{"maintenant.update.ignore_major": "true"}, "1.3.1", UpdateTypeMinor},
+		{"no label", nil, "1.3.1", UpdateTypeMinor, "2.0.0"},
+		{"track major", map[string]string{"maintenant.update.track": "major"}, "1.3.1", UpdateTypeMinor, "2.0.0"},
+		{"track minor", map[string]string{"maintenant.update.track": "minor"}, "1.3.1", UpdateTypeMinor, ""},
+		{"track patch", map[string]string{"maintenant.update.track": "patch"}, "1.2.5", UpdateTypePatch, ""},
+		{"ignore_major", map[string]string{"maintenant.update.ignore_major": "true"}, "1.3.1", UpdateTypeMinor, ""},
 		{"ignore_major with track patch", map[string]string{
 			"maintenant.update.ignore_major": "true",
 			"maintenant.update.track":        "patch",
-		}, "1.2.5", UpdateTypePatch},
+		}, "1.2.5", UpdateTypePatch, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -69,8 +72,77 @@ func TestScanner_TrackLabels_LimitTheVersionJump(t *testing.T) {
 			require.Len(t, results, 1)
 			assert.Equal(t, tc.wantTag, results[0].LatestTag)
 			assert.Equal(t, tc.wantType, results[0].UpdateType)
+			assert.Equal(t, tc.wantMajor, results[0].MajorTag)
 		})
 	}
+}
+
+func TestScanner_NewMajor_TargetsTheCurrentMajorFirst(t *testing.T) {
+	cases := []struct {
+		name      string
+		image     string
+		tags      []string
+		labels    map[string]string
+		baseline  string
+		wantTag   string
+		wantType  UpdateType
+		wantMajor string
+	}{
+		{"three-part tag", "postgres:1.2.3", []string{"1.2.3", "1.2.5", "2.0.0"}, nil, "", "1.2.5", UpdateTypePatch, "2.0.0"},
+		{"two-part tag", "postgres:18.7", []string{"18.7", "18.8", "19.0"}, nil, "sha256:new", "18.8", UpdateTypeMinor, "19.0"},
+		{"two-part tag, current one unchanged", "postgres:18.7", []string{"18.7", "19.0"}, nil, "sha256:new", "19.0", UpdateTypeMajor, ""},
+		{"two-part tag, current one republished", "postgres:18.7", []string{"18.7", "19.0"}, nil, "sha256:old", "18.7", UpdateTypeDigestOnly, "19.0"},
+		{"track minor", "postgres:18.7", []string{"18.7", "18.8", "19.0"}, map[string]string{"maintenant.update.track": "minor"}, "sha256:new", "18.8", UpdateTypeMinor, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := &stubRegistry{tags: map[string][]string{"library/postgres": tc.tags}, digest: "sha256:new"}
+			store := &stubStore{}
+			if tc.baseline != "" {
+				_, tag, _ := ParseImageRef(tc.image)
+				store.baseline = &DigestBaseline{ContainerID: "ctr1", Tag: tag, RemoteDigest: tc.baseline}
+			}
+			sc := newTestScanner(reg, store)
+
+			results, errs := sc.Scan(context.Background(), []ContainerInfo{
+				{ExternalID: "ctr1", Name: "db", Image: tc.image, Labels: tc.labels},
+			})
+			require.Empty(t, errs)
+			require.Len(t, results, 1)
+			assert.Equal(t, tc.wantTag, results[0].LatestTag)
+			assert.Equal(t, tc.wantType, results[0].UpdateType)
+			assert.Equal(t, tc.wantMajor, results[0].MajorTag)
+		})
+	}
+}
+
+type failingDigestRegistry struct {
+	*stubRegistry
+	failTag string
+}
+
+func (r failingDigestRegistry) ResolveDigests(ctx context.Context, imageRef string) (RemoteDigests, error) {
+	if strings.HasSuffix(imageRef, ":"+r.failTag) {
+		return RemoteDigests{}, errors.New("registry unavailable")
+	}
+	return r.stubRegistry.ResolveDigests(ctx, imageRef)
+}
+
+func TestScanner_NewMajor_FailedDigestCheckOfCurrentTagStillReportsTheMajor(t *testing.T) {
+	reg := failingDigestRegistry{
+		stubRegistry: &stubRegistry{tags: map[string][]string{"library/postgres": {"18.7", "19.0"}}, digest: "sha256:new"},
+		failTag:      "18.7",
+	}
+	sc := newTestScanner(reg, &stubStore{})
+
+	results, errs := sc.Scan(context.Background(), []ContainerInfo{
+		{ExternalID: "ctr1", Name: "db", Image: "postgres:18.7"},
+	})
+	require.Empty(t, errs)
+	require.Len(t, results, 1)
+	assert.Equal(t, "19.0", results[0].LatestTag)
+	assert.Equal(t, UpdateTypeMajor, results[0].UpdateType)
+	assert.Empty(t, results[0].MajorTag)
 }
 
 func TestScanner_TrackLabels_NothingInsideTheTrackedLevel(t *testing.T) {

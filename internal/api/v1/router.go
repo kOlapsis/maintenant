@@ -619,6 +619,7 @@ func (r *Router) registerUpdateRoutes(d HandlerDeps) {
 	r.mux.HandleFunc("GET /api/v1/updates", uh.HandleListUpdates)
 	r.mux.HandleFunc("GET /api/v1/updates/summary", uh.HandleGetUpdateSummary)
 	r.mux.HandleFunc("GET /api/v1/updates/hosts", uh.HandleListHostOS)
+	r.mux.HandleFunc("GET /api/v1/updates/images", uh.HandleListImageSupport)
 	r.mux.HandleFunc("GET /api/v1/updates/dry-run", uh.HandleGetDryRun)
 	r.mux.HandleFunc("GET /api/v1/updates/exclusions", uh.HandleListExclusions)
 	r.mux.HandleFunc("POST /api/v1/updates/exclusions", uh.HandleCreateExclusion)

@@ -23,7 +23,7 @@ func TestPostureAdapters_HomonymsScoreApart(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	const workload = "shop/Deployment/api"
 	updates := &countingUpdateStore{updates: []*update.ImageUpdate{
-		{ContainerID: workload, AgentID: "agent-prod", UpdateType: update.UpdateTypeMajor},
+		{ContainerID: workload, AgentID: "agent-prod", UpdateType: update.UpdateTypeMajor, RiskScore: 85},
 	}}
 	certs := &countingCertStore{monitors: []*certificate.CertMonitor{
 		{ID: "m1", AgentID: "agent-prod", ExternalID: workload, Status: certificate.StatusExpired},
@@ -52,7 +52,7 @@ func TestPostureAdapters_HomonymsScoreApart(t *testing.T) {
 		return security.CategoryScore{}
 	}
 	assert.Equal(t, 100, category(staging, posture.CategoryUpdates).SubScore, "staging has no pending update")
-	assert.Less(t, category(prod, posture.CategoryUpdates).SubScore, 100, "prod waits for a major update")
+	assert.Less(t, category(prod, posture.CategoryUpdates).SubScore, 100, "prod waits for a critical update")
 	assert.False(t, category(staging, posture.CategoryTLS).Applicable, "staging has no certificate")
 	assert.True(t, category(prod, posture.CategoryTLS).Applicable, "prod's expired certificate counts")
 }

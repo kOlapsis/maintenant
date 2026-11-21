@@ -1,13 +1,15 @@
 // Copyright 2026 Benjamin Touchard (kOlapsis)
 // SPDX-License-Identifier: Apache-2.0
 
-// Package eol resolves the end-of-support dates of host operating systems.
+// Package eol resolves the end-of-support dates of host operating systems and of the software official images ship.
 package eol
 
 import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 )
 
@@ -17,7 +19,21 @@ const (
 )
 
 // Products lists the endoflife.date slugs the table covers.
-var Products = []string{"debian", "ubuntu", "rhel", "rocky-linux", "almalinux", "alpine-linux", "sles"}
+var Products = []string{"debian", "ubuntu", "rhel", "rocky-linux", "almalinux", "alpine-linux", "sles",
+	"postgresql", "mysql", "mariadb", "redis", "mongodb", "nginx"}
+
+var officialImages = map[string]string{
+	"postgres": "postgresql",
+	"mysql":    "mysql",
+	"mariadb":  "mariadb",
+	"redis":    "redis",
+	"mongo":    "mongodb",
+	"nginx":    "nginx",
+}
+
+func isImageProduct(product string) bool {
+	return slices.Contains(slices.Collect(maps.Values(officialImages)), product)
+}
 
 //go:embed table.json
 var embeddedTable []byte

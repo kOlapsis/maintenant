@@ -29,9 +29,8 @@ func (noContainers) ListContainerInfos(context.Context) ([]update.ContainerInfo,
 	return nil, nil
 }
 
-// TestGetUpdates_CarriesHostsAndTable pins the three-key shape of get_updates:
-// the image updates, every monitored host's operating system, and the table the
-// support dates come from.
+// TestGetUpdates_CarriesHostsAndTable checks that get_updates carries every
+// monitored host's operating system and the table the support dates come from.
 func TestGetUpdates_CarriesHostsAndTable(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))

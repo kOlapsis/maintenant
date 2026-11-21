@@ -84,8 +84,8 @@ The score of a container is a weighted average of five categories. Each category
 | `cves` | 30 | critical 30, high 15, medium 5, low 2 |
 | `network_exposure` | 25 | critical 35, high 20, medium 10 (per insight) |
 | `tls` | 20 | expired certificate 50, expiring 30 (7 days or less), 20 (14 days or less) or 10, check error 25 |
-| `updates` | 15 | major update 25, minor 10, patch 5 |
-| `image_age` | 10 | age of the pending update: nothing lost when no update is pending or it was published less than 30 days ago, then a linear drop to 0 at 365 days; 50 when its date is unknown |
+| `updates` | 15 | per pending update, by its group on the [Updates page](updates.md#risk-score): Critical 25, Recommended 10, Available 0 |
+| `image_age` | 10 | age of the pending update, an Available one aside: nothing lost when no Critical or Recommended update is pending or it was published less than 30 days ago, then a linear drop to 0 at 365 days; 50 when its date is unknown |
 
 A category that does not apply to a container is left out, and the weights of the others are scaled up to make 100. `tls` applies to containers that have a monitored certificate. `cves` applies once the image has been analyzed: an image with no ecosystem is left out, and an image that has not been analyzed yet, or whose analysis failed, leaves the score marked as partial. The other three always apply and score 100 when there is nothing to report. Acknowledged CVEs and acknowledged insights do not count against the score.
 

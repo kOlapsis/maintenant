@@ -23,7 +23,7 @@ type CVEInfo struct {
 
 // UpdateInfo holds update availability for scoring.
 type UpdateInfo struct {
-	UpdateType  string // "major", "minor", "patch", "digest_only"
+	RiskScore   int
 	PublishedAt *time.Time
 }
 

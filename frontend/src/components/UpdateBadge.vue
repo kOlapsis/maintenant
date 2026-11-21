@@ -7,10 +7,17 @@
 import type { ImageUpdate } from '@/services/updateApi'
 import { computed } from 'vue'
 import { ArrowRight, Check, Pin } from 'lucide-vue-next'
+import { updateUrgency } from '@/utils/updateUrgency'
 
 const props = defineProps<{
   update: ImageUpdate | null
 }>()
+
+const urgencyColors = {
+  critical: { color: 'var(--mnt-status-down)', bg: 'var(--mnt-status-down-bg)' },
+  recommended: { color: 'var(--mnt-status-warn)', bg: 'var(--mnt-status-warn-bg)' },
+  available: { color: 'var(--mnt-text-muted)', bg: 'var(--mnt-bg-elevated)' },
+}
 
 const badgeConfig = computed(() => {
   if (!props.update) return null
@@ -19,17 +26,16 @@ const badgeConfig = computed(() => {
     return { color: 'var(--mnt-text-muted)', bg: 'var(--mnt-bg-elevated)', icon: Pin, label: 'Pinned' }
   }
 
+  const { color, bg } = urgencyColors[updateUrgency(props.update.risk_score)]
   switch (props.update.update_type) {
     case 'major':
-      return { color: 'var(--mnt-status-down)', bg: 'var(--mnt-status-down-bg)', icon: ArrowRight, label: `${props.update.current_tag} → ${props.update.latest_tag}` }
     case 'minor':
-      return { color: 'var(--mnt-status-warn)', bg: 'var(--mnt-status-warn-bg)', icon: ArrowRight, label: `${props.update.current_tag} → ${props.update.latest_tag}` }
     case 'patch':
-      return { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)', icon: ArrowRight, label: `${props.update.current_tag} → ${props.update.latest_tag}` }
+      return { color, bg, icon: ArrowRight, label: `${props.update.current_tag} → ${props.update.latest_tag}` }
     case 'digest_only':
-      return { color: 'var(--mnt-text-muted)', bg: 'var(--mnt-bg-elevated)', icon: ArrowRight, label: 'New digest' }
+      return { color, bg, icon: ArrowRight, label: 'New digest' }
     default:
-      return { color: 'var(--mnt-text-muted)', bg: 'var(--mnt-bg-elevated)', icon: ArrowRight, label: 'Update' }
+      return { color, bg, icon: ArrowRight, label: 'Update' }
   }
 })
 </script>

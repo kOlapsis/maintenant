@@ -104,8 +104,8 @@ func (s *UpdateStore) InsertImageUpdate(ctx context.Context, u *update.ImageUpda
 		(id, scan_id, container_id, container_name, image, current_tag, current_digest, registry,
 		 latest_tag, latest_digest, update_type, risk_score, published_at,
 		 changelog_url, changelog_summary, has_breaking_changes, previous_digest, source_url,
-		 status, detected_at, agent_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 status, detected_at, agent_id, major_tag)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(agent_id, container_name, image, latest_tag) DO UPDATE SET
 			scan_id=excluded.scan_id,
 			container_id=excluded.container_id,
@@ -120,11 +120,12 @@ func (s *UpdateStore) InsertImageUpdate(ctx context.Context, u *update.ImageUpda
 			has_breaking_changes=excluded.has_breaking_changes,
 			previous_digest=excluded.previous_digest,
 			source_url=excluded.source_url,
-			detected_at=excluded.detected_at`,
+			detected_at=excluded.detected_at,
+			major_tag=excluded.major_tag`,
 		u.ID, u.ScanID, u.ContainerID, u.ContainerName, u.Image, u.CurrentTag, u.CurrentDigest, u.Registry,
 		u.LatestTag, u.LatestDigest, string(u.UpdateType), u.RiskScore, publishedAt,
 		u.ChangelogURL, u.ChangelogSummary, boolToInt(u.HasBreakingChanges), u.PreviousDigest, u.SourceURL,
-		string(u.Status), u.DetectedAt.Unix(), uid.Agent(u.AgentID),
+		string(u.Status), u.DetectedAt.Unix(), uid.Agent(u.AgentID), u.MajorTag,
 	)
 	if err != nil {
 		return "", fmt.Errorf("insert image update: %w", err)
@@ -143,12 +144,12 @@ func (s *UpdateStore) UpdateImageUpdate(ctx context.Context, u *update.ImageUpda
 		 scan_id=?, container_name=?, image=?, current_tag=?, current_digest=?, registry=?,
 		 latest_tag=?, latest_digest=?, update_type=?, risk_score=?, published_at=?,
 		 changelog_url=?, changelog_summary=?, has_breaking_changes=?, previous_digest=?, source_url=?,
-		 status=?
+		 status=?, major_tag=?
 		WHERE id=?`,
 		u.ScanID, u.ContainerName, u.Image, u.CurrentTag, u.CurrentDigest, u.Registry,
 		u.LatestTag, u.LatestDigest, string(u.UpdateType), u.RiskScore, publishedAt,
 		u.ChangelogURL, u.ChangelogSummary, boolToInt(u.HasBreakingChanges), u.PreviousDigest, u.SourceURL,
-		string(u.Status), u.ID,
+		string(u.Status), u.MajorTag, u.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update image update: %w", err)
@@ -161,7 +162,7 @@ func (s *UpdateStore) GetImageUpdate(ctx context.Context, id string) (*update.Im
 		`SELECT id, scan_id, container_id, container_name, image, current_tag, current_digest, registry,
 		 latest_tag, latest_digest, update_type, risk_score, published_at,
 		 changelog_url, changelog_summary, has_breaking_changes, previous_digest, source_url,
-		 status, detected_at, agent_id
+		 status, detected_at, agent_id, major_tag
 		FROM image_updates WHERE id = ?`, id)
 	return scanImageUpdate(row)
 }
@@ -171,7 +172,7 @@ func (s *UpdateStore) GetImageUpdateByContainer(ctx context.Context, containerID
 		`SELECT id, scan_id, container_id, container_name, image, current_tag, current_digest, registry,
 		 latest_tag, latest_digest, update_type, risk_score, published_at,
 		 changelog_url, changelog_summary, has_breaking_changes, previous_digest, source_url,
-		 status, detected_at, agent_id
+		 status, detected_at, agent_id, major_tag
 		FROM image_updates WHERE container_id = ? ORDER BY detected_at DESC LIMIT 1`, containerID)
 	return scanImageUpdate(row)
 }
@@ -182,7 +183,7 @@ func (s *UpdateStore) GetAgentImageUpdate(ctx context.Context, agentID, containe
 		`SELECT id, scan_id, container_id, container_name, image, current_tag, current_digest, registry,
 		 latest_tag, latest_digest, update_type, risk_score, published_at,
 		 changelog_url, changelog_summary, has_breaking_changes, previous_digest, source_url,
-		 status, detected_at, agent_id
+		 status, detected_at, agent_id, major_tag
 		FROM image_updates WHERE agent_id = ? AND container_id = ? ORDER BY detected_at DESC LIMIT 1`,
 		uid.Agent(agentID), containerID)
 	return scanImageUpdate(row)
@@ -192,7 +193,7 @@ func (s *UpdateStore) ListImageUpdates(ctx context.Context, opts update.ListImag
 	query := `SELECT id, scan_id, container_id, container_name, image, current_tag, current_digest, registry,
 		 latest_tag, latest_digest, update_type, risk_score, published_at,
 		 changelog_url, changelog_summary, has_breaking_changes, previous_digest, source_url,
-		 status, detected_at, agent_id
+		 status, detected_at, agent_id, major_tag
 		FROM image_updates WHERE ` + liveContainerFilter
 	var args []interface{}
 
@@ -814,7 +815,7 @@ func scanImageUpdate(row rowScanner) (*update.ImageUpdate, error) {
 		&u.CurrentTag, &u.CurrentDigest, &u.Registry,
 		&latestTag, &latestDigest, &updateType, &u.RiskScore, &publishedAt,
 		&changelogURL, &changelogSummary, &hasBreakingChanges, &previousDigest, &sourceURL,
-		&status, &detectedAt, &u.AgentID,
+		&status, &detectedAt, &u.AgentID, &u.MajorTag,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil

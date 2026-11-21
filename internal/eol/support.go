@@ -3,7 +3,10 @@
 
 package eol
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // WarningDays is how many days before the end of security support the warning starts.
 const WarningDays = 30
@@ -29,7 +32,7 @@ type Identity struct {
 	UnavailableReason string `json:"unavailable_reason"`
 }
 
-// Support is the evaluated support state of one host.
+// Support is the evaluated support state of one host or image.
 type Support struct {
 	State         SupportState `json:"state"`
 	Product       string       `json:"product"`
@@ -60,7 +63,35 @@ func Evaluate(identity Identity, table Table, today time.Time) Support {
 		support.State = StateUntracked
 		return support
 	}
+	return cycleSupport(support, product, cycle, today)
+}
 
+// EvaluateImage resolves the support state of the software a Docker Hub official image ships, repo and tag as update.ParseImageRef returns them.
+func EvaluateImage(repo, tag string, table Table, today time.Time) Support {
+	support := Support{TableSource: table.Source, State: StateUntracked}
+	product, ok := officialImages[strings.TrimPrefix(repo, "library/")]
+	if !ok {
+		return support
+	}
+	parts := strings.Split(leadingVersion(tag), ".")
+	for _, n := range []int{2, 1} {
+		if cycle, ok := table.Cycle(product, strings.Join(parts[:min(n, len(parts))], ".")); ok {
+			return cycleSupport(support, product, cycle, today)
+		}
+	}
+	return support
+}
+
+// leadingVersion returns the digits and dots a tag starts with, after an optional "v".
+func leadingVersion(tag string) string {
+	tag = strings.TrimPrefix(tag, "v")
+	if end := strings.IndexFunc(tag, func(r rune) bool { return r != '.' && (r < '0' || r > '9') }); end >= 0 {
+		return tag[:end]
+	}
+	return tag
+}
+
+func cycleSupport(support Support, product string, cycle Cycle, today time.Time) Support {
 	securityUntil := cycle.SecurityUntil
 	days := securityUntil.DaysUntil(today)
 	support.Product = product

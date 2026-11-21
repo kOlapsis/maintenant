@@ -450,7 +450,7 @@ Control how maintenant tracks image updates for each container.
 | `maintenant.update.pin` | any non-empty value | — | Freezes the container: no update is reported for it. The value is not compared with the running tag. |
 | `maintenant.update.ignore_major` | `true` / `false` | `false` | `true` behaves as `track: minor` when `track` is absent or `major`. It has no effect with another `track`. |
 | `maintenant.update.digest_only` | `true` / `false` | `false` | `true` behaves as `track: digest` and wins over `track` and `ignore_major`. |
-| `maintenant.update.alert_on` | `all`, `critical`, `none` | `all` | Which updates raise an `update_available` alert. `critical` keeps only updates of critical severity, which in practice means major updates. `none` tracks the update without alerting: it is still listed on the Updates page. |
+| `maintenant.update.alert_on` | `all`, `critical`, `none` | `all` | Which updates raise an `update_available` alert. `critical` keeps only updates of critical severity, a [risk score](../features/updates.md#risk-score) of 81 or more. `none` tracks the update without alerting: it is still listed on the Updates page. |
 | `maintenant.update.registry` | registry host, with a port if needed | — | Queries this registry instead of the one in the image reference, as a mirror that serves the same repository: `nginx` is looked up as `<registry>/library/nginx` and `ghcr.io/acme/api` as `<registry>/acme/api`. It is also the registry reported with the update. |
 | `maintenant.update.tag-include` | Go regex | — | Only tags matching this pattern are update candidates. |
 | `maintenant.update.tag-exclude` | Go regex | — | Tags matching this pattern are removed from the candidates, after `tag-include`. |
@@ -460,7 +460,7 @@ An unusable value (an unknown `track`, a boolean that is not a boolean, an inval
 ```yaml
 labels:
   maintenant.update.track: "minor"                               # Stay on the current major version
-  maintenant.update.alert_on: "critical"                         # Alert on major updates only
+  maintenant.update.alert_on: "critical"                         # Alert on critical updates only
   maintenant.update.tag-include: "^20\\.\\d+\\.\\d+-alpine$$"  # Node 20 alpine only
   maintenant.update.tag-exclude: "(rc|beta|alpha)"              # No pre-releases
 ```

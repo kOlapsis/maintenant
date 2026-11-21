@@ -127,6 +127,17 @@ func TestUpdateDetectedAlert_ProDetailsGated(t *testing.T) {
 	}
 }
 
+func TestUpdateDetectedAlert_MajorTagDetail(t *testing.T) {
+	if _, ok := updateDetectedAlert(detectedPayload("svc", "id", 40), false).Details["major_tag"]; ok {
+		t.Error("major_tag must be absent when the event has none")
+	}
+	m := detectedPayload("svc", "id", 40)
+	m["major_tag"] = "19.0"
+	if got := updateDetectedAlert(m, false).Details["major_tag"]; got != "19.0" {
+		t.Errorf("major_tag detail = %v, want 19.0", got)
+	}
+}
+
 func TestUpdateResolvedAlert(t *testing.T) {
 	evt := updateResolvedAlert(map[string]any{"container_id": "id-bw", "container_name": "bitwarden-postgres"})
 	if !evt.IsRecover {

@@ -50,7 +50,7 @@ type noAcknowledgments struct{ security.AcknowledgmentStore }
 func TestPostureAdapters_ReadOncePerPass(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	updates := &countingUpdateStore{updates: []*update.ImageUpdate{
-		{ContainerID: "ext-1", UpdateType: update.UpdateTypeMajor},
+		{ContainerID: "ext-1", UpdateType: update.UpdateTypeMajor, RiskScore: 40},
 	}}
 	certs := &countingCertStore{monitors: []*certificate.CertMonitor{
 		{ID: "m1", ExternalID: "ext-2", Status: certificate.StatusExpired},

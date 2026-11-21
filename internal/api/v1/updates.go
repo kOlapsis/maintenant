@@ -33,6 +33,13 @@ type UpdateHandler struct {
 	agentDirectory AgentDirectory
 }
 
+func (h *UpdateHandler) eolTable() eol.Table {
+	if h.eolSvc == nil {
+		return eol.Table{}
+	}
+	return h.eolSvc.Current()
+}
+
 // NewUpdateHandler creates a new update handler.
 func NewUpdateHandler(service *update.Service, store update.UpdateStore, containers ContainerInfoProvider) *UpdateHandler {
 	return &UpdateHandler{service: service, store: store, containers: containers}
@@ -85,6 +92,28 @@ func (h *UpdateHandler) HandleListHostOS(w http.ResponseWriter, r *http.Request)
 	WriteJSON(w, http.StatusOK, map[string]any{"hosts": out, "eol_table": table})
 }
 
+// HandleListImageSupport handles GET /api/v1/updates/images.
+func (h *UpdateHandler) HandleListImageSupport(w http.ResponseWriter, r *http.Request) {
+	images, err := h.service.ListImageSupport(r.Context())
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list image support")
+		return
+	}
+	names := h.agentNames(r.Context())
+	out := make([]map[string]any, 0, len(images))
+	for _, img := range images {
+		m := map[string]any{
+			"container_id":   img.ContainerID,
+			"container_name": img.ContainerName,
+			"image":          img.Image,
+			"support":        img.Support,
+		}
+		enrichAgentFields(m, img.AgentID, names)
+		out = append(out, m)
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{"images": out})
+}
+
 // HandleListUpdates handles GET /api/v1/updates.
 func (h *UpdateHandler) HandleListUpdates(w http.ResponseWriter, r *http.Request) {
 	opts := update.ListImageUpdatesOpts{
@@ -99,9 +128,10 @@ func (h *UpdateHandler) HandleListUpdates(w http.ResponseWriter, r *http.Request
 	}
 
 	names := h.agentNames(r.Context())
+	table, today := h.eolTable(), time.Now()
 	updateMaps := make([]map[string]interface{}, 0, len(updates))
 	for _, u := range updates {
-		m := imageUpdateToMap(u)
+		m := imageUpdateToMap(u, table, today)
 		enrichAgentFields(m, u.AgentID, names)
 		if u.Status == update.StatusPinned {
 			if pin, _ := h.store.GetVersionPin(r.Context(), u.AgentID, u.ContainerID); pin != nil {
@@ -189,7 +219,7 @@ func (h *UpdateHandler) HandleGetContainerUpdate(w http.ResponseWriter, r *http.
 	// Check if pinned
 	pin, _ := h.store.GetVersionPin(r.Context(), agentID, containerID)
 
-	resp := imageUpdateToMap(u)
+	resp := imageUpdateToMap(u, h.eolTable(), time.Now())
 	enrichAgentFields(resp, u.AgentID, h.agentNames(r.Context()))
 	resp["pinned"] = pin != nil
 	if pin != nil {
@@ -231,7 +261,7 @@ func (h *UpdateHandler) HandleGetContainerUpdate(w http.ResponseWriter, r *http.
 					"first_detected_at": c.FirstDetectedAt,
 				}
 				if c.FixedIn != "" {
-					cveMap["is_fixed_by_update"] = h.service.IsFixedByUpdate(u.LatestTag, c.FixedIn)
+					cveMap["is_fixed_by_update"] = update.IsFixedByUpdate(u.LatestTag, c.FixedIn)
 					if ciErr == nil {
 						cveMap["fix_command"] = h.service.GenerateFixCommand(ci, u.CurrentTag, c.FixedIn)
 					}
@@ -521,7 +551,7 @@ func writeAgentError(w http.ResponseWriter, err error, internalCode, message str
 	writeStoreError(w, err, internalCode, message)
 }
 
-func imageUpdateToMap(u *update.ImageUpdate) map[string]interface{} {
+func imageUpdateToMap(u *update.ImageUpdate, table eol.Table, today time.Time) map[string]interface{} {
 	m := map[string]interface{}{
 		"id":             u.ID,
 		"container_id":   u.ContainerID,
@@ -538,6 +568,13 @@ func imageUpdateToMap(u *update.ImageUpdate) map[string]interface{} {
 	}
 	if u.PublishedAt != nil {
 		m["published_at"] = u.PublishedAt
+	}
+	if u.MajorTag != "" {
+		m["major_tag"] = u.MajorTag
+	}
+	repo, _, _ := update.ParseImageRef(u.Image)
+	if support := eol.EvaluateImage(repo, u.CurrentTag, table, today); support.State != eol.StateUntracked {
+		m["support"] = support
 	}
 	return m
 }

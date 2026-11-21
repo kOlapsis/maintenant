@@ -190,37 +190,70 @@ func TestScoreUpdates(t *testing.T) {
 		name          string
 		updates       []security.UpdateInfo
 		expectedScore int
+		expectedCount int
+		expectedText  string
 	}{
 		{
 			name:          "up to date",
 			updates:       nil,
 			expectedScore: 100,
+			expectedText:  "all images up to date",
 		},
 		{
-			name:          "one major",
-			updates:       []security.UpdateInfo{{UpdateType: "major"}},
+			name:          "one critical",
+			updates:       []security.UpdateInfo{{RiskScore: 81}},
 			expectedScore: 75,
+			expectedCount: 1,
+			expectedText:  "1 critical",
 		},
 		{
-			name:          "one minor",
-			updates:       []security.UpdateInfo{{UpdateType: "minor"}},
+			name:          "one recommended at the lower bound",
+			updates:       []security.UpdateInfo{{RiskScore: 31}},
 			expectedScore: 90,
+			expectedCount: 1,
+			expectedText:  "1 recommended",
+		},
+		{
+			name:          "recommended at the upper bound",
+			updates:       []security.UpdateInfo{{RiskScore: 80}},
+			expectedScore: 90,
+			expectedCount: 1,
+			expectedText:  "1 recommended",
+		},
+		{
+			name:          "available costs nothing",
+			updates:       []security.UpdateInfo{{RiskScore: 30}, {RiskScore: 5}},
+			expectedScore: 100,
+			expectedCount: 2,
+			expectedText:  "2 available",
 		},
 		{
 			name: "mixed",
 			updates: []security.UpdateInfo{
-				{UpdateType: "major"},
-				{UpdateType: "minor"},
-				{UpdateType: "patch"},
+				{RiskScore: 90},
+				{RiskScore: 45},
+				{RiskScore: 40},
+				{RiskScore: 5},
 			},
-			expectedScore: 60,
+			expectedScore: 55,
+			expectedCount: 4,
+			expectedText:  "1 critical, 2 recommended, 1 available",
+		},
+		{
+			name:          "floor at zero",
+			updates:       []security.UpdateInfo{{RiskScore: 100}, {RiskScore: 95}, {RiskScore: 90}, {RiskScore: 85}, {RiskScore: 81}},
+			expectedScore: 0,
+			expectedCount: 5,
+			expectedText:  "5 critical",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			score, _, _ := scoreUpdates(tt.updates)
+			score, count, summary := scoreUpdates(tt.updates)
 			assert.Equal(t, tt.expectedScore, score)
+			assert.Equal(t, tt.expectedCount, count)
+			assert.Equal(t, tt.expectedText, summary)
 		})
 	}
 }
@@ -267,21 +300,49 @@ func TestScoreImageAge(t *testing.T) {
 	}{
 		{
 			name:          "no published_at",
-			updates:       []security.UpdateInfo{{UpdateType: "minor"}},
+			updates:       []security.UpdateInfo{{RiskScore: 40}},
 			expectedScore: 50,
 		},
 		{
 			name: "recent image",
 			updates: []security.UpdateInfo{
-				{PublishedAt: timePtr(time.Now().Add(-10 * 24 * time.Hour))},
+				{RiskScore: 40, PublishedAt: timePtr(time.Now().Add(-10 * 24 * time.Hour))},
 			},
 			expectedScore: 100,
 		},
 		{
 			name: "old image",
 			updates: []security.UpdateInfo{
-				{PublishedAt: timePtr(time.Now().Add(-200 * 24 * time.Hour))},
+				{RiskScore: 40, PublishedAt: timePtr(time.Now().Add(-200 * 24 * time.Hour))},
 			},
+		},
+		{
+			name: "old available update alone",
+			updates: []security.UpdateInfo{
+				{RiskScore: 30, PublishedAt: timePtr(time.Now().Add(-300 * 24 * time.Hour))},
+			},
+			expectedScore: 100,
+		},
+		{
+			name:          "undated available update alone",
+			updates:       []security.UpdateInfo{{RiskScore: 10}},
+			expectedScore: 100,
+		},
+		{
+			name: "old available update beside a recent recommended one",
+			updates: []security.UpdateInfo{
+				{RiskScore: 10, PublishedAt: timePtr(time.Now().Add(-300 * 24 * time.Hour))},
+				{RiskScore: 31, PublishedAt: timePtr(time.Now().Add(-10 * 24 * time.Hour))},
+			},
+			expectedScore: 100,
+		},
+		{
+			name: "old available update beside an undated recommended one",
+			updates: []security.UpdateInfo{
+				{RiskScore: 10, PublishedAt: timePtr(time.Now().Add(-300 * 24 * time.Hour))},
+				{RiskScore: 50},
+			},
+			expectedScore: 50,
 		},
 	}
 
@@ -325,7 +386,7 @@ func TestScorerScoreContainer(t *testing.T) {
 			"ext-1": {{CVEID: "CVE-2025-001", Severity: "high"}},
 		}},
 		Updates: &mockUpdateReader{updates: map[string][]security.UpdateInfo{
-			"c1": {{UpdateType: "minor", PublishedAt: timePtr(time.Now().Add(-15 * 24 * time.Hour))}},
+			"c1": {{RiskScore: 40, PublishedAt: timePtr(time.Now().Add(-15 * 24 * time.Hour))}},
 		}},
 		CVEEvaluations: &mockCVEEvalReader{states: map[string]string{"ext-1": security.EvaluationEvaluated}},
 		Insights:       secSvc,

@@ -132,6 +132,22 @@ func TestFetchRejectsPartialTable(t *testing.T) {
 	}
 }
 
+func TestFetchSkipsImageReleaseWithoutEolFrom(t *testing.T) {
+	server := fixtureServer(t, map[string]http.HandlerFunc{"redis": func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"result":{"releases":[{"name":"8.10","eolFrom":null},{"name":"8.2","eolFrom":"2030-09-01"}]}}`))
+	}})
+	fetcher := &Fetcher{BaseURL: server.URL, Client: server.Client()}
+
+	table, err := fetcher.Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if cycles := table.Products["redis"]; len(cycles) != 1 || cycles[0].Name != "8.2" {
+		t.Errorf("redis cycles = %+v, want 8.2 only", cycles)
+	}
+}
+
 // TestWriteEmbeddedTable regenerates table.json from endoflife.date; run it with `make eol-table`.
 func TestWriteEmbeddedTable(t *testing.T) {
 	if os.Getenv("MAINTENANT_EOL_WRITE_TABLE") != "1" {

@@ -63,64 +63,43 @@ func networkExposed(ci *security.ContainerInsights) bool {
 	return false
 }
 
-// CalculateScore computes a risk score (0-100) from update data and monitoring context.
-func (re *RiskEngine) CalculateScore(u *update.ImageUpdate, cves []*update.ContainerCVE, rctx RiskContext) update.RiskScore {
-	factors := make(map[string]update.RiskFactor)
-	total := 0
+var cveSeverityScores = map[update.CVESeverity]int{
+	update.CVESeverityCritical: 90,
+	update.CVESeverityHigh:     65,
+	update.CVESeverityMedium:   40,
+	update.CVESeverityLow:      20,
+}
 
-	// Factor 1: Update type (max 20)
-	updateScore := 0
-	switch u.UpdateType {
-	case update.UpdateTypeMajor:
-		updateScore = 20
-	case update.UpdateTypeMinor:
-		updateScore = 12
-	case update.UpdateTypePatch:
-		updateScore = 6
-	case update.UpdateTypeDigestOnly:
-		updateScore = 3
-	}
-	factors["update_type"] = update.RiskFactor{Label: string(u.UpdateType), Score: updateScore}
-	total += updateScore
-
-	// Factor 2: CVE severity (max 30)
-	cveScore := 0
-	if len(cves) > 0 {
-		maxCVE := 0
-		for _, c := range cves {
-			switch c.Severity {
-			case update.CVESeverityCritical:
-				if maxCVE < 30 {
-					maxCVE = 30
-				}
-			case update.CVESeverityHigh:
-				if maxCVE < 22 {
-					maxCVE = 22
-				}
-			case update.CVESeverityMedium:
-				if maxCVE < 12 {
-					maxCVE = 12
-				}
-			case update.CVESeverityLow:
-				if maxCVE < 5 {
-					maxCVE = 5
-				}
-			}
+// fixedByUpdate keeps the CVEs whose fix version the update reaches, through its target or its later major.
+func fixedByUpdate(r *update.UpdateResult, cves []*update.ContainerCVE) []*update.ContainerCVE {
+	var fixed []*update.ContainerCVE
+	for _, c := range cves {
+		if update.IsFixedByUpdate(r.LatestTag, c.FixedIn) || update.IsFixedByUpdate(r.MajorTag, c.FixedIn) {
+			fixed = append(fixed, c)
 		}
-		cveScore = maxCVE
 	}
-	factors["cve_severity"] = update.RiskFactor{Label: riskSeverityLabel(cves), Score: cveScore}
-	total += cveScore
+	return fixed
+}
 
-	// Factor 3: Network exposure (max 10)
+// CalculateScore rates the urgency of an update (0-100): the scan score or the part from the CVEs it fixes, whichever is higher, raised by instability.
+func (re *RiskEngine) CalculateScore(r *update.UpdateResult, cves []*update.ContainerCVE, rctx RiskContext) update.RiskScore {
+	typeScore := update.BaseRiskScore(r.UpdateType)
+	eolScore := 0
+	if r.RiskScore > typeScore {
+		eolScore = r.RiskScore
+	}
+
+	cves = fixedByUpdate(r, cves)
+	cveScore := 0
+	for _, c := range cves {
+		cveScore = max(cveScore, cveSeverityScores[c.Severity])
+	}
+
 	exposureScore := 0
-	if rctx.PubliclyExposed {
+	if rctx.PubliclyExposed && len(cves) > 0 {
 		exposureScore = 10
 	}
-	factors["public_exposure"] = update.RiskFactor{Label: riskBoolLabel(rctx.PubliclyExposed), Score: exposureScore}
-	total += exposureScore
 
-	// Factor 4: Stability from the restarts of the last day (max 10)
 	stabilityScore := 0
 	if rctx.RestartCount > 5 {
 		stabilityScore = 10
@@ -129,22 +108,19 @@ func (re *RiskEngine) CalculateScore(u *update.ImageUpdate, cves []*update.Conta
 	} else if rctx.RestartCount > 0 {
 		stabilityScore = 3
 	}
-	factors["stability"] = update.RiskFactor{Label: riskRestartLabel(rctx.RestartCount), Score: stabilityScore}
-	total += stabilityScore
 
-	// Factor 5: Breaking changes (max 5)
-	breakingScore := 0
-	if u.HasBreakingChanges {
-		breakingScore = 5
-	}
-	factors["breaking_changes"] = update.RiskFactor{Label: riskBoolLabel(u.HasBreakingChanges), Score: breakingScore}
-	total += breakingScore
-
+	total := min(100, max(r.RiskScore, cveScore+exposureScore)+stabilityScore)
 	return update.RiskScore{
-		ContainerID: u.ContainerID,
+		ContainerID: r.ContainerID,
 		Score:       total,
 		Level:       update.RiskLevelFromScore(total),
-		Factors:     factors,
+		Factors: map[string]update.RiskFactor{
+			"update_type":     {Label: string(r.UpdateType), Score: typeScore},
+			"end_of_life":     {Label: riskBoolLabel(eolScore > 0), Score: eolScore},
+			"cve_severity":    {Label: riskSeverityLabel(cves), Score: cveScore},
+			"public_exposure": {Label: riskBoolLabel(rctx.PubliclyExposed), Score: exposureScore},
+			"stability":       {Label: riskRestartLabel(rctx.RestartCount), Score: stabilityScore},
+		},
 	}
 }
 
