@@ -202,27 +202,16 @@ func (e *ProEnricher) enrichRisk(ctx context.Context, r *update.UpdateResult, cv
 		e.logger.Warn("enricher: failed to read risk context", "container", r.ContainerName, "error", err)
 	}
 
-	score := e.risk.CalculateScore(u, cves, riskCtx)
-
-	// The Pro score must never downgrade below the CE baseline (semver-based).
-	// CE users see BaseRiskScore; Pro enrichment can only raise it with CVE/context data.
-	baseScore := update.BaseRiskScore(u.UpdateType)
-	if score.Score < baseScore {
-		e.logger.Debug("risk score floored to CE baseline",
-			"container", r.ContainerName,
-			"pro_score", score.Score, "base_score", baseScore)
-		score.Score = baseScore
-		score.Level = update.RiskLevelFromScore(baseScore)
-		score.Factors["baseline"] = update.RiskFactor{Label: string(u.UpdateType) + "_floor", Score: baseScore}
-	}
+	score := e.risk.CalculateScore(r, cves, riskCtx)
 
 	e.logger.Debug("risk score calculated",
 		"container", r.ContainerName, "score", score.Score, "level", score.Level)
 
-	// Update stored record
 	u.RiskScore = score.Score
 	if err := e.store.UpdateImageUpdate(ctx, u); err != nil {
 		e.logger.Warn("enricher: failed to persist risk score", "container", r.ContainerName, "error", err)
+	} else {
+		r.RiskScore = score.Score
 	}
 
 	// Record history

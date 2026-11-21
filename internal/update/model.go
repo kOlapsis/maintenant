@@ -78,6 +78,7 @@ type ImageUpdate struct {
 	Registry           string     `json:"registry"`
 	LatestTag          string     `json:"latest_tag,omitempty"`
 	LatestDigest       string     `json:"latest_digest,omitempty"`
+	MajorTag           string     `json:"major_tag,omitempty"`
 	UpdateType         UpdateType `json:"update_type,omitempty"`
 	PublishedAt        *time.Time `json:"published_at,omitempty"`
 	ChangelogURL       string     `json:"changelog_url,omitempty"`
@@ -90,16 +91,15 @@ type ImageUpdate struct {
 	DetectedAt         time.Time  `json:"detected_at"`
 }
 
-// BaseRiskScore returns a risk score based on semver update type.
-// CE uses this as the final score. Pro can enrich further with CVE data.
+// BaseRiskScore returns the urgency of an update from its type alone.
 func BaseRiskScore(ut UpdateType) int {
 	switch ut {
-	case UpdateTypeMajor:
-		return 85
-	case UpdateTypeMinor:
-		return 50
 	case UpdateTypePatch:
-		return 15
+		return 45
+	case UpdateTypeMinor:
+		return 40
+	case UpdateTypeMajor:
+		return 20
 	case UpdateTypeDigestOnly:
 		return 5
 	default:
@@ -139,7 +139,9 @@ type UpdateResult struct {
 	Registry           string
 	LatestTag          string
 	LatestDigest       string
+	MajorTag           string
 	UpdateType         UpdateType
+	RiskScore          int
 	HasUpdate          bool
 	ChangelogURL       string
 	ChangelogSummary   string

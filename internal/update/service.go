@@ -4,6 +4,7 @@
 package update
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/kolapsis/maintenant/internal/eol"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
@@ -39,6 +41,11 @@ type ContainerLister interface {
 	ListContainerInfos(ctx context.Context) ([]ContainerInfo, error)
 }
 
+// EOLTableProvider serves the support table in force.
+type EOLTableProvider interface {
+	Current() eol.Table
+}
+
 // Deps holds all dependencies for the update Service.
 type Deps struct {
 	Store         UpdateStore        // required
@@ -48,6 +55,7 @@ type Deps struct {
 	Enricher      Enricher           // optional — defaults to no-op
 	EventCallback EventCallback      // optional — nil-safe
 	AlertChan     chan<- interface{} // optional — nil-safe
+	EOL           EOLTableProvider   // optional, nil-safe
 }
 
 // Service orchestrates update detection and notification.
@@ -59,6 +67,7 @@ type Service struct {
 	logger        *slog.Logger
 	eventCallback EventCallback
 	alertChan     chan<- interface{}
+	eolTables     EOLTableProvider
 	interval      time.Duration
 
 	mu           sync.RWMutex
@@ -101,6 +110,7 @@ func NewService(d Deps) *Service {
 		enricher:      enricher,
 		eventCallback: d.EventCallback,
 		alertChan:     d.AlertChan,
+		eolTables:     d.EOL,
 	}
 }
 
@@ -364,7 +374,7 @@ func (s *Service) GenerateFixCommand(c ContainerInfo, currentTag, fixedInVersion
 }
 
 // IsFixedByUpdate returns true when the latest available tag already covers the CVE fix version.
-func (s *Service) IsFixedByUpdate(latestTag, fixedInVersion string) bool {
+func IsFixedByUpdate(latestTag, fixedInVersion string) bool {
 	if fixedInVersion == "" || latestTag == "" {
 		return false
 	}
@@ -457,13 +467,18 @@ func (s *Service) runScan(ctx context.Context) {
 	}
 
 	// Persist results
-	updatesFound := 0
-	for _, r := range results {
+	type persisted struct {
+		index  int
+		stored *ImageUpdate
+	}
+	var detected []persisted
+	for i := range results {
+		r := &results[i]
 		if !r.HasUpdate {
 			continue
 		}
 
-		riskScore := BaseRiskScore(r.UpdateType)
+		r.RiskScore = s.scanScore(*r)
 		u := &ImageUpdate{
 			ScanID:         scanID,
 			ContainerID:    r.ContainerID,
@@ -475,8 +490,9 @@ func (s *Service) runScan(ctx context.Context) {
 			Registry:       r.Registry,
 			LatestTag:      r.LatestTag,
 			LatestDigest:   r.LatestDigest,
+			MajorTag:       r.MajorTag,
 			UpdateType:     r.UpdateType,
-			RiskScore:      riskScore,
+			RiskScore:      r.RiskScore,
 			PreviousDigest: r.PreviousDigest,
 			Status:         StatusAvailable,
 			DetectedAt:     time.Now(),
@@ -486,35 +502,14 @@ func (s *Service) runScan(ctx context.Context) {
 			s.logger.Error("update scan: persist update", "container", r.ContainerName, "error", err)
 			continue
 		}
-
-		updatesFound++
-
-		eventData := map[string]interface{}{
-			"container_id":   r.ContainerID,
-			"container_uid":  r.ContainerUID,
-			"container_name": r.ContainerName,
-			"agent_id":       r.AgentID,
-			"image":          r.Image,
-			"current_tag":    r.CurrentTag,
-			"latest_tag":     r.LatestTag,
-			"update_type":    string(r.UpdateType),
-			"risk_score":     riskScore,
-			"alert_on":       r.AlertOn,
-		}
-
-		if ci, ok := containerByID[uid.Container(r.AgentID, r.ContainerID)]; ok {
-			eventData["update_command"] = s.GenerateUpdateCommand(ci, r.LatestTag, r.LatestDigest)
-			if cmd := s.GenerateRollbackCommand(ci, u); cmd != "" {
-				eventData["rollback_command"] = cmd
-			}
-		}
-
-		s.emitEvent(event.UpdateDetected, eventData)
+		detected = append(detected, persisted{index: i, stored: u})
 	}
+	updatesFound := len(detected)
 
 	// Enrichment pipeline, as far as the edition opens it: a CVE pass on every container,
 	// then changelog and risk on those with an update.
-	if targets := enrichmentTargets(containers, results); len(targets) > 0 {
+	targets := enrichmentTargets(containers, results)
+	if len(targets) > 0 {
 		s.logger.Info("starting enrichment pipeline", "containers", len(targets), "updates", updatesFound)
 		if err := s.enricher.Enrich(ctx, targets); err != nil {
 			s.logger.Warn("update enrichment failed", "error", err)
@@ -574,10 +569,97 @@ func (s *Service) runScan(ctx context.Context) {
 		})
 	}
 
+	for _, d := range detected {
+		r := targets[d.index]
+		eventData := map[string]interface{}{
+			"container_id":   r.ContainerID,
+			"container_uid":  r.ContainerUID,
+			"container_name": r.ContainerName,
+			"agent_id":       r.AgentID,
+			"image":          r.Image,
+			"current_tag":    r.CurrentTag,
+			"latest_tag":     r.LatestTag,
+			"update_type":    string(r.UpdateType),
+			"risk_score":     r.RiskScore,
+			"alert_on":       r.AlertOn,
+		}
+		if r.MajorTag != "" {
+			eventData["major_tag"] = r.MajorTag
+		}
+
+		if ci, ok := containerByID[uid.Container(r.AgentID, r.ContainerID)]; ok {
+			eventData["update_command"] = s.GenerateUpdateCommand(ci, r.LatestTag, r.LatestDigest)
+			if cmd := s.GenerateRollbackCommand(ci, d.stored); cmd != "" {
+				eventData["rollback_command"] = cmd
+			}
+		}
+
+		s.emitEvent(event.UpdateDetected, eventData)
+	}
+
 	s.completeScan(ctx, scanRecord, ScanStatusCompleted, len(containers), updatesFound, len(scanErrors))
 }
 
-// enrichmentTargets returns the scan results, followed by the running image of every container they do not cover.
+// scanScore rates the urgency of an update by its type, raised when support for the running version has ended or ends soon.
+func (s *Service) scanScore(r UpdateResult) int {
+	score := BaseRiskScore(r.UpdateType)
+	if s.eolTables == nil {
+		return score
+	}
+	repo, _, _ := ParseImageRef(r.Image)
+	switch eol.EvaluateImage(repo, r.CurrentTag, s.eolTables.Current(), time.Now()).State {
+	case eol.StateEnded:
+		return max(score, 85)
+	case eol.StateEndingSoon:
+		return max(score, 65)
+	}
+	return score
+}
+
+// ImageSupport is the support state of the release line one running container's image names.
+type ImageSupport struct {
+	ContainerID   string      `json:"container_id"`
+	ContainerName string      `json:"container_name"`
+	AgentID       string      `json:"agent_id"`
+	Image         string      `json:"image"`
+	Support       eol.Support `json:"support"`
+}
+
+// ListImageSupport returns the support state of every running image the support table tracks, whether or not an update is pending.
+func (s *Service) ListImageSupport(ctx context.Context) ([]ImageSupport, error) {
+	out := []ImageSupport{}
+	if s.eolTables == nil {
+		return out, nil
+	}
+	containers, err := s.containers.ListContainerInfos(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+	table, today := s.eolTables.Current(), time.Now()
+	for _, c := range containers {
+		if c.LocallyBuilt {
+			continue
+		}
+		repo, tag, _ := ParseImageRef(c.Image)
+		support := eol.EvaluateImage(repo, tag, table, today)
+		if support.State == eol.StateUntracked {
+			continue
+		}
+		out = append(out, ImageSupport{
+			ContainerID:   c.ExternalID,
+			ContainerName: c.Name,
+			AgentID:       uid.Agent(c.AgentID),
+			Image:         c.Image,
+			Support:       support,
+		})
+	}
+	slices.SortFunc(out, func(a, b ImageSupport) int {
+		return cmp.Or(strings.Compare(a.ContainerName, b.ContainerName), strings.Compare(a.AgentID, b.AgentID))
+	})
+	return out, nil
+}
+
+// enrichmentTargets returns the scan results in their order, followed by the running image of every container they do not cover.
 func enrichmentTargets(containers []ContainerInfo, results []UpdateResult) []UpdateResult {
 	covered := make(map[string]bool, len(results))
 	for _, r := range results {

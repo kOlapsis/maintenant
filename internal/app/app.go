@@ -760,6 +760,7 @@ func (a *App) wireUpdates() *update.ContainerServiceAdapter {
 		Containers: containerAdapter,
 		Logger:     a.logger,
 		Enricher:   updateEnricher,
+		EOL:        a.eolSvc,
 	})
 	return containerAdapter
 }

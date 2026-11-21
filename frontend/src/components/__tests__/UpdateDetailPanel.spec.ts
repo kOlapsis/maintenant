@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import UpdateDetailPanel from '@/components/UpdateDetailPanel.vue'
+import type { AgentOSSupport } from '@/services/agentApi'
 import type { ContainerUpdateDetail } from '@/services/updateApi'
 
 // Mock the API module so tests don't hit the network
@@ -69,6 +70,92 @@ function mountPanel(detail: ContainerUpdateDetail) {
     },
   })
 }
+
+describe('UpdateDetailPanel — major tag and support', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  const supported: AgentOSSupport = {
+    state: 'supported',
+    product: 'postgresql',
+    cycle: '18',
+    active_until: null,
+    security_until: '2030-11-14',
+    extended_until: null,
+    days_remaining: 1455,
+    table_source: 'embedded',
+  }
+
+  it('shows neither fact when the detail carries none', async () => {
+    const wrapper = mountPanel({ ...baseDetail })
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(wrapper.find('[data-testid="update-major"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="update-support"]').exists()).toBe(false)
+  })
+
+  it('shows the next major tag when present', async () => {
+    const wrapper = mountPanel({ ...baseDetail, major_tag: '19.0-alpine3.24' })
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(wrapper.find('[data-testid="update-major"]').text()).toBe('Next major: 19.0-alpine3.24')
+    expect(wrapper.find('[data-testid="update-support"]').exists()).toBe(false)
+  })
+
+  it('shows the support cycle with the color of its state', async () => {
+    const wrapper = mountPanel({ ...baseDetail, support: supported })
+    await new Promise((r) => setTimeout(r, 50))
+
+    const el = wrapper.find('[data-testid="update-support"]')
+    expect(el.text()).toBe('PostgreSQL 18: 3 y 11 mo left')
+    expect(el.classes()).toContain('text-mnt-status-ok')
+    expect(wrapper.find('[data-testid="update-major"]').exists()).toBe(false)
+  })
+
+  it('words an ended cycle and colors it as down', async () => {
+    const wrapper = mountPanel({
+      ...baseDetail,
+      support: { ...supported, state: 'ended', cycle: '13', days_remaining: -200 },
+    })
+    await new Promise((r) => setTimeout(r, 50))
+
+    const el = wrapper.find('[data-testid="update-support"]')
+    expect(el.text()).toBe('PostgreSQL 13: Ended 6 mo ago')
+    expect(el.classes()).toContain('text-mnt-status-down')
+  })
+
+  it('words an ending cycle and colors it as a warning', async () => {
+    const wrapper = mountPanel({
+      ...baseDetail,
+      support: { ...supported, state: 'ending_soon', cycle: '14', days_remaining: 40 },
+    })
+    await new Promise((r) => setTimeout(r, 50))
+
+    const el = wrapper.find('[data-testid="update-support"]')
+    expect(el.text()).toBe('PostgreSQL 14: Ends in 40 days')
+    expect(el.classes()).toContain('text-mnt-status-warn')
+  })
+})
+
+describe('UpdateDetailPanel — update type badge', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it.each(['major', 'minor', 'patch', 'digest_only'])('uses the neutral style for %s', async (update_type) => {
+    const wrapper = mountPanel({ ...baseDetail, update_type })
+    await new Promise((r) => setTimeout(r, 50))
+
+    const badge = wrapper.findAll('span').find((s) => s.text() === update_type)!
+    expect(badge.classes()).toEqual(
+      expect.arrayContaining(['bg-mnt-sev-neutral-solid/10', 'text-mnt-muted']),
+    )
+    expect(badge.classes()).not.toContain('text-mnt-status-down')
+    expect(badge.classes()).not.toContain('text-mnt-status-warn')
+    expect(badge.classes()).not.toContain('text-mnt-green-400')
+  })
+})
 
 describe('UpdateDetailPanel — tag filter section', () => {
   beforeEach(() => {

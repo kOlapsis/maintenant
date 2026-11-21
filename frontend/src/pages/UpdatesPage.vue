@@ -14,23 +14,22 @@ import { timeAgo } from '@/utils/time'
 import UpdateBadge from '@/components/UpdateBadge.vue'
 import UpdateDetailPanel from '@/components/UpdateDetailPanel.vue'
 import SlideOverPanel from '@/components/ui/SlideOverPanel.vue'
-import type { ImageUpdate } from '@/services/updateApi'
+import type { HostOS, ImageSupport, ImageUpdate } from '@/services/updateApi'
 import FeatureGate from '@/components/FeatureGate.vue'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
 import SectionHeader from '@/components/ui/SectionHeader.vue'
-import StatusDot from '@/components/ui/StatusDot.vue'
-import OsSupportTimeline from '@/components/OsSupportTimeline.vue'
+import OsSupportRow, { type OsSupportRowItem } from '@/components/OsSupportRow.vue'
 import {
   groupHostsByOS,
+  groupImagesByProduct,
   osAtRisk,
   osAtRiskTone,
+  osCycleText,
   osStateTextClass,
-  osSupportLabel,
-  osSupportSeverity,
-  osTimeLeft,
   osTotal,
 } from '@/utils/osSupport'
 import { docUrl } from '@/utils/docs'
+import { updateUrgency } from '@/utils/updateUrgency'
 import UiButton from '@/components/ui/UiButton.vue'
 import {
   RefreshCw,
@@ -39,6 +38,7 @@ import {
   CheckCircle,
   Shield,
   Server,
+  Boxes,
   ChevronRight,
 } from 'lucide-vue-next'
 
@@ -65,9 +65,9 @@ const groupedUpdates = computed(() => {
 
   const pinned = all.filter(u => u.status === 'pinned')
   const nonPinned = all.filter(u => u.status !== 'pinned')
-  const critical = nonPinned.filter(u => u.risk_score >= 81)
-  const recommended = nonPinned.filter(u => u.risk_score >= 31 && u.risk_score < 81)
-  const available = nonPinned.filter(u => u.risk_score < 31)
+  const critical = nonPinned.filter(u => updateUrgency(u.risk_score) === 'critical')
+  const recommended = nonPinned.filter(u => updateUrgency(u.risk_score) === 'recommended')
+  const available = nonPinned.filter(u => updateUrgency(u.risk_score) === 'available')
 
   return { critical, recommended, available, pinned }
 })
@@ -77,8 +77,6 @@ const enabledCVE = computed(() => edition.value?.features['cve_enrichment'] === 
 const osCounts = computed(() => updates.summary?.os_counts)
 
 const osGroups = computed(() => groupHostsByOS(updates.hosts))
-
-const MAX_HOST_CHIPS = 6
 
 function scrollToOS() {
   document.getElementById('os')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -93,8 +91,21 @@ const eolTableNote = computed(() => {
     : `Embedded support table (${day})`
 })
 
-function hostName(host: { label: string; hostname: string }): string {
-  return host.label || host.hostname
+function hostItem(host: HostOS): OsSupportRowItem {
+  return { key: host.agent_id, label: host.label || host.hostname, title: host.hostname }
+}
+
+const imageGroups = computed(() => groupImagesByProduct(updates.images))
+
+function containerItem(image: ImageSupport): OsSupportRowItem {
+  return {
+    key: `${image.agent_id ?? ''}:${image.container_id}`,
+    label: image.container_name,
+    title: image.image,
+    agent: agents.hasRemoteAgents
+      ? { id: image.agent_id, hostname: image.agent_hostname, label: image.agent_label }
+      : undefined,
+  }
 }
 
 watch(
@@ -107,13 +118,14 @@ watch(
   { immediate: true },
 )
 
-function updateTypeColor(type_: string): string {
-  switch (type_) {
-    case 'major': return 'text-mnt-status-down'
-    case 'minor': return 'text-mnt-status-warn'
-    case 'patch': return 'text-mnt-green-400'
-    default: return 'text-mnt-muted'
-  }
+const urgencyTextClass = {
+  critical: 'text-mnt-status-down',
+  recommended: 'text-mnt-status-warn',
+  available: 'text-mnt-green-400',
+}
+
+function urgencyColor(riskScore: number): string {
+  return urgencyTextClass[updateUrgency(riskScore)]
 }
 
 function shortTag(tag: string): string {
@@ -139,6 +151,7 @@ onMounted(() => {
   updates.fetchAllUpdates()
   updates.fetchSummary()
   updates.fetchHostOS()
+  updates.fetchImages()
   updates.connectSSE()
 })
 
@@ -249,55 +262,37 @@ onUnmounted(() => {
         </div>
 
         <ul>
-          <li
+          <OsSupportRow
             v-for="group in osGroups"
             :key="group.key"
-            class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 px-4 sm:px-5 py-2.5 border-t border-mnt-subtle first:border-t-0 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_12rem_9rem]"
-          >
-            <div class="flex min-w-0 items-center gap-2.5">
-              <StatusDot :severity="osSupportSeverity(group.state)" :label="osSupportLabel(group.state)" />
-              <p
-                class="truncate text-sm font-bold text-mnt-primary"
-                :title="group.prettyName || group.name"
-              >
-                <template v-if="group.state === 'unknown'">
-                  {{ group.hosts.length }} {{ group.hosts.length === 1 ? 'host' : 'hosts' }} without OS
-                </template>
-                <template v-else>{{ group.name }}</template>
-              </p>
-            </div>
-
-            <p
-              v-if="group.state !== 'unknown' && group.state !== 'untracked'"
-              class="text-right text-sm font-black sm:order-last"
-              :class="osStateTextClass(group.state)"
-            >{{ osTimeLeft(group.support) }}</p>
-
-            <ul class="col-span-2 flex min-w-0 flex-wrap gap-1 sm:col-span-1">
-              <li
-                v-for="host in group.hosts.slice(0, MAX_HOST_CHIPS)"
-                :key="host.agent_id"
-                class="max-w-[12rem] truncate rounded-md bg-mnt-elevated px-1.5 py-0.5 text-[10px] font-semibold text-mnt-secondary"
-                :title="host.hostname"
-              >{{ hostName(host) }}</li>
-              <li
-                v-if="group.hosts.length > MAX_HOST_CHIPS"
-                class="rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-mnt-muted"
-                :title="group.hosts.slice(MAX_HOST_CHIPS).map(hostName).join(', ')"
-              >+{{ group.hosts.length - MAX_HOST_CHIPS }}</li>
-            </ul>
-
-            <p v-if="group.state === 'unknown'" class="col-span-2 truncate text-xs text-mnt-secondary" :title="group.hints.join(' · ')">
-              {{ group.hints.join(' · ') }}
-            </p>
-            <p v-else-if="group.state === 'untracked'" class="col-span-2 text-xs text-mnt-muted sm:text-right">
-              No published end-of-life dates
-            </p>
-            <OsSupportTimeline v-else class="col-span-2 sm:col-span-1" :support="group.support" compact />
-          </li>
+            :state="group.state"
+            :name="group.state === 'unknown' ? `${group.hosts.length} ${group.hosts.length === 1 ? 'host' : 'hosts'} without OS` : group.name"
+            :title="group.prettyName || group.name"
+            :support="group.support"
+            :items="group.hosts.map(hostItem)"
+            :hints="group.hints"
+          />
         </ul>
 
         <p v-if="eolTableNote" class="px-4 sm:px-5 py-3 border-t border-mnt-subtle text-[10px] text-mnt-muted">{{ eolTableNote }}</p>
+      </section>
+
+      <!-- Software lifecycle -->
+      <section v-if="imageGroups.length > 0" id="software" class="bg-mnt-surface rounded-2xl border border-mnt-default overflow-hidden">
+        <div class="px-4 sm:px-5 py-3 border-b border-mnt-default">
+          <SectionHeader title="Software lifecycle" :icon="Boxes" :count="updates.images.length" />
+        </div>
+
+        <ul>
+          <OsSupportRow
+            v-for="group in imageGroups"
+            :key="group.key"
+            :state="group.state"
+            :name="group.name"
+            :support="group.support"
+            :items="group.containers.map(containerItem)"
+          />
+        </ul>
       </section>
 
       <!-- CVE summary (Pro) -->
@@ -341,10 +336,14 @@ onUnmounted(() => {
                   <UpdateBadge :update="u" />
                 </div>
                 <p class="text-[10px] text-mnt-muted mt-0.5 truncate">{{ u.image.split('@')[0] }}</p>
+                <p v-if="u.major_tag || u.support" class="mt-0.5 flex flex-wrap gap-x-3 text-[10px] text-mnt-muted">
+                  <span v-if="u.major_tag" class="break-words" data-testid="update-major">Next major: {{ shortTag(u.major_tag) }}</span>
+                  <span v-if="u.support" class="font-bold" :class="osStateTextClass(u.support.state)" data-testid="update-support">{{ osCycleText(u.support) }}</span>
+                </p>
                 <p v-if="u.status === 'pinned' && u.pin_reason" class="text-[10px] text-mnt-muted mt-0.5 truncate italic">{{ u.pin_reason }}</p>
               </div>
-              <div class="text-right shrink-0">
-                <p :class="['text-xs font-bold', updateTypeColor(u.update_type)]">
+              <div class="hidden sm:block text-right shrink-0">
+                <p :class="['text-xs font-bold', urgencyColor(u.risk_score)]">
                   {{ shortTag(u.current_tag) }} → {{ shortTag(u.latest_tag) }}
                 </p>
                 <p class="text-[10px] text-mnt-muted mt-0.5">{{ formatTime(u.detected_at) }}</p>
@@ -353,7 +352,7 @@ onUnmounted(() => {
                 <div v-if="u.risk_score > 0" class="shrink-0 w-10 text-center">
                   <span
                     class="text-xs font-black"
-                    :class="u.risk_score >= 81 ? 'text-mnt-status-down' : u.risk_score >= 31 ? 'text-mnt-status-warn' : 'text-mnt-green-400'"
+                    :class="urgencyColor(u.risk_score)"
                   >{{ u.risk_score }}</span>
                 </div>
               </FeatureGate>

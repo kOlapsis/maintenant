@@ -3,7 +3,7 @@
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 import { apiFetch, apiFetchVoid, isLocalAgent } from './apiFetch'
-import type { AgentOS } from './agentApi'
+import type { AgentOS, AgentOSSupport } from './agentApi'
 
 export interface ImageUpdate {
   id: string
@@ -26,6 +26,8 @@ export interface ImageUpdate {
   status: string
   detected_at: string
   pin_reason?: string
+  major_tag?: string
+  support?: AgentOSSupport
 }
 
 export interface UpdateSummary {
@@ -65,6 +67,16 @@ export interface HostOS {
   os: AgentOS
 }
 
+export interface ImageSupport {
+  container_id: string
+  container_name: string
+  image: string
+  support: AgentOSSupport
+  agent_id?: string | null
+  agent_hostname?: string | null
+  agent_label?: string | null
+}
+
 export interface EolTable {
   source: string
   fetched_at: string
@@ -97,6 +109,8 @@ export interface ContainerUpdateDetail {
   has_breaking_changes: boolean
   tag_include?: string
   tag_exclude?: string
+  major_tag?: string
+  support?: AgentOSSupport
 }
 
 export interface CVEInfo {
@@ -182,6 +196,10 @@ export function fetchUpdateSummary(): Promise<UpdateSummary> {
 
 export function fetchHostOS(): Promise<{ hosts: HostOS[]; eol_table: EolTable }> {
   return apiFetch(`${API_BASE}/updates/hosts`)
+}
+
+export function fetchImages(): Promise<{ images: ImageSupport[] }> {
+  return apiFetch(`${API_BASE}/updates/images`)
 }
 
 function agentQuery(agentId?: string | null): string {

@@ -123,7 +123,7 @@ func registerReadTools(server *gomcp.Server, svc *Services) {
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_updates",
-		Description: "List available image updates for monitored containers (current and latest version, update type, risk_score, changelog), and the operating system of every monitored host with its end-of-support status (supported, ending_soon, ended, unknown, untracked) and dates. Takes no filter. Use list_risk_scores for risk levels and list_cve for vulnerabilities.",
+		Description: "List available image updates for monitored containers (current and latest version, major_tag when a newer major exists beyond the latest version, update type, risk_score, changelog), and the operating system of every monitored host with its end-of-support status (supported, ending_soon, ended, unknown, untracked) and dates, and the support state of every running official database or web image (images), pending update or not. Takes no filter. Use list_risk_scores for risk levels and list_cve for vulnerabilities.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getUpdatesHandler(svc))
 
@@ -453,7 +453,15 @@ func getUpdatesHandler(svc *Services) gomcp.ToolHandlerFor[getUpdatesInput, any]
 				}
 			}
 		}
-		out := map[string]any{"updates": enriched, "hosts": []map[string]any{}, "eol_table": eol.TableStatus{}}
+		images, err := svc.Updates.ListImageSupport(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to list image support: %w", err)
+		}
+		renderedImages, err := enrichWithAgentLabel(ctx, svc, images)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to enrich image support: %w", err)
+		}
+		out := map[string]any{"updates": enriched, "images": renderedImages, "hosts": []map[string]any{}, "eol_table": eol.TableStatus{}}
 		if svc.EOL != nil {
 			hosts, err := svc.EOL.HostSupports(ctx)
 			if err != nil {

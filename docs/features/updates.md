@@ -31,6 +31,8 @@ Images of Docker Hub's official library count: `nginx` and `redis:latest` are lo
 
 For a tag written `major.minor.patch`, maintenant picks the highest newer version in the repository's tag list that has the same variant suffix (`-alpine`, `-bookworm`, `-slim-bookworm`, and the other [known variants](#default-behavior)). Pre-releases and tags without dots (build numbers) are ignored. The update is classified `major`, `minor` or `patch` by the first component that changed. The digest of the running image plays no part: a republished `1.25.3` is not reported.
 
+When a newer version exists both inside the current major version and in a later major version, the update reported is the one inside the current major version, and the later major version is shown next to it (`major_tag` in the API). A container on `postgres:18.7` with `18.8` and `19.0` published is reported as `18.7 → 18.8`, with `19.0` as the next major. The same holds for a floating tag republished under the same name: the new digest is the update reported and the later major version comes with it. With `maintenant.update.track` set to `minor`, `patch` or `digest`, no next major is reported.
+
 ### Floating tags and digests
 
 A tag is floating when it is not a version (`latest`, `lts`, `stable`) or when it is a partial version (`v3`, `1.2`, `16-bookworm`), which the registry keeps pointing at the newest release of that line. A container on `traefik:v3` already runs whatever `v3` resolves to, so `v3.7.10` is not an update. A newer tag written the same way (`v4`) still is, and is reported as a major update.
@@ -105,7 +107,7 @@ Every container is tracked by default. These labels adjust that per container. T
 | `maintenant.update.ignore_major` | `true` behaves as `track: minor` when `track` is absent or `major`. |
 | `maintenant.update.digest_only` | `true` behaves as `track: digest` and wins over `track` and `ignore_major`. |
 | `maintenant.update.pin` | Any non-empty value freezes the container: no update is reported for it. |
-| `maintenant.update.alert_on` | Which updates raise an alert: `all` (default), `critical` or `none`. The update is listed on the Updates page in every case. |
+| `maintenant.update.alert_on` | Which updates raise an alert: `all` (default), `critical` (only the [Critical](#risk-score) ones) or `none`. The update is listed on the Updates page in every case. |
 | `maintenant.update.tag-include`, `maintenant.update.tag-exclude` | Go regular expressions that narrow the candidate tags, see [Tag Filtering](#tag-filtering). |
 | `maintenant.update.registry` | Queries this registry instead of the one in the image reference, for a mirror that serves the same repositories. The repository path is kept (`<mirror>/library/nginx` for the official `nginx` image), and the registry name recorded with the update becomes the value of the label. |
 
@@ -325,15 +327,39 @@ When the update changed the tag, the rollback tells you to set the image of the 
 
 ---
 
+## Risk Score
+
+Every pending update has a `risk_score` from 0 to 100 that follows the urgency of updating, not the size of the version jump. The Updates page groups updates as **Critical** (81 and above), **Recommended** (31 to 80) and **Available** (below 31), plus **Pinned**. The score is the highest of the following, capped at 100:
+
+| Source | Score |
+|--------|-------|
+| Type of the update | patch 45, minor 40, major 20, new digest under the same tag 5 |
+| Support of the running version ended | at least 85 |
+| Support of the running version ends within 30 days | at least 65 |
+| Highest severity among the CVEs the update fixes, with [CVE enrichment](#cve-enrichment-risk-scoring-and-changelog) | critical 90, high 65, medium 40, low 20; plus 10 when the container is publicly exposed |
+| Restarts during the last day, with CVE enrichment | up to 10 more, added to the score |
+
+A CVE counts when its fixed version is known and the update reported, or the later major version shown next to it, reaches that version. A CVE without a known fix does not change the score: it stays listed with the CVEs of the container.
+
+So a new major version of a release line that is still supported is **Available** and raises an info alert. An update is **Critical** when the running version is out of support or, with CVE enrichment, when the update fixes a critical vulnerability. An update that fixes a high vulnerability reaches Critical too when the container is publicly exposed and restarted more than twice during the last day. Breaking changes in the changelog do not count in the score.
+
+### Support of official images
+
+For the official Docker Hub images of `postgres`, `mysql`, `mariadb`, `redis`, `mongo` and `nginx`, maintenant looks up the support cycle of the running version on [endoflife.date](https://endoflife.date), the source also used for [operating systems](host-os.md#support-table-and-refresh). It is available in every edition. The release line is read from the tag (`postgres:18.7`, `mysql:8.4.3`, `redis:7.2.5-alpine`): a tag that does not name one, such as `latest`, `nginx:stable`, `mysql:8` or `redis:7`, is not tracked. An update of a tracked image carries a `support` object in the API (see [API Endpoints](#api-endpoints)), with the same shape as the support object of a host OS. Other images have none.
+
+The **Software lifecycle** block of the Updates page lists every running container of these images, grouped by release line, with the time left before the end of support. It does not depend on update tracking: a pinned container, one with `maintenant.update.enabled: "false"` or one whose `maintenant.update.track` hides later versions is listed like the others. Ignored and archived containers are left out.
+
+---
+
 ## CVE Enrichment, Risk Scoring and Changelog :material-star-four-points:{ title="Personal" }
 
 With Personal, update intelligence goes beyond digest comparison. Each scan enriches what it found:
 
 - **CVE details**: known vulnerabilities of the version the container runs, from [OSV.dev](https://osv.dev) (results are cached for 24 hours). The lookup covers every running container that is neither ignored nor archived and whose image maps to a known software ecosystem, whether or not an update is pending, and including the containers left out of update tracking (pinned, `maintenant.update.enabled: "false"`, excluded images). For a CVE with a known fix, the detail of an update says whether the update fixes it (`is_fixed_by_update`) and gives the update command for the fixed version (`fix_command`, in the form of the runtime: Compose, `docker run`, `docker service update --image <ref> <service>` on Swarm or `kubectl set image`). `fix_command` is empty when the fixed version is not a version tag newer than the one that runs. How an image is mapped to an ecosystem is described in [Network Security Insights](security.md).
-- **Risk scoring**: a score from 0 to 100 for each pending update. It never falls below the base score of the update type (major 85, minor 50, patch 15, digest-only 5), and it rises with known CVEs (up to 30 points), network exposure (10 points when the container publishes a port on all interfaces, runs on the host network or sits behind a load balancer or node port), restarts during the last day (up to 10 points), breaking changes in the release notes (5 points) and the update type (up to 20 points). Outside that floor the score reaches 75 at most. Risk levels are `critical` from 81, `high` from 61, `moderate` from 31 and `low` below.
+- **Risk scoring**: the CVEs the update fixes raise the [risk score](#risk-score): the highest severity gives critical 90, high 65, medium 40 or low 20, plus 10 when the container is publicly exposed, and restarts during the last day add up to 10. Risk levels are `critical` from 81, `high` from 61, `moderate` from 31 and `low` below.
 - **Changelog**: the release notes of the new version. maintenant reads the source repository from the image's `org.opencontainers.image.source` (or `org.label-schema.vcs-url`) label, and when it is on GitHub, takes the release that matches the new tag, else the latest one. It returns the link, a summary of up to 500 characters and a `has_breaking_changes` flag set from keywords such as "breaking change" or "migration required". Set the `GITHUB_TOKEN` environment variable to raise GitHub's rate limit.
 
-Without Personal, every pending update still carries the base score, and the Updates page groups updates as **Critical** (score 81 and above), **Recommended** (31 to 80), **Available** (below 31) and **Pinned**. So a major update is Critical, a minor one Recommended, and patch and digest updates Available.
+Without Personal, every pending update still has a score from its type and from the support of the running version, and the Updates page groups updates the same way.
 
 ```
 GET /api/v1/cve                              # every active CVE, grouped by CVE id
@@ -357,9 +383,9 @@ The Updates page also lists the hosts whose operating system has reached, or is 
 
 | Alert | Source | Description | Severity |
 |-------|--------|-------------|----------|
-| `update_available` | `update` | A new image version is available for a running container | Critical for a major update, Info for the others |
+| `update_available` | `update` | A new image version is available for a running container | Critical from a risk score of 81, Warning from 61, Info below |
 
-The severity comes from the base score of the update type, so only major updates are Critical. `maintenant.update.alert_on` narrows what raises an alert: `all` (default), `critical` (major updates only) or `none`. There is one alert per container. It resolves when a scan no longer finds the update, see [When an update goes away](#when-an-update-goes-away). Like any alert, it reaches a channel through an [alert trigger](alerts.md#alert-triggers) (source `update`).
+The severity comes from the [risk score](#risk-score): a new major version of a supported release line raises an Info alert, and the updates listed there as Critical raise a Critical one. `maintenant.update.alert_on` narrows what raises an alert: `all` (default), `critical` (only the updates of Critical severity) or `none`. There is one alert per container. It resolves when a scan no longer finds the update, see [When an update goes away](#when-an-update-goes-away). Like any alert, it reaches a channel through an [alert trigger](alerts.md#alert-triggers) (source `update`).
 
 With Personal, the alert details carry the `update_command` and the `rollback_command`.
 
@@ -375,9 +401,10 @@ Once a day, maintenant deletes the scan records older than 30 days, the expired 
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/updates` | List pending updates (filters `status`, `update_type`), with `last_scan` and `next_scan` |
+| `GET` | `/api/v1/updates` | List pending updates (filters `status`, `update_type`), with `last_scan` and `next_scan`. An update carries `major_tag` when a later major version exists beside the one reported, and `support` for the [tracked official images](#support-of-official-images) |
 | `GET` | `/api/v1/updates/summary` | Counts (`critical`, `recommended`, `available`, `up_to_date`, `pinned`), `scan_status`, `cve_counts` with Personal, `os_counts` for host operating systems |
 | `GET` | `/api/v1/updates/hosts` | Every host with its OS identity and end-of-support status |
+| `GET` | `/api/v1/updates/images` | Every running container of a tracked official image with the support status of its release line |
 | `POST` | `/api/v1/updates/scan` | Trigger a manual scan |
 | `GET` | `/api/v1/updates/scan/{scan_id}` | Get scan status |
 | `GET` | `/api/v1/updates/container/{container_id}` | Get update info for a container, with its commands |

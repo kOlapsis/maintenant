@@ -3,8 +3,18 @@
 
 import { describe, it, expect } from 'vitest'
 import type { AgentOSSupport, OSSupportState, OSUnavailableReason } from '@/services/agentApi'
-import type { HostOS } from '@/services/updateApi'
-import { groupHostsByOS, osAtRisk, osPhases, osTimeLeft, osTotal } from '../osSupport'
+import type { HostOS, ImageSupport } from '@/services/updateApi'
+import {
+  groupHostsByOS,
+  groupImagesByProduct,
+  osAtRisk,
+  osCanonicalName,
+  osCycleText,
+  osPhases,
+  osProductName,
+  osTimeLeft,
+  osTotal,
+} from '../osSupport'
 
 function support(overrides: Partial<AgentOSSupport> = {}): AgentOSSupport {
   return {
@@ -81,6 +91,80 @@ describe('groupHostsByOS', () => {
     expect(unknown?.state).toBe('unknown')
     expect(unknown?.hosts).toHaveLength(3)
     expect(unknown?.hints).toEqual(['Update the agent', 'Mount /etc/os-release into the container'])
+  })
+})
+
+describe('product names', () => {
+  it.each([
+    ['postgresql', 'PostgreSQL'],
+    ['mysql', 'MySQL'],
+    ['mariadb', 'MariaDB'],
+    ['redis', 'Redis'],
+    ['mongodb', 'MongoDB'],
+    ['nginx', 'nginx'],
+    ['debian', 'Debian'],
+    ['unlisted', 'unlisted'],
+  ])('names %s as %s', (slug, name) => {
+    expect(osProductName(slug)).toBe(name)
+  })
+
+  it('names a cycle with its product', () => {
+    expect(osCanonicalName(support({ product: 'mongodb', cycle: '8.0' }))).toBe('MongoDB 8.0')
+  })
+
+  it.each([
+    [support({ product: 'postgresql', cycle: '18', days_remaining: 1455 }), 'PostgreSQL 18: 3 y 11 mo left'],
+    [support({ product: 'nginx', cycle: '1.28', state: 'ending_soon', days_remaining: 40 }), 'nginx 1.28: Ends in 40 days'],
+    [support({ product: 'redis', cycle: null, days_remaining: 1455 }), '3 y 11 mo left'],
+    [support({ product: null, cycle: '18', days_remaining: 1455 }), '3 y 11 mo left'],
+    [support({ product: 'mysql', cycle: '8.0', state: 'ended' }), 'MySQL 8.0: Support ended'],
+  ])('words the cycle text of %#', (value, text) => {
+    expect(osCycleText(value)).toBe(text)
+  })
+})
+
+function image(
+  id: string,
+  name: string,
+  overrides: Partial<AgentOSSupport>,
+  agentId?: string,
+): ImageSupport {
+  return {
+    container_id: id,
+    container_name: name,
+    image: `${name}:tag`,
+    support: support(overrides),
+    ...(agentId ? { agent_id: agentId } : {}),
+  }
+}
+
+describe('groupImagesByProduct', () => {
+  const images = [
+    image('c1', 'web', { state: 'supported', product: 'nginx', cycle: '1.28', days_remaining: 900 }),
+    image('c2', 'db-b', { state: 'ended', product: 'postgresql', cycle: '13', days_remaining: -200 }),
+    image('c3', 'cache', { state: 'ending_soon', product: 'redis', cycle: '7.2', days_remaining: 30 }),
+    image('c4', 'db-a', { state: 'ended', product: 'postgresql', cycle: '13', days_remaining: -200 }, 'agent-1'),
+    image('c5', 'db-new', { state: 'supported', product: 'postgresql', cycle: '18', days_remaining: 1455 }),
+    image('c6', 'old-db', { state: 'ended', product: 'mysql', cycle: '5.7', days_remaining: -1000 }),
+  ]
+
+  it('groups containers by product and cycle, containers sorted by name', () => {
+    const group = groupImagesByProduct(images).find((g) => g.name === 'PostgreSQL 13')
+    expect(group?.containers.map((c) => c.container_id)).toEqual(['c4', 'c2'])
+  })
+
+  it('orders ended oldest first, then ending soon, then supported', () => {
+    expect(groupImagesByProduct(images).map((g) => g.name)).toEqual([
+      'MySQL 5.7',
+      'PostgreSQL 13',
+      'Redis 7.2',
+      'nginx 1.28',
+      'PostgreSQL 18',
+    ])
+  })
+
+  it('returns nothing for no image', () => {
+    expect(groupImagesByProduct([])).toEqual([])
   })
 })
 

@@ -7,6 +7,7 @@ package updates
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -238,6 +239,7 @@ func TestEnrichRiskWeighsExposureAndRestarts(t *testing.T) {
 		CurrentTag:    "1.27.0",
 		LatestTag:     "1.27.1",
 		UpdateType:    update.UpdateTypePatch,
+		RiskScore:     update.BaseRiskScore(update.UpdateTypePatch),
 		HasUpdate:     true,
 	}}
 	require.NoError(t, enricher.Enrich(context.Background(), results))
@@ -246,11 +248,124 @@ func TestEnrichRiskWeighsExposureAndRestarts(t *testing.T) {
 	require.Len(t, records, 1)
 	var factors map[string]update.RiskFactor
 	require.NoError(t, json.Unmarshal([]byte(records[0].FactorsJSON), &factors))
-	assert.Equal(t, 10, factors["public_exposure"].Score)
+	assert.Equal(t, update.RiskFactor{Label: "yes", Score: 0}, factors["public_exposure"], "exposure without a CVE adds nothing")
 	assert.Equal(t, 10, factors["stability"].Score)
 	assert.NotContains(t, factors, "criticality")
 	assert.NotContains(t, factors, "dependents")
-	assert.Equal(t, 26, records[0].Score, "patch 6 + exposure 10 + restarts 10, above the patch floor of 15")
+	assert.Equal(t, 55, records[0].Score, "patch 45 + restarts 10")
+	assert.Equal(t, 55, results[0].RiskScore, "the final score is written back on the result")
+	assert.Equal(t, 55, store.imageUpdate.RiskScore, "and on the stored update")
+}
+
+type failingUpdateStore struct {
+	*enricherStubStore
+}
+
+func (s failingUpdateStore) UpdateImageUpdate(_ context.Context, _ *update.ImageUpdate) error {
+	return errors.New("write failed")
+}
+
+func TestEnrichRisk_KeepsTheScanScoreWhenTheWriteFails(t *testing.T) {
+	store := newEnricherStubStore()
+	risk := NewRiskEngine(nil, restartsStub{"uid-1": 6})
+	enricher := NewProEnricher(failingUpdateStore{store}, nil, nil, risk, nil, testLogger())
+
+	results := []update.UpdateResult{{
+		ContainerID:  "c1",
+		ContainerUID: "uid-1",
+		Image:        "nginx",
+		CurrentTag:   "1.27.0",
+		LatestTag:    "1.27.1",
+		UpdateType:   update.UpdateTypePatch,
+		RiskScore:    update.BaseRiskScore(update.UpdateTypePatch),
+		HasUpdate:    true,
+	}}
+	require.NoError(t, enricher.Enrich(context.Background(), results))
+
+	assert.Equal(t, update.BaseRiskScore(update.UpdateTypePatch), results[0].RiskScore)
+}
+
+func cvesOf(severities ...update.CVESeverity) []*update.ContainerCVE {
+	cves := make([]*update.ContainerCVE, 0, len(severities))
+	for _, s := range severities {
+		cves = append(cves, &update.ContainerCVE{Severity: s, FixedIn: "1.0.1"})
+	}
+	return cves
+}
+
+func TestCalculateScore_MeasuresTheUrgencyOfUpdating(t *testing.T) {
+	cases := []struct {
+		name       string
+		updateType update.UpdateType
+		scanScore  int
+		cves       []*update.ContainerCVE
+		rctx       RiskContext
+		want       int
+	}{
+		{"patch fixing a critical CVE", update.UpdateTypePatch, 45, cvesOf(update.CVESeverityLow, update.CVESeverityCritical), RiskContext{}, 90},
+		{"major alone", update.UpdateTypeMajor, 20, nil, RiskContext{}, 20},
+		{"high CVE", update.UpdateTypeMinor, 40, cvesOf(update.CVESeverityHigh), RiskContext{}, 65},
+		{"medium CVE below the scan score", update.UpdateTypePatch, 45, cvesOf(update.CVESeverityMedium), RiskContext{}, 45},
+		{"exposure counts with a CVE", update.UpdateTypeMinor, 40, cvesOf(update.CVESeverityHigh), RiskContext{PubliclyExposed: true}, 75},
+		{"exposure alone adds nothing", update.UpdateTypeMinor, 40, nil, RiskContext{PubliclyExposed: true}, 40},
+		{"end of life kept", update.UpdateTypeMajor, 85, cvesOf(update.CVESeverityLow), RiskContext{}, 85},
+		{"capped at 100", update.UpdateTypePatch, 45, cvesOf(update.CVESeverityCritical), RiskContext{PubliclyExposed: true, RestartCount: 6}, 100},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &update.UpdateResult{ContainerID: "c1", UpdateType: tc.updateType, RiskScore: tc.scanScore, LatestTag: "1.0.1"}
+			got := NewRiskEngine(nil, nil).CalculateScore(r, tc.cves, tc.rctx)
+			assert.Equal(t, tc.want, got.Score)
+			assert.Equal(t, update.RiskLevelFromScore(tc.want), got.Level)
+		})
+	}
+}
+
+func TestCalculateScore_CountsOnlyTheCVEsTheUpdateFixes(t *testing.T) {
+	cases := []struct {
+		name         string
+		latest       string
+		major        string
+		fixedIn      string
+		exposed      bool
+		want         int
+		wantSeverity string
+	}{
+		{"critical CVE without a fix version", "1.0.1", "", "", true, 45, "none"},
+		{"critical CVE fixed above the target", "1.0.1", "", "1.0.5", true, 45, "none"},
+		{"critical CVE fixed by the target", "1.0.5", "", "1.0.5", false, 90, "critical"},
+		{"fixed by the target, exposed", "1.0.5", "", "1.0.5", true, 100, "critical"},
+		{"critical CVE fixed only by the later major", "1.0.1", "2.0.0", "1.9.0", false, 90, "critical"},
+		{"critical CVE fixed above the later major", "1.0.1", "2.0.0", "3.0.0", true, 45, "none"},
+		{"unparseable fix version", "1.0.1", "2.0.0", "not-a-version", true, 45, "none"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &update.UpdateResult{ContainerID: "c1", UpdateType: update.UpdateTypePatch, RiskScore: 45, LatestTag: tc.latest, MajorTag: tc.major}
+			cves := []*update.ContainerCVE{{Severity: update.CVESeverityCritical, FixedIn: tc.fixedIn}}
+			got := NewRiskEngine(nil, nil).CalculateScore(r, cves, RiskContext{PubliclyExposed: tc.exposed})
+			assert.Equal(t, tc.want, got.Score)
+			assert.Equal(t, tc.wantSeverity, got.Factors["cve_severity"].Label)
+		})
+	}
+}
+
+func TestCalculateScore_Factors(t *testing.T) {
+	r := &update.UpdateResult{ContainerID: "c1", UpdateType: update.UpdateTypeMajor, RiskScore: 85, LatestTag: "1.0.1"}
+	got := NewRiskEngine(nil, nil).CalculateScore(r, cvesOf(update.CVESeverityHigh), RiskContext{PubliclyExposed: true, RestartCount: 1})
+
+	assert.Equal(t, map[string]update.RiskFactor{
+		"update_type":     {Label: "major", Score: 20},
+		"end_of_life":     {Label: "yes", Score: 85},
+		"cve_severity":    {Label: "high", Score: 65},
+		"public_exposure": {Label: "yes", Score: 10},
+		"stability":       {Label: "minor_restarts", Score: 3},
+	}, got.Factors)
+	assert.Equal(t, 88, got.Score)
+
+	r.RiskScore = update.BaseRiskScore(update.UpdateTypeMajor)
+	got = NewRiskEngine(nil, nil).CalculateScore(r, nil, RiskContext{})
+	assert.Equal(t, update.RiskFactor{Label: "no", Score: 0}, got.Factors["end_of_life"])
 }
 
 func TestShortErrorTruncates(t *testing.T) {

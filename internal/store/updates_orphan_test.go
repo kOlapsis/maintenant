@@ -161,7 +161,7 @@ func TestGetUpdateSummary_SkipsArchivedContainers(t *testing.T) {
 
 	summary, err := us.GetUpdateSummary(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, 1, summary.Critical, "only the running task has a pending major update")
+	assert.Equal(t, 1, summary.Available, "only the running task has a pending major update")
 	assert.Equal(t, 0, summary.UpToDate, "the archived task is not a container waiting to be scanned")
 }
 

@@ -242,6 +242,25 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 		return sc.checkDigest(ctx, target)
 	}
 
+	majorTag := ""
+	if updateType == UpdateTypeMajor {
+		inMajorTag, inMajorType := findBestUpdate(currentTag, tags, TrackMinor)
+		switch {
+		case inMajorTag == currentTag && inMajorType == UpdateTypeDigestOnly:
+			republished, err := sc.checkDigest(ctx, target)
+			if err != nil {
+				sc.logger.Warn("scanner: failed to check digest of current tag",
+					"image", fullRef, "tag", currentTag, "error", err)
+			}
+			if republished != nil {
+				republished.MajorTag = bestTag
+				return republished, nil
+			}
+		case inMajorTag != "":
+			majorTag, bestTag, updateType = bestTag, inMajorTag, inMajorType
+		}
+	}
+
 	// Semver update: a newer version tag exists
 	latest, err := sc.registry.ResolveDigests(ctx, fullRef+":"+bestTag)
 	if err != nil {
@@ -260,6 +279,7 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 		Registry:       registry,
 		LatestTag:      bestTag,
 		LatestDigest:   latest.Digest,
+		MajorTag:       majorTag,
 		UpdateType:     updateType,
 		HasUpdate:      true,
 		PreviousDigest: target.runningDigest,

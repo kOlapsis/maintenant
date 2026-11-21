@@ -97,9 +97,9 @@ Extended support is never used to compute the alert, because maintenant has no w
 
 ## Support Table and Refresh
 
-maintenant embeds a table of support cycles with each release, current as of its publication date. When the server has outbound network access, it refreshes the table from [endoflife.date](https://endoflife.date) 30 seconds after startup and once a day after that: seven requests, one per tracked distribution family, carrying nothing about your installation except a `User-Agent` with the maintenant version.
+maintenant embeds a table of support cycles with each release, current as of its publication date. When the server has outbound network access, it refreshes the table from [endoflife.date](https://endoflife.date) 30 seconds after startup and once a day after that: thirteen requests, one per tracked distribution family and one per [tracked official image](updates.md#support-of-official-images), carrying nothing about your installation except a `User-Agent` with the maintenant version.
 
-A refresh only replaces the table if all seven requests succeed and parse cleanly. Any failure (a timeout, an unexpected response, a malformed field) leaves the previous table untouched and logs a single line; it never applies a partial or empty table.
+A refresh only replaces the table if all thirteen requests succeed and parse cleanly. Any failure (a timeout, an unexpected response, a malformed field) leaves the previous table untouched and logs a single line; it never applies a partial or empty table.
 
 Set `MAINTENANT_DISABLE_OS_EOL_REFRESH=1` to turn the refresh off entirely, for air-gapped or network-restricted deployments. The embedded table then applies on its own, indefinitely. The origin of the dates in use (`embedded` or `endoflife.date`) and the date of the last successful refresh are exposed in the API and in `get_updates`.
 
@@ -109,7 +109,7 @@ Set `MAINTENANT_DISABLE_OS_EOL_REFRESH=1` to turn the refresh off entirely, for 
 
 - Pending package updates (`apt`, `dnf`, `apk`) and unapplied security patches.
 - Kernel version, reboot-required detection.
-- End-of-support for the base image of a *container*: that is a separate concern, tracked as part of Update Intelligence.
+- End-of-support for the base image of a *container*: that is a separate concern, tracked as part of Update Intelligence. Only the running version of a few official images (postgres, mysql, mariadb, redis, mongo, nginx) is checked, see [Risk Score](updates.md#support-of-official-images).
 
 ---
 

@@ -8,7 +8,7 @@ import type {
   OSSupportState,
   OSUnavailableReason,
 } from '@/services/agentApi'
-import type { HostOS, UpdateSummary } from '@/services/updateApi'
+import type { HostOS, ImageSupport, UpdateSummary } from '@/services/updateApi'
 
 const STATE_LABELS: Record<OSSupportState, string> = {
   unknown: 'OS unknown',
@@ -83,6 +83,12 @@ const PRODUCT_LABELS: Record<string, string> = {
   almalinux: 'AlmaLinux',
   'alpine-linux': 'Alpine',
   sles: 'SLES',
+  postgresql: 'PostgreSQL',
+  mysql: 'MySQL',
+  mariadb: 'MariaDB',
+  redis: 'Redis',
+  mongodb: 'MongoDB',
+  nginx: 'nginx',
 }
 
 const EXTENDED_NAMES: Record<string, string> = {
@@ -101,10 +107,22 @@ const STATE_ORDER: Record<OSSupportState, number> = {
   unknown: 5,
 }
 
+export function osProductName(product: string): string {
+  return PRODUCT_LABELS[product] ?? product
+}
+
 export function osCanonicalName(support: AgentOSSupport): string {
   if (!support.product) return ''
-  const label = PRODUCT_LABELS[support.product] ?? support.product
+  const label = osProductName(support.product)
   return support.cycle ? `${label} ${support.cycle}` : label
+}
+
+export interface ImageGroup {
+  key: string
+  state: OSSupportState
+  name: string
+  support: AgentOSSupport
+  containers: ImageSupport[]
 }
 
 export interface OSGroup {
@@ -170,13 +188,45 @@ export function groupHostsByOS(hosts: HostOS[]): OSGroup[] {
     if (group.state === 'unknown') group.hints = unknownHints(group.hosts)
   }
 
-  return groups.sort((a, b) => {
-    const byState = STATE_ORDER[a.state] - STATE_ORDER[b.state]
-    if (byState !== 0) return byState
-    const byDays = (a.support.days_remaining ?? 0) - (b.support.days_remaining ?? 0)
-    if (byDays !== 0) return byDays
-    return a.name.localeCompare(b.name, undefined, { numeric: true })
-  })
+  return groups.sort(compareGroups)
+}
+
+function compareGroups(
+  a: { state: OSSupportState; name: string; support: AgentOSSupport },
+  b: { state: OSSupportState; name: string; support: AgentOSSupport },
+): number {
+  const byState = STATE_ORDER[a.state] - STATE_ORDER[b.state]
+  if (byState !== 0) return byState
+  const byDays = (a.support.days_remaining ?? 0) - (b.support.days_remaining ?? 0)
+  if (byDays !== 0) return byDays
+  return a.name.localeCompare(b.name, undefined, { numeric: true })
+}
+
+/** Groups containers by software product and cycle, in the order of the OS groups. */
+export function groupImagesByProduct(images: ImageSupport[]): ImageGroup[] {
+  const byKey = new Map<string, ImageGroup>()
+  for (const image of images) {
+    const { support } = image
+    const key = `${support.product ?? ''}:${support.cycle ?? ''}`
+    const group = byKey.get(key)
+    if (group) {
+      group.containers.push(image)
+      continue
+    }
+    byKey.set(key, {
+      key,
+      state: support.state,
+      name: osCanonicalName(support) || image.image,
+      support,
+      containers: [image],
+    })
+  }
+
+  const groups = [...byKey.values()]
+  for (const group of groups) {
+    group.containers.sort((a, b) => a.container_name.localeCompare(b.container_name))
+  }
+  return groups.sort(compareGroups)
 }
 
 function spanText(days: number): string {
@@ -201,6 +251,13 @@ export function osTimeLeft(support: AgentOSSupport): string {
     return past < 60 ? `Ended ${daysWord(past)} ago` : `Ended ${spanText(past)} ago`
   }
   return days < 60 ? `Ends in ${daysWord(days)}` : `${spanText(days)} left`
+}
+
+/** The support cycle of an image and what is left of it, e.g. "PostgreSQL 18: 3 y 11 mo left". */
+export function osCycleText(support: AgentOSSupport): string {
+  const left = osTimeLeft(support) || osSupportLabel(support.state)
+  const name = support.cycle ? osCanonicalName(support) : ''
+  return name ? `${name}: ${left}` : left
 }
 
 export function osStateTextClass(state: OSSupportState): string {

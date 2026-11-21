@@ -7,6 +7,7 @@ import {
   fetchUpdates,
   fetchUpdateSummary,
   fetchHostOS as apiFetchHostOS,
+  fetchImages as apiFetchImages,
   triggerScan,
   fetchContainerUpdate,
   fetchCves,
@@ -21,6 +22,7 @@ import {
   type ImageUpdate,
   type UpdateSummary,
   type HostOS,
+  type ImageSupport,
   type EolTable,
   type CVEInfo,
   type RiskListResponse,
@@ -42,6 +44,7 @@ export const useUpdatesStore = defineStore('updates', () => {
   const lastScan = ref<string>('')
   const nextScan = ref<string>('')
   const hosts = ref<HostOS[]>([])
+  const images = ref<ImageSupport[]>([])
   const eolTable = ref<EolTable | null>(null)
 
   const criticalCount = computed(() => summary.value?.counts?.critical ?? 0)
@@ -59,10 +62,12 @@ export const useUpdatesStore = defineStore('updates', () => {
     fetchSummary()
     fetchAllUpdates()
     fetchHostOSAction()
+    fetchImagesAction()
   }
 
   function onAgentUpdated() {
     fetchHostOSAction()
+    fetchImagesAction()
   }
 
   function onDetected(e: MessageEvent) {
@@ -120,6 +125,7 @@ export const useUpdatesStore = defineStore('updates', () => {
     fetchSummary()
     fetchAllUpdates()
     fetchHostOSAction()
+    fetchImagesAction()
   }
 
   function connectSSE() {
@@ -175,6 +181,15 @@ export const useUpdatesStore = defineStore('updates', () => {
       const data = await apiFetchHostOS()
       hosts.value = data.hosts || []
       eolTable.value = data.eol_table ?? null
+    } catch {
+      // ignore
+    }
+  }
+
+  async function fetchImagesAction() {
+    try {
+      const data = await apiFetchImages()
+      images.value = data.images || []
     } catch {
       // ignore
     }
@@ -272,6 +287,7 @@ export const useUpdatesStore = defineStore('updates', () => {
     lastScan,
     nextScan,
     hosts,
+    images,
     eolTable,
     criticalCount,
     recommendedCount,
@@ -282,6 +298,7 @@ export const useUpdatesStore = defineStore('updates', () => {
     fetchAllUpdates,
     fetchSummary,
     fetchHostOS: fetchHostOSAction,
+    fetchImages: fetchImagesAction,
     startScan,
     fetchContainerCves: fetchContainerCvesAction,
     fetchRiskScores: fetchRiskScoresAction,

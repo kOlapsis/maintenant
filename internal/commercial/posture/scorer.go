@@ -228,7 +228,6 @@ func (s *Scorer) computeContainerScore(ctx context.Context, in *scoringInputs, c
 		if len(updates) > 0 {
 			updateResult.subScore, updateResult.issueCount, updateResult.summary = scoreUpdates(updates)
 
-			// Image age from the most recent update's PublishedAt
 			imageAgeResult.applicable = true
 			imageAgeResult.subScore, imageAgeResult.issueCount, imageAgeResult.summary = scoreImageAge(updates)
 		} else {
@@ -629,21 +628,20 @@ func scoreCVEs(cves []security.CVEInfo, acknowledgedCount int) (subScore int, is
 
 func scoreUpdates(updates []security.UpdateInfo) (subScore int, issueCount int, summary string) {
 	score := 100
-	major := 0
-	minor := 0
-	patch := 0
+	critical := 0
+	recommended := 0
+	available := 0
 
 	for _, u := range updates {
-		switch u.UpdateType {
-		case "major":
+		switch {
+		case u.RiskScore >= 81:
 			score -= 25
-			major++
-		case "minor":
+			critical++
+		case u.RiskScore >= 31:
 			score -= 10
-			minor++
-		case "patch":
-			score -= 5
-			patch++
+			recommended++
+		default:
+			available++
 		}
 	}
 
@@ -652,20 +650,20 @@ func scoreUpdates(updates []security.UpdateInfo) (subScore int, issueCount int, 
 	}
 
 	parts := make([]string, 0, 3)
-	if major > 0 {
-		parts = append(parts, fmt.Sprintf("%d major", major))
+	if critical > 0 {
+		parts = append(parts, fmt.Sprintf("%d critical", critical))
 	}
-	if minor > 0 {
-		parts = append(parts, fmt.Sprintf("%d minor", minor))
+	if recommended > 0 {
+		parts = append(parts, fmt.Sprintf("%d recommended", recommended))
 	}
-	if patch > 0 {
-		parts = append(parts, fmt.Sprintf("%d patch", patch))
+	if available > 0 {
+		parts = append(parts, fmt.Sprintf("%d available", available))
 	}
 
 	if len(parts) == 0 {
 		summary = "all images up to date"
 	} else {
-		summary = joinParts(parts) + " available"
+		summary = joinParts(parts)
 	}
 
 	return score, len(updates), summary
@@ -704,15 +702,25 @@ func scoreNetworkExposure(insights []security.Insight, acknowledgedCount int) (s
 	return score, len(insights), summary
 }
 
+const recommendedRiskScore = 31
+
 func scoreImageAge(updates []security.UpdateInfo) (subScore int, issueCount int, summary string) {
-	// Find the most recent PublishedAt from available updates
 	var oldest *time.Time
+	counted := 0
 	for _, u := range updates {
+		if u.RiskScore < recommendedRiskScore {
+			continue
+		}
+		counted++
 		if u.PublishedAt != nil {
 			if oldest == nil || u.PublishedAt.Before(*oldest) {
 				oldest = u.PublishedAt
 			}
 		}
+	}
+
+	if counted == 0 {
+		return 100, 0, "current image"
 	}
 
 	if oldest == nil {

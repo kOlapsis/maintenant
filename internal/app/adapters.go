@@ -99,7 +99,7 @@ func (a *UpdatePostureAdapter) UpdatesByContainer(ctx context.Context, container
 			continue
 		}
 		result[id] = append(result[id], security.UpdateInfo{
-			UpdateType:  string(u.UpdateType),
+			RiskScore:   u.RiskScore,
 			PublishedAt: u.PublishedAt,
 		})
 	}

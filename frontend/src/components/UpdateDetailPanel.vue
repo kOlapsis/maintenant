@@ -21,6 +21,7 @@ import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import InlineAlert from '@/components/ui/InlineAlert.vue'
 import TextareaInput from '@/components/ui/TextareaInput.vue'
+import { osCycleText, osStateTextClass } from '@/utils/osSupport'
 import { AlertTriangle, ArrowRight, Check, Copy, ExternalLink, Pin, PinOff } from 'lucide-vue-next'
 
 const { hasFeature } = useEdition()
@@ -170,15 +171,18 @@ onMounted(loadDetail)
           <p class="text-sm font-bold text-mnt-green-400 font-mono">{{ detail.latest_tag }}</p>
         </div>
       </div>
+      <p v-if="detail.major_tag" class="mt-2 text-xs text-mnt-muted break-all" data-testid="update-major">
+        Next major: <span class="font-mono">{{ detail.major_tag }}</span>
+      </p>
+      <p
+        v-if="detail.support"
+        class="mt-1 text-xs font-bold"
+        :class="osStateTextClass(detail.support.state)"
+        data-testid="update-support"
+      >{{ osCycleText(detail.support) }}</p>
       <div class="mt-2 flex items-center gap-2">
         <span
-          class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
-          :class="{
-            'bg-mnt-status-down text-mnt-status-down': detail.update_type === 'major',
-            'bg-mnt-status-warn text-mnt-status-warn': detail.update_type === 'minor',
-            'bg-mnt-green-500/10 text-mnt-green-400': detail.update_type === 'patch',
-            'bg-mnt-sev-neutral-solid/10 text-mnt-muted': detail.update_type === 'digest_only',
-          }"
+          class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-mnt-sev-neutral-solid/10 text-mnt-muted"
           >{{ detail.update_type }}</span
         >
         <span
@@ -267,7 +271,7 @@ onMounted(loadDetail)
     <FeatureGate
       feature="risk_scoring"
       title="Risk Score"
-      description="Instantly assess the risk of each update. A smart score combines CVE severity, breaking changes, and version jump to help you prioritize."
+      description="See how urgent each update is. The score combines the CVEs the update fixes, the support status of the running version and the update type to help you prioritize."
     >
       <div v-if="detail.risk_score > 0" class="rounded-xl p-4 border" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
         <h4 class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest mb-3">

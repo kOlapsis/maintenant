@@ -706,7 +706,8 @@ CREATE TABLE image_updates (
     source_url    TEXT,
     status        TEXT NOT NULL DEFAULT 'available',
     detected_at   BIGINT NOT NULL,
-    agent_id      TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'
+    agent_id      TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+    major_tag     TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX idx_image_updates_container_id ON image_updates(container_id);
 CREATE INDEX idx_image_updates_status ON image_updates(status);

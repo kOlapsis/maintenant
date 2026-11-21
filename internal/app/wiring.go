@@ -577,6 +577,9 @@ func updateDetectedAlert(m map[string]any, withChangelog bool) alert.Event {
 		"latest_tag":  m["latest_tag"],
 		"update_type": m["update_type"],
 	}
+	if v, ok := m["major_tag"]; ok {
+		details["major_tag"] = v
+	}
 	// The changelog capability decides whether the richer fields ride along.
 	if withChangelog {
 		for _, k := range []string{"update_command", "rollback_command", "changelog_url", "has_breaking_changes"} {
