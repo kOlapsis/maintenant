@@ -50,6 +50,7 @@ func (s *SMTPSender) Send(ctx context.Context, to, subject, textBody string) err
 	addr := net.JoinHostPort(s.cfg.Host, s.cfg.Port)
 	tlsCfg := trust.ClientTLSConfig()
 	tlsCfg.ServerName = s.cfg.Host
+	tlsCfg.InsecureSkipVerify = localHost(s.cfg.Host) // #nosec G402 -- local relay with a self-signed certificate
 
 	var conn net.Conn
 	var err error
@@ -117,6 +118,14 @@ func (s *SMTPSender) Send(ctx context.Context, to, subject, textBody string) err
 	}
 
 	return c.Quit()
+}
+
+func localHost(host string) bool {
+	// An IPv6 literal has no dot: test the address before the name.
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate()
+	}
+	return !strings.Contains(host, ".")
 }
 
 func buildMIME(from, to, subject, body string) string {

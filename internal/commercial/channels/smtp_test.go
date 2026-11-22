@@ -320,7 +320,7 @@ func TestSMTPSender_AFailedStartTLSStopsTheMail(t *testing.T) {
 	}
 }
 
-func TestSMTPSender_UntrustedStartTLSStopsTheMail(t *testing.T) {
+func TestSMTPSender_LocalRelayWithAnUntrustedCertificateGetsTheMail(t *testing.T) {
 	cert, _ := borrowedCertificate(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -332,7 +332,27 @@ func TestSMTPSender_UntrustedStartTLSStopsTheMail(t *testing.T) {
 	require.NoError(t, err)
 	sender := NewSMTPSender(SMTPConfig{Host: host, Port: port, From: "maintenant@example.com"})
 
-	err = sender.Send(context.Background(), "ops@example.com", "disk full", "the disk is full")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "starttls")
+	require.NoError(t, sender.Send(context.Background(), "ops@example.com", "disk full", "the disk is full"))
+	select {
+	case body := <-delivered:
+		assert.Contains(t, body, "the disk is full")
+	case <-time.After(5 * time.Second):
+		t.Fatal("no mail delivered over TLS")
+	}
+}
+
+func TestLocalHost(t *testing.T) {
+	for host, want := range map[string]bool{
+		"smtp-relay":       true,
+		"localhost":        true,
+		"127.0.0.1":        true,
+		"10.0.0.5":         true,
+		"::1":              true,
+		"fd00::5":          true,
+		"smtp.example.com": false,
+		"203.0.113.7":      false,
+		"2001:db8::1":      false,
+	} {
+		assert.Equal(t, want, localHost(host), host)
+	}
 }
