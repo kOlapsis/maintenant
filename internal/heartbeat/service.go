@@ -315,6 +315,9 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 		return nil, err
 	}
 
+	// The state is committed: the rows that describe it no longer depend on the request.
+	ctx = context.WithoutCancel(ctx)
+
 	// Record ping
 	ping := &HeartbeatPing{
 		HeartbeatID: h.ID,
@@ -420,6 +423,8 @@ func (s *Service) ProcessStartPing(ctx context.Context, token string, sourceIP, 
 	if err != nil {
 		return nil, err
 	}
+
+	ctx = context.WithoutCancel(ctx)
 
 	// Close any in-progress execution as timeout
 	currentExec, err := s.store.GetCurrentExecution(ctx, h.ID)
@@ -531,6 +536,8 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCod
 	if err != nil {
 		return nil, err
 	}
+
+	ctx = context.WithoutCancel(ctx)
 
 	// Update or create execution record
 	currentExec, _ := s.store.GetCurrentExecution(ctx, h.ID)
