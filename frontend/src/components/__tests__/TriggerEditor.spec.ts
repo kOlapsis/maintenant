@@ -69,4 +69,38 @@ describe('TriggerEditor', () => {
       channel_ids: ['c1'],
     })
   })
+
+  it('offers every source an alert can carry', () => {
+    const wrapper = mount(TriggerEditor, {
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    const chips = wrapper.findAll('button').map((b) => b.text())
+    expect(chips).toEqual(
+      expect.arrayContaining([
+        'container', 'endpoint', 'heartbeat', 'certificate', 'resource', 'update',
+        'security', 'agent', 'host', 'swarm', 'kubernetes',
+      ]),
+    )
+    expect(chips).not.toContain('monitor')
+  })
+
+  it('drops a stored source that no alert carries when saving', async () => {
+    const wrapper = mount(TriggerEditor, {
+      props: { trigger: { ...trigger, filter_sources: 'container,monitor' } },
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    await wrapper.findAll('button').find((b) => b.text().includes('Save changes'))!.trigger('click')
+    await flushPromises()
+
+    expect(update.mock.calls[0]![1].filter_sources).toBe('container')
+  })
+
+  it('shows a scope example shaped like a real entity id', () => {
+    const wrapper = mount(TriggerEditor, {
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    expect(wrapper.find('input[placeholder^="container:"]').attributes('placeholder')).toMatch(
+      /^container:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    )
+  })
 })

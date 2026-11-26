@@ -37,13 +37,14 @@ const canUseAdvancedFilters = computed(() => hasFeature('alert_advanced_filters'
 const advancedFiltersEdition = computed(() => requiredEditionFor('alert_advanced_filters'))
 
 const SEVERITY_OPTIONS = ['critical', 'warning']
-const SOURCE_OPTIONS = ['container', 'endpoint', 'heartbeat', 'certificate', 'monitor', 'resource', 'update', 'agent', 'host']
+const SOURCE_OPTIONS = ['container', 'endpoint', 'heartbeat', 'certificate', 'resource', 'update', 'security', 'agent', 'host', 'swarm', 'kubernetes']
+const SCOPE_EXAMPLE = 'container:0195f3c4-11aa-7f00-8c55-2b9d0e3a4c18'
 
 const name = ref(props.trigger?.name ?? '')
 const enabled = ref(props.trigger?.enabled ?? true)
 const notifyOnResolve = ref(props.trigger?.notify_on_resolve ?? true)
 const severities = ref<string[]>(toCsvArray(props.trigger?.filter_severities ?? ''))
-const sources = ref<string[]>(toCsvArray(props.trigger?.filter_sources ?? ''))
+const sources = ref<string[]>(knownSources(props.trigger?.filter_sources ?? ''))
 const scopesCsv = ref(props.trigger?.filter_scopes ?? '')
 const selectedChannelIds = ref<string[]>(props.trigger?.channel_ids ?? [])
 
@@ -57,7 +58,7 @@ watch(
     enabled.value = t?.enabled ?? true
     notifyOnResolve.value = t?.notify_on_resolve ?? true
     severities.value = toCsvArray(t?.filter_severities ?? '')
-    sources.value = toCsvArray(t?.filter_sources ?? '')
+    sources.value = knownSources(t?.filter_sources ?? '')
     scopesCsv.value = t?.filter_scopes ?? ''
     selectedChannelIds.value = t?.channel_ids ?? []
   },
@@ -65,6 +66,10 @@ watch(
 
 function toCsvArray(s: string): string[] {
   return s.split(',').map((x) => x.trim()).filter((x) => x.length > 0)
+}
+
+function knownSources(csv: string): string[] {
+  return toCsvArray(csv).filter((x) => SOURCE_OPTIONS.includes(x))
 }
 
 function toggleArray(arr: string[], value: string): string[] {
@@ -273,7 +278,7 @@ async function handleSave() {
           </span>
         </div>
         <p v-if="!canUseAdvancedFilters" class="text-xs text-mnt-muted">
-          Filter triggers by per-entity scope (e.g. <code class="rounded bg-mnt-elevated px-1.5 py-0.5 text-[10px]">container:42</code>).
+          Filter triggers by per-entity scope (e.g. <code class="rounded bg-mnt-elevated px-1.5 py-0.5 text-[10px]">{{ SCOPE_EXAMPLE }}</code>).
         </p>
 
         <FormField label="Scopes (CSV)">
@@ -282,7 +287,7 @@ async function handleSave() {
               :id="id"
               v-model="scopesCsv"
               :disabled="!canUseAdvancedFilters"
-              placeholder="container:42, endpoint:7"
+              :placeholder="SCOPE_EXAMPLE"
               :aria-describedby="describedBy"
               :invalid="invalid"
             />
