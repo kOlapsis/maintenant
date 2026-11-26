@@ -1166,10 +1166,6 @@ func (a *App) Shutdown() error {
 		a.logger.Error("HTTP server shutdown error", "error", err)
 	}
 
-	if a.licenseMgr != nil {
-		a.licenseMgr.Stop()
-	}
-
 	// A grace of its own: a slow HTTP drain must not leave the rest an expired context.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
@@ -1222,6 +1218,9 @@ func (a *App) waitBackground(ctx context.Context) {
 		a.background.Wait()
 		if m := a.swarmMgr.Load(); m != nil {
 			m.loops.Wait()
+		}
+		if a.licenseMgr != nil {
+			a.licenseMgr.Stop()
 		}
 		a.endpointSvc.Stop()
 		a.heartbeatSvc.Wait()

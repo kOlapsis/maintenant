@@ -44,6 +44,7 @@ type Manager struct {
 	client     *http.Client
 	state      atomic.Value // *State
 	stop       chan struct{}
+	running    sync.WaitGroup
 
 	// buildDate is when this binary was released. buildDateKnown is false when
 	// ldflags left the default "unknown", or stamped something unparseable; the
@@ -106,7 +107,7 @@ func (m *Manager) Start(ctx context.Context) {
 	// Run initial check (non-blocking on failure)
 	m.check(ctx)
 
-	go m.ticker(ctx)
+	m.running.Go(func() { m.ticker(ctx) })
 }
 
 // loadCache populates state from the disk cache, if a valid one exists.
@@ -135,9 +136,10 @@ func (m *Manager) loadCache(ctx context.Context) {
 	)
 }
 
-// Stop stops the background ticker.
+// Stop stops the background ticker and waits for it and for the edition change callbacks in flight.
 func (m *Manager) Stop() {
 	close(m.stop)
+	m.running.Wait()
 }
 
 // State returns the current license state (thread-safe).
@@ -167,8 +169,8 @@ func (m *Manager) dispatchEditionChange(ctx context.Context, prev, next extensio
 	copy(cbs, m.callbacks)
 	m.callbacksMu.Unlock()
 
-	for _, cb := range cbs {
-		go func(f EditionChangeCallback) {
+	for _, f := range cbs {
+		m.running.Go(func() {
 			cbCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
 			defer func() {
@@ -177,7 +179,7 @@ func (m *Manager) dispatchEditionChange(ctx context.Context, prev, next extensio
 				}
 			}()
 			f(cbCtx, prev, next)
-		}(cb)
+		})
 	}
 }
 
