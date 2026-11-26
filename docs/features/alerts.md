@@ -466,7 +466,7 @@ DELETE /api/v1/silence/{id}
 | `entity_id` | Optional. Only alerts about this entity. |
 | `reason` | Optional free text. |
 
-An alert is silenced when it matches every field the rule sets, and a rule that sets none silences everything. The list answers `{"rules": […]}` with, for each rule, `starts_at`, `duration_seconds`, `expires_at` and `is_active`. Cancelling a rule keeps it in the full list, inactive.
+An alert is silenced when it matches every field the rule sets, and a rule that sets none silences everything. The list answers `{"rules": […]}` with, for each rule, `starts_at`, `duration_seconds`, `expires_at` and `is_active`. Cancelling a rule keeps it in the full list, inactive. A rule is deleted 90 days after it expired or was cancelled.
 
 A silence only affects alerts that fire while it is in effect. It does not mute an alert that is already active, and an alert that fired during the silence is held, not discarded. Held alerts are re-evaluated every 30 seconds: one that no silence rule or maintenance window covers any more becomes `active`, is notified and starts its escalation, as if it had just fired. After a restart this still applies to the alerts held in the last 24 hours. An alert whose entity recovers while it is held is resolved without a notification. Silenced alerts are listed by `GET /api/v1/alerts?status=silenced`.
 

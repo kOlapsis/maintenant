@@ -350,6 +350,8 @@ A background goroutine prunes old data. A pass runs at startup and then hourly (
 | Daily resource rollups | 1 year |
 | Alerts | 90 days (daily pass) |
 | Update scan records and image updates | 30 days (daily pass) |
+| Risk score history | 90 days (daily pass) |
+| Silence rules | 90 days after they expired or were cancelled |
 | Escalation runs and deliveries | 90 days (nightly at 03:00 local time) |
 | Unconsumed enrollment tokens | 7 days after expiry (hourly pass) |
 

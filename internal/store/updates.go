@@ -773,8 +773,17 @@ func (s *UpdateStore) CleanupExpired(ctx context.Context, olderThan time.Time) (
 	}
 	totalDeleted += res.RowsAffected
 
+	historyDeleted, _, err := deleteRowsBefore(ctx, s.writer, batchOpts{}, "risk_score_history", "recorded_at",
+		time.Now().Add(-riskScoreHistoryRetention))
+	totalDeleted += historyDeleted
+	if err != nil {
+		return totalDeleted, fmt.Errorf("cleanup risk score history: %w", err)
+	}
+
 	return totalDeleted, nil
 }
+
+const riskScoreHistoryRetention = 90 * 24 * time.Hour
 
 // --- Row scanners ---
 

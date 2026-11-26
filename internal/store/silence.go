@@ -112,6 +112,11 @@ func (s *SilenceStoreImpl) GetActiveSilenceRules(ctx context.Context) ([]*alert.
 	return rules, rows.Err()
 }
 
+func (s *SilenceStoreImpl) deleteEndedBefore(ctx context.Context, before time.Time, o batchOpts) (int64, bool, error) {
+	return deleteRowsWhere(ctx, s.writer, o, "silence_rules",
+		`(starts_at + duration_seconds < ? OR cancelled_at < ?)`, before.Unix(), before.Unix())
+}
+
 func scanSilenceRow(rows *sql.Rows) (*alert.SilenceRule, error) {
 	r := &alert.SilenceRule{}
 	var entityType, source, reason, entityID sql.NullString
