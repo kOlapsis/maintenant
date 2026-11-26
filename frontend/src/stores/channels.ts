@@ -73,6 +73,7 @@ export const useChannelsStore = defineStore('channels', () => {
     sseBus.off('channel.updated', onChannelUpdated)
     sseBus.off('channel.deleted', onChannelDeleted)
     sseBus.off('sse.reconnected', onReconnected)
+    sseBus.disconnect()
   }
 
   return {

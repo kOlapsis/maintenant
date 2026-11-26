@@ -43,4 +43,14 @@ describe('channels store', () => {
     await store.fetchChannels()
     expect(store.channelsError).toBeNull()
   })
+
+  it('releases the live stream it asked for', () => {
+    const store = useChannelsStore()
+
+    store.connectSSE()
+    store.disconnectSSE()
+
+    expect(bus.connect).toHaveBeenCalledTimes(1)
+    expect(bus.disconnect).toHaveBeenCalledTimes(1)
+  })
 })
