@@ -25,9 +25,10 @@ run_install_service() {
             case \"\$*\" in
                 start*|restart*|'enable --now'*) touch '$WORK/active' ;;
                 is-active*) [ -e '$WORK/active' ] ;;
+                show*) echo '${NRESTARTS:-0}' ;;
             esac
         }
-        sleep() { :; }
+        sleep() { [ -z '${CRASH_AFTER_START:-}' ] || rm -f '$WORK/active'; }
         journalctl() { :; }
         export -f systemctl sleep journalctl
         [ -z '${ALREADY_ACTIVE:-}' ] || touch '$WORK/active'
@@ -49,6 +50,18 @@ run_install_service() {
     [ "$status" -eq 0 ]
     grep -qx 'start maintenant' "$WORK/systemctl.log"
     [ -z "$(grep '^restart' "$WORK/systemctl.log")" ]
+}
+
+@test "install_service: a service that dies right after its start exits 31" {
+    CRASH_AFTER_START=1 run_install_service
+    [ "$status" -eq 31 ]
+    [[ "$output" == *"Last 50 log lines"* ]]
+}
+
+@test "install_service: a service that systemd already restarted exits 31" {
+    NRESTARTS=1 run_install_service
+    [ "$status" -eq 31 ]
+    [[ "$output" == *"Last 50 log lines"* ]]
 }
 
 @test "install_service: --no-service warns when the running service keeps the old binary" {

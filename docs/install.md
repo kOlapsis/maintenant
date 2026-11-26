@@ -36,7 +36,7 @@ curl -fsSL https://install.maintenant.dev | sudo bash
 4. Creates the data directory (`0750`, owned by the service user) and the configuration directory (`0750`, `root:maintenant`).
 5. Merges the configuration flags you passed into `/etc/maintenant/maintenant.env`.
 6. Replaces the binary atomically (written next to `/usr/local/bin/maintenant`, then renamed).
-7. Writes the systemd unit, enables it, then restarts the service if it runs or starts it if not, and waits up to 10 seconds for it to become active.
+7. Writes the systemd unit, enables it, then restarts the service if it runs or starts it if not. Five seconds later it checks that the service is still running and that systemd has not restarted it; otherwise it prints the last 50 log lines and exits with code 31.
 8. Prints a summary: version, binary path and the address it listens on.
 
 ---
@@ -368,4 +368,4 @@ gh attestation verify --owner kOlapsis maintenant-${VERSION}-linux-${ARCH}
 | `21` | SHA256 checksum mismatch, or (offline) no matching `linux-<arch>` entry in `SHA256SUMS` |
 | `22` | cosign signature invalid |
 | `30` | Filesystem error, including a non-empty directory owned by someone else |
-| `31` | systemd failure: a `systemctl` command failed, or the service was not active after 10 seconds |
+| `31` | systemd failure: a `systemctl` command failed, or the service stopped or was restarted within 5 seconds of its start |

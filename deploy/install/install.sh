@@ -553,6 +553,7 @@ install_service() {
 
     systemctl daemon-reload || abort "systemctl daemon-reload failed" 31
     systemctl enable maintenant || abort "systemctl enable maintenant failed" 31
+    systemctl reset-failed maintenant 2>/dev/null || true
     if systemctl is-active --quiet maintenant; then
         log_step "Restarting the service on the new binary..."
         systemctl restart maintenant || abort "systemctl restart maintenant failed" 31
@@ -561,20 +562,18 @@ install_service() {
         systemctl start maintenant || abort "systemctl start maintenant failed" 31
     fi
 
-    log_step "Waiting for service to become active..."
-    i=0
-    while [ $i -lt 10 ]; do
-        if systemctl is-active --quiet maintenant; then
-            log_info "Service is active"
-            return
-        fi
-        sleep 1
-        i=$((i + 1))
-    done
+    # Type=simple is active as soon as the process exists: only a later look tells a crash from a start.
+    log_step "Checking that the service stays up..."
+    sleep 5
+    restarts=$(systemctl show -p NRestarts --value maintenant 2>/dev/null || true)
+    if systemctl is-active --quiet maintenant && [ "${restarts:-0}" = 0 ]; then
+        log_info "Service is running"
+        return
+    fi
 
-    log_error "Service failed to start. Last 50 log lines:"
+    log_error "Service did not stay up. Last 50 log lines:"
     journalctl -u maintenant -n 50 --no-pager >&2 || true
-    abort "Maintenant service did not become active within 10 seconds" 31
+    abort "Maintenant is installed but its service does not stay up: fix the cause shown above, then systemctl restart maintenant" 31
 }
 
 # ── print_summary ─────────────────────────────────────────────────────────────
