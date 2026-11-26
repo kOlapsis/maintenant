@@ -199,14 +199,14 @@ An alert that fires:
     "alert_type": "consecutive_failure",
     "severity": "critical",
     "status": "active",
-    "message": "Endpoint https://api.example.com/health failed 3 consecutive checks",
+    "message": "Endpoint https://api.example.com failed 3 consecutive checks",
     "entity_type": "endpoint",
     "entity_id": "0198b1c2-8b4f-7a11-8d22-3e5f6071b8c9",
     "entity_name": "api",
     "fired_at": "2026-03-01T02:00:00Z",
     "created_at": "2026-03-01T02:00:00Z",
     "details": {
-      "target": "https://api.example.com/health",
+      "target": "https://api.example.com",
       "failures": 3,
       "threshold": 3,
       "last_error": "connection refused"
@@ -238,7 +238,7 @@ The same alert when it recovers. The id, the host, the entity, `fired_at` and `d
     "resolved_at": "2026-03-01T02:04:30Z",
     "resolved_by_id": "0198b1c6-9d01-7c22-b733-4f6a7182c9da",
     "details": {
-      "target": "https://api.example.com/health",
+      "target": "https://api.example.com",
       "failures": 3,
       "threshold": 3,
       "last_error": "connection refused"

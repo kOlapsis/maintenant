@@ -22,6 +22,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/eol"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/redact"
 	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/kolapsis/maintenant/internal/update"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -286,14 +287,14 @@ func listAlertsHandler(svc *Services) gomcp.ToolHandlerFor[listAlertsInput, any]
 			if err != nil {
 				return storeErrResult(err, "list active alerts")
 			}
-			return jsonResult(alerts)
+			return jsonResult(alertViews(alerts))
 		}
 		const recent = 100
 		alerts, err := svc.Alerts.ListAlerts(ctx, alert.ListAlertsOpts{Limit: recent})
 		if err != nil {
 			return storeErrResult(err, "list alerts")
 		}
-		return jsonResult(alerts[:min(len(alerts), recent)])
+		return jsonResult(alertViews(alerts[:min(len(alerts), recent)]))
 	}
 }
 
@@ -406,6 +407,10 @@ func getEndpointHistoryHandler(svc *Services) gomcp.ToolHandlerFor[getEndpointHi
 		checks, _, err := svc.Endpoints.ListCheckResults(ctx, input.EndpointID, endpoint.ListChecksOpts{Limit: limit})
 		if err != nil {
 			return storeErrResult(err, "list endpoint checks")
+		}
+		for _, c := range checks {
+			c.ErrorMessage = redact.Text(c.ErrorMessage)
+			c.DegradedReason = redact.Text(c.DegradedReason)
 		}
 		return jsonResult(checks)
 	}
@@ -545,6 +550,18 @@ func listAgentsHandler(svc *Services) gomcp.ToolHandlerFor[listAgentsInput, any]
 }
 
 // --- Helpers ---
+
+// alertViews returns copies of alerts whose message and details quote URLs as scheme, host and port only.
+func alertViews(alerts []*alert.Alert) []*alert.Alert {
+	views := make([]*alert.Alert, len(alerts))
+	for i, a := range alerts {
+		cp := *a
+		cp.Message = redact.Text(cp.Message)
+		cp.Details = redact.Text(cp.Details)
+		views[i] = &cp
+	}
+	return views
+}
 
 type heartbeatView struct {
 	*heartbeat.Heartbeat

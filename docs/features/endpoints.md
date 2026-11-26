@@ -205,6 +205,8 @@ Endpoints declared on the containers of a [remote agent](multihost.md) are probe
 
 Endpoint events are broadcast on the SSE stream (`GET /api/v1/containers/events`), for label, manual and agent-probed endpoints alike:
 
+An endpoint alert, in its message, in its details and in the `endpoint.alert` and `endpoint.recovery` events, names the target by scheme, host and port only: the path, the query string and any `user:password@` part can hold a credential and are left out. The error text of a check quotes URLs the same way.
+
 | Event | Sent when | Main fields |
 |-------|-----------|-------------|
 | `endpoint.discovered` | A label endpoint is found or a manual one is created | `endpoint_id`, `container_name`, `endpoint_type`, `target` |

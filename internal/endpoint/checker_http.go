@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/redact"
 	"github.com/kolapsis/maintenant/internal/ssrf"
 	"github.com/kolapsis/maintenant/internal/trust"
 )
@@ -62,7 +63,7 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 	req, err := newRequest()
 	if err != nil {
 		result.ResponseTimeMs = time.Since(start).Milliseconds()
-		result.ErrorMessage = fmt.Sprintf("create request: %v", err)
+		result.ErrorMessage = redact.Text(fmt.Sprintf("create request: %v", err))
 		return result
 	}
 
@@ -72,7 +73,7 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 		reason, isTrustFailure := trustFailureReason(err)
 		if !cfg.TLSVerify || !isTrustFailure {
 			result.ResponseTimeMs = time.Since(start).Milliseconds()
-			result.ErrorMessage = fmt.Sprintf("request failed: %v", err)
+			result.ErrorMessage = redact.Text(fmt.Sprintf("request failed: %v", err))
 			return result
 		}
 
@@ -82,13 +83,13 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 
 		addr, host, addrErr := hostPort(ep.Target)
 		if addrErr != nil {
-			result.ErrorMessage = fmt.Sprintf("request failed: %v", err)
+			result.ErrorMessage = redact.Text(fmt.Sprintf("request failed: %v", err))
 			return result
 		}
 
 		state, dialErr := trust.DialInspectControl(ctx, addr, host, timeout, control)
 		if dialErr != nil {
-			result.ErrorMessage = fmt.Sprintf("request failed: %v", err)
+			result.ErrorMessage = redact.Text(fmt.Sprintf("request failed: %v", err))
 			return result
 		}
 

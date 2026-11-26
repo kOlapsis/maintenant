@@ -16,6 +16,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/redact"
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/kolapsis/maintenant/internal/update"
@@ -294,15 +295,15 @@ func endpointTrustEvent(ep *endpoint.Endpoint, result endpoint.CheckResult) (ale
 	switch {
 	case result.Degraded:
 		evt.Severity = alert.SeverityWarning
-		evt.Message = fmt.Sprintf("Endpoint %s is reachable but its certificate is not trusted: %s", ep.Target, result.DegradedReason)
+		evt.Message = fmt.Sprintf("Endpoint %s is reachable but its certificate is not trusted: %s", redact.URL(ep.Target), redact.Text(result.DegradedReason))
 		evt.Details = map[string]any{
-			"target": ep.Target,
-			"reason": result.DegradedReason,
+			"target": redact.URL(ep.Target),
+			"reason": redact.Text(result.DegradedReason),
 		}
 	case result.Success:
 		evt.Severity = alert.SeverityInfo
 		evt.IsRecover = true
-		evt.Message = fmt.Sprintf("Endpoint %s now presents a trusted certificate", ep.Target)
+		evt.Message = fmt.Sprintf("Endpoint %s now presents a trusted certificate", redact.URL(ep.Target))
 	default:
 		return evt, false
 	}
@@ -315,31 +316,32 @@ func endpointThresholdAlert(ep *endpoint.Endpoint, al *alert.EndpointAlert) (ale
 	if entityName == "" {
 		entityName = ep.Name
 	}
+	target, lastError := redact.URL(al.Target), redact.Text(al.LastError)
 	if al.Type == "alert" {
 		evt := alert.Event{
 			Source:     alert.SourceEndpoint,
 			AlertType:  "consecutive_failure",
 			Severity:   alert.SeverityCritical,
-			Message:    fmt.Sprintf("Endpoint %s failed %d consecutive checks", al.Target, al.Failures),
+			Message:    fmt.Sprintf("Endpoint %s failed %d consecutive checks", target, al.Failures),
 			EntityType: "endpoint",
 			EntityID:   al.EndpointID,
 			EntityName: entityName,
 			AgentID:    ep.AgentID,
 			Details: map[string]any{
-				"target":     al.Target,
+				"target":     target,
 				"failures":   al.Failures,
 				"threshold":  al.Threshold,
-				"last_error": al.LastError,
+				"last_error": lastError,
 			},
 			Timestamp: al.Timestamp,
 		}
 		return evt, "endpoint.alert", map[string]any{
 			"endpoint_id":          al.EndpointID,
 			"container_name":       al.ContainerName,
-			"target":               al.Target,
+			"target":               target,
 			"consecutive_failures": al.Failures,
 			"threshold":            al.Threshold,
-			"last_error":           al.LastError,
+			"last_error":           lastError,
 			"timestamp":            al.Timestamp,
 		}
 	}
@@ -348,13 +350,13 @@ func endpointThresholdAlert(ep *endpoint.Endpoint, al *alert.EndpointAlert) (ale
 		AlertType:  "consecutive_failure",
 		Severity:   alert.SeverityInfo,
 		IsRecover:  true,
-		Message:    fmt.Sprintf("Endpoint %s recovered after %d consecutive successes", al.Target, al.Successes),
+		Message:    fmt.Sprintf("Endpoint %s recovered after %d consecutive successes", target, al.Successes),
 		EntityType: "endpoint",
 		EntityID:   al.EndpointID,
 		EntityName: entityName,
 		AgentID:    ep.AgentID,
 		Details: map[string]any{
-			"target":    al.Target,
+			"target":    target,
 			"successes": al.Successes,
 			"threshold": al.Threshold,
 		},
@@ -363,7 +365,7 @@ func endpointThresholdAlert(ep *endpoint.Endpoint, al *alert.EndpointAlert) (ale
 	return evt, "endpoint.recovery", map[string]any{
 		"endpoint_id":           al.EndpointID,
 		"container_name":        al.ContainerName,
-		"target":                al.Target,
+		"target":                target,
 		"consecutive_successes": al.Successes,
 		"threshold":             al.Threshold,
 		"timestamp":             al.Timestamp,
