@@ -228,57 +228,26 @@ func (s *ContainerStore) InsertTransition(ctx context.Context, t *container.Stat
 }
 
 func (s *ContainerStore) ListTransitionsByContainer(ctx context.Context, containerID string, opts container.ListTransitionsOpts) ([]*container.StateTransition, int, error) {
-	countQuery := `SELECT COUNT(*) FROM state_transitions WHERE container_id=?`
-	var countArgs []interface{}
-	countArgs = append(countArgs, containerID)
-
-	query := `SELECT ` + transitionColumns + ` FROM state_transitions WHERE container_id=?`
-	var args []interface{}
-	args = append(args, containerID)
-
+	where := ` FROM state_transitions WHERE container_id=?`
+	args := []any{containerID}
 	if opts.Since != nil {
-		query += ` AND timestamp>=?`
+		where += ` AND timestamp>=?`
 		args = append(args, opts.Since.Unix())
-		countQuery += ` AND timestamp>=?`
-		countArgs = append(countArgs, opts.Since.Unix())
 	}
 	if opts.Until != nil {
-		query += ` AND timestamp<=?`
+		where += ` AND timestamp<=?`
 		args = append(args, opts.Until.Unix())
-		countQuery += ` AND timestamp<=?`
-		countArgs = append(countArgs, opts.Until.Unix())
 	}
 
-	var total int
-	if err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count transitions: %w", err)
-	}
-
-	query += ` ORDER BY timestamp DESC`
-	if opts.Limit > 0 {
-		query += fmt.Sprintf(` LIMIT %d`, opts.Limit)
-	}
-	if opts.Offset > 0 {
-		query += fmt.Sprintf(` OFFSET %d`, opts.Offset) // #nosec G202 -- integer formatting of an int option.
-	}
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list transitions: %w", err)
-	}
-	defer func(rows *sql.Rows) {
-		_ = rows.Close()
-	}(rows)
-
-	var transitions []*container.StateTransition
-	for rows.Next() {
-		t, err := scanTransitionRow(rows)
-		if err != nil {
-			return nil, 0, err
-		}
-		transitions = append(transitions, t)
-	}
-	return transitions, total, rows.Err()
+	return listPage(ctx, s.db, pageQuery{
+		what:         "transitions",
+		countSQL:     `SELECT COUNT(*)` + where,
+		selectSQL:    `SELECT ` + transitionColumns + where + ` ORDER BY timestamp DESC`,
+		args:         args,
+		limit:        opts.Limit,
+		offset:       opts.Offset,
+		defaultLimit: 50,
+	}, scanTransitionRow)
 }
 
 func (s *ContainerStore) CountRestartsSince(ctx context.Context, containerID string, since time.Time) (int, error) {

@@ -168,7 +168,7 @@ All routes are open in every edition.
 
 `GET /api/v1/containers/{id}` returns the same core fields as one flat object, plus `uptime` and, for a Kubernetes workload, `container_names`. `uptime` holds a percentage for `24h` and for every longer window the edition's history cap opens: `7d` on Community, plus `30d` on Personal and `90d` on Pro. Use the daily route for day-by-day history. A Swarm task also carries `swarm_service_id`, `swarm_service_name`, `swarm_node_id` and `swarm_task_slot`.
 
-`GET /api/v1/containers/{id}/transitions` query parameters: `since` and `until` (RFC 3339; `since` defaults to 24 hours ago, an invalid value removes the bound), `limit` (default 50) and `offset`. The answer is `{ "container_id", "transitions", "total", "has_more" }`, newest first.
+`GET /api/v1/containers/{id}/transitions` query parameters: `since` and `until` (RFC 3339; `since` defaults to 24 hours ago, an invalid value removes the bound), `limit` (default 50, at most 500) and `offset`. The answer is `{ "container_id", "transitions", "total", "has_more" }`, newest first.
 
 `GET /api/v1/containers/{id}/logs` query parameters: `lines` (default 100, at most 500) and `timestamps=true`. The answer is `{ "container_id", "container_name", "lines", "total_lines", "truncated" }`. Logs of a remote container are fetched from its agent (15-second deadline).
 
