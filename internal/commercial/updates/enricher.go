@@ -99,6 +99,7 @@ func (e *ProEnricher) enrichCVEs(ctx context.Context, r *update.UpdateResult) []
 	if query == nil {
 		e.logger.Debug("cve: no ecosystem mapping", "container", r.ContainerName, "image", r.Image)
 		e.recordEvaluation(ctx, r, &update.CVEEvaluation{Status: update.CVEUnsupported})
+		e.resolveOtherCVEs(ctx, r, nil)
 		return nil
 	}
 
@@ -123,17 +124,13 @@ func (e *ProEnricher) enrichCVEs(ctx context.Context, r *update.UpdateResult) []
 	})
 
 	entries := cveResults[r.ContainerID]
-	if len(entries) == 0 {
-		e.logger.Debug("cve: no vulnerabilities found", "container", r.ContainerName)
-		return nil
-	}
-
-	e.logger.Info("cve: vulnerabilities found",
-		"container", r.ContainerName, "count", len(entries))
+	e.logger.Debug("cve: evaluated", "container", r.ContainerName, "count", len(entries))
 
 	var cves []*update.ContainerCVE
+	keep := make([]string, 0, len(entries))
 	now := time.Now()
 	for _, entry := range entries {
+		keep = append(keep, entry.CVEID)
 		cve := &update.ContainerCVE{
 			ContainerID:     r.ContainerID,
 			AgentID:         r.AgentID,
@@ -150,8 +147,15 @@ func (e *ProEnricher) enrichCVEs(ctx context.Context, r *update.UpdateResult) []
 		}
 		cves = append(cves, cve)
 	}
+	e.resolveOtherCVEs(ctx, r, keep)
 
 	return cves
+}
+
+func (e *ProEnricher) resolveOtherCVEs(ctx context.Context, r *update.UpdateResult, keep []string) {
+	if err := e.store.ResolveContainerCVEs(ctx, r.AgentID, r.ContainerID, keep); err != nil {
+		e.logger.Warn("cve: failed to close the CVEs no longer found", "container", r.ContainerName, "error", err)
+	}
 }
 
 func (e *ProEnricher) resolveCVEQuery(ctx context.Context, r *update.UpdateResult) *ImageCVEQuery {
@@ -159,14 +163,16 @@ func (e *ProEnricher) resolveCVEQuery(ctx context.Context, r *update.UpdateResul
 		return nil
 	}
 	resolved := e.ecosystem.Resolve(ctx, r.Image, r.CurrentTag, r.CurrentDigest, nil)
-	if resolved == nil {
+	version, full := update.ReleaseVersion(r.CurrentTag)
+	// An image tag is not the version of a distribution package, so only a module versioned like its image is asked.
+	if resolved == nil || resolved.Ecosystem != goEcosystem || !full {
 		return nil
 	}
 	return &ImageCVEQuery{
 		ContainerID: r.ContainerID,
 		PackageName: resolved.PackageName,
 		Ecosystem:   resolved.Ecosystem,
-		Version:     r.CurrentTag,
+		Version:     version,
 	}
 }
 

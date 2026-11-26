@@ -336,7 +336,22 @@ func (s *ContainerStore) CountConfigured(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+// GetTransitionsInWindow returns the transitions of [from, to], preceded by the last one before from.
 func (s *ContainerStore) GetTransitionsInWindow(ctx context.Context, containerID string, from, to time.Time) ([]*container.StateTransition, error) {
+	var transitions []*container.StateTransition
+	seed, err := scanTransitionRow(s.db.QueryRowContext(ctx,
+		`SELECT `+transitionColumns+` FROM state_transitions
+		WHERE container_id=? AND timestamp<? ORDER BY timestamp DESC LIMIT 1`,
+		containerID, from.Unix(),
+	))
+	switch {
+	case err == nil:
+		transitions = append(transitions, seed)
+	case errors.Is(err, sql.ErrNoRows):
+	default:
+		return nil, fmt.Errorf("get transitions in window seed: %w", err)
+	}
+
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+transitionColumns+` FROM state_transitions
 		WHERE container_id=? AND timestamp>=? AND timestamp<=?
@@ -350,7 +365,6 @@ func (s *ContainerStore) GetTransitionsInWindow(ctx context.Context, containerID
 		_ = rows.Close()
 	}(rows)
 
-	var transitions []*container.StateTransition
 	for rows.Next() {
 		t, err := scanTransitionRow(rows)
 		if err != nil {

@@ -35,6 +35,7 @@ type UpdateStore interface {
 	// Version pins
 	InsertVersionPin(ctx context.Context, p *VersionPin) (string, error)
 	GetVersionPin(ctx context.Context, agentID, containerID string) (*VersionPin, error)
+	AdoptVersionPin(ctx context.Context, agentID, containerID, name, image string) (*VersionPin, error)
 	DeleteVersionPin(ctx context.Context, agentID, containerID string) error
 
 	// Update exclusions
@@ -43,12 +44,13 @@ type UpdateStore interface {
 	DeleteExclusion(ctx context.Context, id string) error
 
 	// CVE cache
-	InsertCVECacheEntry(ctx context.Context, e *CVECacheEntry) (string, error)
+	ReplaceCVECache(ctx context.Context, ecosystem, packageName, packageVersion string, entries []*CVECacheEntry) error
 	GetCVECacheEntries(ctx context.Context, ecosystem, packageName, packageVersion string) ([]*CVECacheEntry, error)
 	IsCVECacheFresh(ctx context.Context, ecosystem, packageName, packageVersion string) (bool, error)
 
 	// Container CVEs
 	UpsertContainerCVE(ctx context.Context, c *ContainerCVE) error
+	ResolveContainerCVEs(ctx context.Context, agentID, containerID string, keep []string) error
 	ListContainerCVEs(ctx context.Context, agentID, containerID string) ([]*ContainerCVE, error)
 	ListAllActiveCVEs(ctx context.Context, opts ListCVEsOpts) ([]*ContainerCVE, error)
 	GetCVESummaryCounts(ctx context.Context) (map[string]int, error)

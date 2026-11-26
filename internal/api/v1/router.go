@@ -301,7 +301,7 @@ func NewRouter(d HandlerDeps) *Router {
 
 	// Resource monitoring endpoints
 	if d.Resources != nil {
-		rh := NewResourceHandler(d.Resources)
+		rh := NewResourceHandler(d.Resources, d.Containers)
 		if d.AgentStore != nil {
 			rh.SetAgentDirectory(agentStoreDirectory{store: d.AgentStore})
 		}

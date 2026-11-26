@@ -24,7 +24,7 @@ When a new container starts, maintenant immediately begins tracking:
 | `running` | The container is up. |
 | `exited` | The container stopped with an exit code other than 0, 137 or 143, or with 137 after the out-of-memory killer stopped it. |
 | `completed` | The container stopped with exit code 0, 143 (`SIGTERM`) or 137 (`SIGKILL`, what `docker stop` falls back to) unless the out-of-memory killer sent the 137: a normal end, not a crash. |
-| `restarting` | The runtime reports the container as restarting. |
+| `restarting` | The runtime reports the container as restarting, or the container stopped with one of the clean exit codes above and its restart policy (`always`, `unless-stopped`) starts it again. A `docker stop` or `docker restart` makes it `completed`. |
 | `paused` | The container is paused. |
 | `created` | The container exists but never started. |
 | `dead` | The runtime gave up on the container. |
@@ -73,7 +73,7 @@ A container that is destroyed, or that the runtime no longer lists, is archived:
 
     | Workload | State |
     |----------|-------|
-    | Deployment | `running` when all desired replicas are ready, or when at least one is (`error_detail` then reads `partial: n/m ready`), `exited` on `ProgressDeadlineExceeded`, `completed` when scaled to 0, `created` otherwise |
+    | Deployment | `running` when all desired replicas are ready, or when at least one is (`error_detail` then reads `partial: n/m ready`), `exited` on `ProgressDeadlineExceeded` with no ready replica (the old replicas still serving keep it `running`, with `ProgressDeadlineExceeded` in `error_detail`), `completed` when scaled to 0, `created` otherwise |
     | StatefulSet, DaemonSet | `created` until a pod is ready, `running` after |
     | Bare pod | `running`, `restarting` (`CrashLoopBackOff`), `created` (pending or image pull errors), `exited` (failed or `OOMKilled`), `completed` (succeeded) |
 
@@ -116,7 +116,9 @@ Health states:
 | `starting` | Container just started, health check not yet run |
 | none | No health check defined: the API returns `health_status: null` and `has_health_check: false` |
 
-When a container goes from `healthy` to `unhealthy`, maintenant raises a `health_unhealthy` alert at Warning severity through the [Alert Engine](alerts.md), and resolves it when the container is healthy again. A container that never became healthy (`starting` to `unhealthy`) does not raise it, and `maintenant.alert.severity` does not change its severity. The alert is named after the container, and so is the `container.health_changed` event, which carries `id`, `container_name`, `health_status`, `previous_health`, `timestamp` and `agent_id`.
+A bare Kubernetes pod reads the readiness of its containers instead: `healthy` when all are ready, `starting` while a container that is not ready yet has not passed its startup probe or is within its first readiness window (`initialDelaySeconds` + `periodSeconds` × `failureThreshold` after it started), `unhealthy` otherwise.
+
+When a container becomes `unhealthy`, from `healthy` or from `starting` (a health check that never passed), maintenant raises a `health_unhealthy` alert at Warning severity through the [Alert Engine](alerts.md), and resolves it when the container is healthy again. `maintenant.alert.severity` does not change its severity. The alert is named after the container, and so is the `container.health_changed` event, which carries `id`, `container_name`, `health_status`, `previous_health`, `timestamp` and `agent_id`.
 
 ---
 
@@ -126,8 +128,9 @@ maintenant counts how many times a container came back to `running` after being 
 
 - **Threshold**: 3 restarts by default. Set it per container with `maintenant.alert.restart_threshold` (a positive integer; anything else is ignored).
 - **Severity**: Warning. The alert escalates in place to Critical when the count reaches three times the threshold (9 restarts with the default). `maintenant.alert.severity` has no effect on it.
-- **Not counted**: restarts that follow a `completed` state, such as `docker restart` or a clean stop followed by a start. Only crashes count.
-- **Resolution**: automatic. A start that finds the count below the threshold resolves the alert, and while the alert is open maintenant re-checks the running container every minute, so it resolves on its own once the 10-minute window no longer holds enough restarts. A container that is stopped or archived is not re-checked.
+- **Counted**: a start after a crash, and a start after a clean exit when the restart policy (`always` or `unless-stopped`) restarted the container by itself: such a container is `restarting` in between, so one that exits with code 0 in a loop raises the alert.
+- **Not counted**: a start that follows a `completed` state, such as `docker restart`, a clean stop followed by a start, or a container a scheduler starts again. The first start of a container is not a restart either. A container reported by a remote agent counts its crashes only.
+- **Resolution**: automatic. A start that finds the count below the threshold resolves the alert, and while the alert is open maintenant re-checks the running container every minute, so it resolves on its own once the 10-minute window no longer holds enough restarts. A container that ends `completed` has its alert resolved at the next minute check, and one that is removed has it resolved at once. A container that stays `exited` keeps it.
 
 ```yaml
 labels:
@@ -151,7 +154,7 @@ Access logs via the API:
 - `GET /api/v1/containers/{id}/logs`: fetch recent logs. `lines` defaults to 100 and is capped at 500, `timestamps=true` prefixes each line with its time.
 - `GET /api/v1/containers/{id}/logs/stream`: SSE stream of live logs. It emits `container.log_line` events, then a final `container.log_error` event when the container stops, and a keep-alive comment every 25 seconds. `lines` sets the initial backlog (default 100, maximum 500). On Kubernetes, `container` selects a container of the pod. While the server's own runtime is disconnected, it answers `503 RUNTIME_UNAVAILABLE`, like `logs`.
 
-Containers of a [remote agent](multihost.md) are read through that agent, whatever the state of the server's own runtime. A tail waits at most 15 seconds, and an agent serves four live streams at a time. The API answers `AGENT_OFFLINE` (503), `AGENT_TOO_OLD` (501), `LOGS_BUSY` (429) or `LOGS_TIMEOUT` (504) when it cannot.
+Containers of a [remote agent](multihost.md) are read through that agent, whatever the state of the server's own runtime. A tail waits at most 15 seconds, and an agent serves four live streams at a time. Each line is cut at 8 KiB. The API answers `AGENT_OFFLINE` (503), `AGENT_TOO_OLD` (501), `LOGS_BUSY` (429) or `LOGS_TIMEOUT` (504) when it cannot.
 
 ---
 
@@ -196,6 +199,8 @@ The response carries `monitor_id`, `monitor_type` (`container`) and a `days` arr
 | Community | `24h`, `7d` |
 | Personal | `24h`, `7d`, `30d` |
 | Pro | `24h`, `7d`, `30d`, `90d` |
+
+Each percentage uses the same rule as the daily bar: the share of the window the container was `running` and not `unhealthy`, counted from the moment maintenant first saw it when that falls inside the window.
 
 Completed days are aggregated once a day ends, so the history outlives the raw transitions. A day past the raw retention that was never aggregated has no value, and an archived container has no value after its archival.
 

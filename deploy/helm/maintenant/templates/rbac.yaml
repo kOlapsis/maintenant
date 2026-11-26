@@ -1,4 +1,7 @@
-{{- if and .Values.serviceAccount.create .Values.rbac.create }}
+{{- if .Values.rbac.create }}
+{{- if and (not .Values.serviceAccount.create) (not .Values.serviceAccount.name) }}
+{{- fail "rbac.create=true with serviceAccount.create=false needs serviceAccount.name: the chart will not grant cluster-wide read access to the namespace's default ServiceAccount. Set serviceAccount.name to your ServiceAccount, or rbac.create=false to manage the permissions yourself." }}
+{{- end }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

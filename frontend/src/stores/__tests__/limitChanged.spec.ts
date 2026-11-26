@@ -69,4 +69,15 @@ describe('dashboard unified monitors', () => {
     expect(monitors.find((m) => m.id === 'endpoint:e')!.status).toBe('unknown')
     expect(monitors.find((m) => m.id === 'certificate:c')!.status).toBe('unknown')
   })
+
+  it('leave out a retired endpoint the Endpoints page asked to see', () => {
+    const endpoints = useEndpointsStore()
+    endpoints.showRetired = true
+    endpoints.endpoints = [endpoint({ id: 'live' }), endpoint({ id: 'gone', active: false })]
+
+    const dashboard = useDashboardStore()
+
+    expect(dashboard.monitors.map((m) => m.id)).toEqual(['endpoint:live'])
+    expect(dashboard.endpointSummary.total).toBe(1)
+  })
 })

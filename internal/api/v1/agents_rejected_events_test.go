@@ -56,3 +56,42 @@ func TestAgentHandler_ReportsRejectedEvents(t *testing.T) {
 	require.NoError(t, json.Unmarshal(get.Body.Bytes(), &one))
 	assert.EqualValues(t, 7, one["rejected_events"])
 }
+
+type unreachableRuntimeSessions map[string]bool
+
+func (unreachableRuntimeSessions) IsConnected(string) bool                  { return true }
+func (u unreachableRuntimeSessions) RuntimeUnreachable(agentID string) bool { return u[agentID] }
+func (unreachableRuntimeSessions) Close(string, string)                     {}
+func (unreachableRuntimeSessions) GRPCServerCertificate() (string, bool)    { return "", false }
+
+func TestAgentHandler_ReportsAnUnreachableRuntime(t *testing.T) {
+	logger := slog.New(slog.DiscardHandler)
+	agents := store.NewAgentStore(storetest.Open(t, logger))
+	for _, id := range []string{"web-01", "web-02"} {
+		require.NoError(t, agents.Insert(context.Background(), &agent.Agent{
+			AgentID: id, Hostname: id, Label: id, Status: "active",
+			DetectedRuntime: "docker", CreatedAt: time.Now(),
+		}))
+	}
+	h := NewAgentHandler(agents, unreachableRuntimeSessions{"web-01": true}, nil, logger, "", "", time.Minute, nil)
+
+	rec := httptest.NewRecorder()
+	h.HandleListAgents(rec, httptest.NewRequest(http.MethodGet, "/api/v1/agents", nil))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var listed struct {
+		Agents []map[string]any `json:"agents"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &listed))
+	require.Len(t, listed.Agents, 2)
+	for _, a := range listed.Agents {
+		assert.Equal(t, a["agent_id"] == "web-01", a["runtime_unreachable"], a["agent_id"])
+	}
+
+	noSessions := NewAgentHandler(agents, nil, nil, logger, "", "", time.Minute, nil)
+	rec = httptest.NewRecorder()
+	noSessions.HandleListAgents(rec, httptest.NewRequest(http.MethodGet, "/api/v1/agents", nil))
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &listed))
+	for _, a := range listed.Agents {
+		assert.Equal(t, false, a["runtime_unreachable"])
+	}
+}

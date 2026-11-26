@@ -27,6 +27,9 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	if err != nil || ep == nil {
 		return err
 	}
+	if _, stopped := s.agentStopped.Load(agentContainerKey{agentID, ep.ExternalID}); stopped {
+		return nil
+	}
 
 	statusCode := int(ev.GetStatusCode())
 	// Degraded is a success: the agent reached the host, only its certificate
@@ -48,4 +51,68 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		result.ID = uid.EventRecord(agentID, meta.EventID, "check_result")
 	}
 	return s.applyCheckResult(ctx, ep.ID, result)
+}
+
+type agentContainerKey struct {
+	agentID    string
+	externalID string
+}
+
+// HandleAgentContainerState sets the endpoints of an agent's container to unknown when it stops, until it runs again.
+func (s *Service) HandleAgentContainerState(ctx context.Context, agentID string, ev *agentpb.ContainerEvent) {
+	key := agentContainerKey{agentID, ev.GetContainerId()}
+	s.agentStopped.Delete(agentAbsentKey(key))
+	switch ev.GetState() {
+	case agentpb.ContainerState_CONTAINER_STATE_RUNNING:
+		s.agentStopped.Delete(key)
+		return
+	case agentpb.ContainerState_CONTAINER_STATE_EXITED, agentpb.ContainerState_CONTAINER_STATE_DEAD:
+	default:
+		return
+	}
+	if ev.GetDestroyed() {
+		s.agentStopped.Delete(key)
+		return
+	}
+	if _, known := s.agentStopped.LoadOrStore(key, struct{}{}); known {
+		return
+	}
+
+	endpoints, err := s.store.ListEndpointsByExternalID(ctx, agentID, key.externalID)
+	if err != nil {
+		s.agentStopped.Delete(key)
+		s.logger.Error("list endpoints for agent container stop", "external_id", key.externalID, "agent_id", agentID, "error", err)
+		return
+	}
+	for _, ep := range endpoints {
+		s.setContainerStopped(ctx, ep)
+	}
+}
+
+// agentAbsentKey marks, in agentStopped, a container that the last inventory of its agent did not list.
+type agentAbsentKey agentContainerKey
+
+// RetireAgentContainers deactivates the label endpoints of the agent's containers that two inventories in a row did not list.
+func (s *Service) RetireAgentContainers(ctx context.Context, agentID string, live map[string]struct{}) {
+	endpoints, err := s.store.ListEndpoints(ctx, ListEndpointsOpts{Source: string(SourceLabel), AgentFilter: &agentID})
+	if err != nil {
+		s.logger.Error("list agent endpoints for inventory", "agent_id", agentID, "error", err)
+		return
+	}
+	gone := make(map[string]string)
+	for _, ep := range endpoints {
+		if _, ok := live[ep.ExternalID]; !ok && ep.ExternalID != "" {
+			gone[ep.ExternalID] = ep.ContainerName
+		}
+	}
+	for externalID, containerName := range gone {
+		key := agentContainerKey{agentID, externalID}
+		// One inventory can be older than the event that created the container.
+		if _, absent := s.agentStopped.LoadOrStore(agentAbsentKey(key), struct{}{}); !absent {
+			continue
+		}
+		s.agentStopped.Delete(agentAbsentKey(key))
+		s.agentStopped.Delete(key)
+		s.SyncAgentEndpoints(ctx, agentID, containerName, externalID, nil)
+	}
 }

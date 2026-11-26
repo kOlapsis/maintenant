@@ -525,3 +525,64 @@ func TestDispatcher_NilHostOSHandlerSilentlyIgnoresEvent(t *testing.T) {
 
 	assert.NoError(t, d.Dispatch(context.Background(), dispatchAgentID, evt))
 }
+
+type containerFollowerCall struct {
+	externalID string
+	state      agentpb.ContainerState
+}
+
+type mockContainerFollower struct {
+	states  []containerFollowerCall
+	retired []map[string]struct{}
+}
+
+func (m *mockContainerFollower) HandleAgentContainerState(_ context.Context, _ string, ev *agentpb.ContainerEvent) {
+	m.states = append(m.states, containerFollowerCall{ev.GetContainerId(), ev.GetState()})
+}
+
+func (m *mockContainerFollower) RetireAgentContainers(_ context.Context, _ string, live map[string]struct{}) {
+	m.retired = append(m.retired, live)
+}
+
+func TestDispatcher_ContainerStatesReachTheMonitorsDeclaredOnThem(t *testing.T) {
+	exited := agentpb.ContainerState_CONTAINER_STATE_EXITED
+	running := agentpb.ContainerState_CONTAINER_STATE_RUNNING
+	dispatch := func(d *Dispatcher, evt *agentpb.AgentEvent) {
+		t.Helper()
+		evt.AgentId = dispatchAgentID
+		require.NoError(t, d.Dispatch(context.Background(), dispatchAgentID, evt))
+	}
+
+	t.Run("a live event carries the state", func(t *testing.T) {
+		f := &mockContainerFollower{}
+		d := NewDispatcher(DispatchDeps{ContainerFollower: f})
+		dispatch(d, &agentpb.AgentEvent{Body: &agentpb.AgentEvent_Container{Container: &agentpb.ContainerEvent{ContainerId: "ctr-1", State: exited}}})
+		assert.Equal(t, []containerFollowerCall{{"ctr-1", exited}}, f.states)
+		assert.Empty(t, f.retired)
+	})
+
+	t.Run("a replayed event says nothing of the present", func(t *testing.T) {
+		f := &mockContainerFollower{}
+		d := NewDispatcher(DispatchDeps{ContainerFollower: f})
+		dispatch(d, &agentpb.AgentEvent{Replayed: true, Body: &agentpb.AgentEvent_Container{Container: &agentpb.ContainerEvent{ContainerId: "ctr-1", State: exited}}})
+		assert.Empty(t, f.states)
+	})
+
+	t.Run("an inventory carries every state and names what is left", func(t *testing.T) {
+		f := &mockContainerFollower{}
+		d := NewDispatcher(DispatchDeps{ContainerFollower: f})
+		dispatch(d, &agentpb.AgentEvent{Body: &agentpb.AgentEvent_Inventory{Inventory: &agentpb.ContainerInventory{
+			Complete:   true,
+			Containers: []*agentpb.ContainerEvent{{ContainerId: "ctr-1", State: running}, {ContainerId: "ctr-2", State: exited}},
+		}}})
+		assert.Equal(t, []containerFollowerCall{{"ctr-1", running}, {"ctr-2", exited}}, f.states)
+		assert.Equal(t, []map[string]struct{}{{"ctr-1": {}, "ctr-2": {}}}, f.retired)
+	})
+
+	t.Run("an inventory that could not be read retires nothing", func(t *testing.T) {
+		f := &mockContainerFollower{}
+		d := NewDispatcher(DispatchDeps{ContainerFollower: f})
+		dispatch(d, &agentpb.AgentEvent{Body: &agentpb.AgentEvent_Inventory{Inventory: &agentpb.ContainerInventory{}}})
+		assert.Empty(t, f.retired)
+	})
+}

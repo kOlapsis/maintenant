@@ -23,6 +23,7 @@ type CertificateStore interface {
 	SetMonitorLimited(ctx context.Context, id string, limited bool) error
 	CountActiveMonitors(ctx context.Context, sources ...CertSource) (int, error)
 	CountLimitedMonitors(ctx context.Context) (int, error)
+	CountAgentLabelMonitors(ctx context.Context, agentID string) (int, error)
 
 	// Check results
 	InsertCheckResult(ctx context.Context, result *CertCheckResult) (string, error)

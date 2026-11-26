@@ -228,7 +228,7 @@ Pick the tab matching the host environment. Replace `grpcs://agents.example.com`
 
 What happens on first boot:
 
-1. The agent detects the local runtime (Docker, Swarm, or Kubernetes). If the runtime does not answer, the agent logs `container runtime unreachable, reporting host metrics only until it answers` and retries in the background with a delay from 1 second to 1 minute. It logs `container runtime reachable, container monitoring started` once it answers.
+1. The agent detects the local runtime (Docker, Swarm, or Kubernetes). If the runtime does not answer, the agent logs `container runtime unreachable, reporting host metrics only until it answers` and retries in the background with a delay from 1 second to 1 minute. After three failed attempts it tells the server, which shows the containers it still holds for this host as stale, with the cause "runtime unreachable". It logs `container runtime reachable, container monitoring started` once it answers.
 2. It generates an Ed25519 keypair and persists it to `identity.json` (mode `0600`) in its data dir.
 3. It calls `RegisterAgent` with the token + public key, then enters the streaming loop.
 
@@ -282,7 +282,7 @@ The full reference (server-side variables, rate limits, stale thresholds) is in 
     The server's edition has reached its enrolled-host cap. Remove an unused agent (**Agents → Delete**) or upgrade the edition, then retry.
 
 !!! failure "`enrollment token already consumed` / `expired`"
-    Tokens are single-use and time-limited. Generate a fresh one and re-run the install command.
+    Tokens are single-use and time-limited. Generate a fresh one and re-run the install command. One case is accepted: an active agent that repeats the enrollment that consumed the token, with the same agent id and the same key, for example because the server's answer was lost, is answered as enrolled.
 
 !!! failure "Host stays `disconnected`"
     - Confirm the gRPC port/subdomain is reachable from the agent host (firewall, DNS, reverse-proxy route), and that `MAINTENANT_GRPC_LISTEN` is not left on its loopback default.

@@ -22,6 +22,7 @@ maintenant raises alerts from every monitoring subsystem. An alert is identified
 | `resource` | `cpu_threshold`, `memory_threshold` | `container` | Warning | The metric is back under its threshold |
 | `update` | `update_available` | `container` | Info, Warning or Critical by the risk score of the update | A scan no longer finds the update |
 | `agent` | `disconnected` | `agent` | Warning | The agent reconnects; revoking or deleting it clears the alert |
+| `agent` | `runtime_unreachable` | `agent` | Warning | The agent reports that its runtime answers again, or disconnects; revoking or deleting it clears the alert |
 | `host` | `os_eol` | `agent` | Warning, then Critical | The host reports a supported version |
 | `security` | `dangerous_configuration` | `container` | Critical, Warning or Info, by the worst insight | The container has no insight left |
 | `security` | `posture_threshold` (Personal) | `infrastructure` | Warning, Critical more than 20 points under the threshold | The score is back at or above the threshold |
@@ -33,6 +34,7 @@ maintenant raises alerts from every monitoring subsystem. An alert is identified
 | `swarm` | `update_rollback`, `update_stalled` | `swarm_service` | Warning | A rolling update of the service completes |
 | `kubernetes` | `replica_health` | `workload` | Warning, Critical with no ready replica | The workload has all its replicas ready |
 | `kubernetes` | `crash_loop` | `pod` | Critical | The pod stops crash-looping |
+| `kubernetes` | `pod_pending` | `pod` | Warning | The pod can start |
 | `kubernetes` | `node_condition` | `node` | Critical when not Ready, Warning under memory, disk or PID pressure | The node has no problem left |
 
 Removing the object an alert is about resolves the alert. A container labelled `maintenant.ignore`, a Swarm service labelled with it and a Kubernetes workload annotated with it raise none. The Swarm service alerts read the label on the service itself (`deploy.labels` in a stack file), not on its task containers.
@@ -40,12 +42,12 @@ Removing the object an alert is about resolves the alert. A container labelled `
 ### Container alerts
 
 - **`restart_loop`** fires when a container comes back up and has restarted at least `maintenant.alert.restart_threshold` times (default 3) in the last 10 minutes.
-- **`health_unhealthy`** fires only when a container that was `healthy` becomes `unhealthy`. A container that goes from `starting` straight to `unhealthy` raises nothing.
+- **`health_unhealthy`** fires when a container becomes `unhealthy`, whether it was `healthy` or still `starting` (a health check that never passed). A container that is `starting` raises nothing.
 - **`maintenant.alert.severity`** sets the severity of `container_down` alone. The other container alerts keep the severities above.
 
 ### Container down
 
-A container that stops and stays stopped raises no alert on its own: `restart_loop` needs it to come back, and `health_unhealthy` needs a `HEALTHCHECK`. Set `MAINTENANT_CONTAINER_DOWN_AFTER` to a Go duration (`5m`, `30s`, `1h`) and `container_down` fires once a container has been in `exited` or `dead` for that long, at the severity configured on the container (`warning` unless `maintenant.alert.severity` says otherwise). It resolves on its own when the container runs again.
+A container that stops and stays stopped raises no alert on its own: `restart_loop` needs it to come back, and `health_unhealthy` needs a `HEALTHCHECK`. Set `MAINTENANT_CONTAINER_DOWN_AFTER` to a Go duration (`5m`, `30s`, `1h`) and `container_down` fires once a container has been in `exited` or `dead` for that long, at the severity configured on the container (`warning` unless `maintenant.alert.severity` says otherwise). It resolves on its own when the container runs again. The container of a failed Swarm task stays in the task history once Swarm replaces it: it raises no `container_down` while a task container of the same service runs, and an alert it raised before resolves then.
 
 The check is off by default (unset, or `0`), because switching it on alerts retroactively on every container already stopped. A value that is not a valid duration stops maintenant from starting, so a typo cannot leave the check silently off. A container that stops cleanly is recorded as `completed` and never counts as down, so a finished job stays quiet. Clean means exit code 0, or 143 (SIGTERM), or 137 (SIGKILL) unless the kernel's out-of-memory killer sent it: an OOM kill is a crash. The sweep runs every 30 seconds, which is the alert's resolution, not its threshold. It covers the containers of remote agents as well.
 
@@ -65,6 +67,8 @@ CPU and memory are independent alerts, `cpu_threshold` and `memory_threshold`, a
 
 An agent alert fires when a remote agent stops reporting, whether its stream dropped or it stopped sending for longer than `MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS` (60 seconds by default), and resolves on reconnection. Revoking or deleting an agent clears it instead of raising one, and nothing fires while the server itself shuts down.
 
+A second agent alert, `runtime_unreachable`, fires when an agent that is still connected reports that its container runtime stopped answering. It resolves when the agent reports that the runtime answers again, which it also states each time it connects, and revoking or deleting the agent clears it. It also resolves when the agent disconnects, since the `disconnected` alert then says what is known; the agent states its runtime again when it reconnects, and the alert is raised again if the runtime still does not answer.
+
 A host alert fires when the operating system of a monitored host reaches the end of its free security support: warning 30 days before, escalated in place to critical the day after the date, and resolved once the host reports a newer version. See [Host OS End-of-Support](host-os.md).
 
 ### Security alerts
@@ -82,7 +86,8 @@ Swarm alerts come from the Swarm cluster the server is connected to, and Kuberne
 - **`quorum_degraded`** fires once when fewer managers than the quorum (more than half of them) are ready, or when the managers report that the swarm has no leader.
 - **`update_rollback`** and **`update_stalled`** follow the rolling update status of a service: a rollback that completed, or an update that paused.
 - **`replica_health`** (Kubernetes) fires after a workload has been under-replicated for 5 minutes, and escalates to Critical when no replica is ready. Jobs and workloads with no desired replica are not checked.
-- **`crash_loop`** (Kubernetes) fires for a pod in `CrashLoopBackOff`, or that restarted 3 times in 10 minutes.
+- **`crash_loop`** (Kubernetes) fires for a pod in `CrashLoopBackOff`, or that restarted 3 times in 10 minutes. Init containers count.
+- **`pod_pending`** (Kubernetes) fires for a pod that no Deployment, StatefulSet or DaemonSet owns once it has been unable to start for 5 minutes: unschedulable, or a container stuck on `ImagePullBackOff`, `ErrImagePull`, `CreateContainerConfigError` or `InvalidImageName`. A pod that is still starting (init containers, image pull) raises nothing. The pods of those controllers are covered by `replica_health`.
 - **`node_condition`** is one alert per node. A node whose Ready condition is False or Unknown counts as not ready. If the nodes cannot be listed, no node alert is raised or resolved.
 
 The Kubernetes alerts are evaluated every 30 seconds.
@@ -97,8 +102,8 @@ See [Docker Swarm](swarm.md) and the [Kubernetes guide](../guides/kubernetes.md)
 - **Same event again.** While an alert is active, a further event with the same source, type and entity is ignored. One with a higher severity raises the active alert in place: new severity, message, entity name and details, a new `alert.fired` broadcast and a new notification whose message starts with "Severity raised from X to Y", and the escalation policies are evaluated again. The severity of an active alert never goes down. If the alert is already acknowledged, it keeps its acknowledgment: the notification is still sent once, but no escalation starts again.
 - **Recovery.** The alert becomes `resolved` and gets a `resolved_at`. A second alert record, `resolved` with severity `info` and the recovery message, is stored and referenced by `resolved_by_id`. Channels receive a resolved notification, routed by the severity, source and entity of the original alert.
 - **Entity removed.** When a container is archived, an endpoint, a heartbeat or a certificate is deleted, or a heartbeat is paused, its active alerts are resolved without a recovery record and without a notification (the dashboard still receives `alert.resolved`). At startup, maintenant also resolves any active alert whose container, agent, heartbeat, endpoint or certificate no longer exists, so alerts left behind by an earlier run cannot linger.
-- **Silenced.** An alert that fires while a [silence rule](#silence-rules) or a maintenance window matches is stored as `silenced` and broadcast as `alert.silenced`. It is not sent and not escalated.
-- **Retention.** Once a day, resolved and silenced alerts are deleted 90 days after their resolution (or after their creation when they have no resolution time). An active alert is never deleted.
+- **Silenced.** An alert that fires while a [silence rule](#silence-rules) or a maintenance window matches is stored as `silenced` and broadcast as `alert.silenced`. It is not sent and not escalated while it is held. Once no rule and no window covers it any more, it becomes `active`, is sent and is escalated like a first event, and if its entity recovers before that it is resolved without a notification.
+- **Retention.** At startup and then once a day, resolved and silenced alerts are deleted 90 days after their resolution (or after their creation when they have no resolution time). An active alert is never deleted.
 
 ---
 
@@ -160,7 +165,7 @@ POST /api/v1/channels
 
 #### Webhook payload
 
-maintenant sends one `POST` per notification, with `Content-Type: application/json`, the channel's own headers and `X-maintenant-Delivery`, the UUID of the delivery, which stays the same from one attempt to the next. Any 2xx answer counts as delivered; a 4xx other than 408 and 429 fails at once; anything else, or no answer within 10 seconds, is retried as described in [Delivery and Retries](#delivery-and-retries).
+maintenant sends one `POST` per notification, with `Content-Type: application/json`, the channel's own headers and `X-maintenant-Delivery`, the UUID of the delivery, which stays the same from one attempt to the next. Any 2xx answer counts as delivered; a 4xx other than 408 and 429 fails at once; anything else, or no answer within 10 seconds, is retried as described in [Delivery and Retries](#delivery-and-retries). A 307 or 308 redirect is followed, since it keeps the `POST` and its body; a 301, 302 or 303 counts as a failed attempt and is retried, so give the channel the final address.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -194,14 +199,14 @@ An alert that fires:
     "alert_type": "consecutive_failure",
     "severity": "critical",
     "status": "active",
-    "message": "Endpoint https://api.example.com/health failed 3 consecutive checks",
+    "message": "Endpoint https://api.example.com failed 3 consecutive checks",
     "entity_type": "endpoint",
     "entity_id": "0198b1c2-8b4f-7a11-8d22-3e5f6071b8c9",
     "entity_name": "api",
     "fired_at": "2026-03-01T02:00:00Z",
     "created_at": "2026-03-01T02:00:00Z",
     "details": {
-      "target": "https://api.example.com/health",
+      "target": "https://api.example.com",
       "failures": 3,
       "threshold": 3,
       "last_error": "connection refused"
@@ -233,7 +238,7 @@ The same alert when it recovers. The id, the host, the entity, `fired_at` and `d
     "resolved_at": "2026-03-01T02:04:30Z",
     "resolved_by_id": "0198b1c6-9d01-7c22-b733-4f6a7182c9da",
     "details": {
-      "target": "https://api.example.com/health",
+      "target": "https://api.example.com",
       "failures": 3,
       "threshold": 3,
       "last_error": "connection refused"
@@ -502,6 +507,8 @@ Each notification is written to the `notification_deliveries` table, then sent a
 The notifications of one alert to one channel reach the channel in order: a recovery waits until the alert it resolves has been delivered or has failed, even when that alert is waiting for a retry. An alert resolved before its notification went out is still notified, as it was when it fired, and its recovery follows. A reminder that has not gone out yet is replaced by the next reminder of the same alert to the same channel, so a destination back after a long outage receives the latest one only.
 
 A failed attempt is retried 5 seconds later, then 10, 20, 40 seconds later and so on, the wait doubling up to one hour. A sender can lengthen the wait, never shorten it: a Telegram rate limit raises it to the delay Telegram asked for. A notification still not delivered 24 hours after it was created is recorded as `failed` and not retried, and one found older than that at startup is closed the same way without being sent. A refusal that will not change, an HTTP 4xx other than 408 and 429, fails at once, as does an email channel with no SMTP server configured. An HTTP attempt times out after 10 seconds and an email attempt after 30. Every failed attempt is logged with its error.
+
+While the database does not answer, an alert that could not be stored is kept in memory and stored again every 30 seconds until it succeeds. A notification whose triggers or channels could not be read is routed again every 30 seconds, and given up with an error in the log after 24 hours.
 
 An attempt is sent once, even by several instances sharing one PostgreSQL database. If maintenant stops between a successful send and its record, the notification goes out again with the same `X-maintenant-Delivery` id, so a webhook receiver can drop the copy.
 

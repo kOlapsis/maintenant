@@ -362,30 +362,42 @@ func (s *UpdateStore) DeleteOrphanImageUpdates(ctx context.Context) (int64, erro
 
 // --- CVE cache ---
 
-func (s *UpdateStore) InsertCVECacheEntry(ctx context.Context, e *update.CVECacheEntry) (string, error) {
-	e.ID = uid.New()
-	_, err := s.writer.Exec(ctx,
-		`INSERT INTO cve_cache
-		(id, ecosystem, package_name, package_version, cve_id, cvss_score, cvss_vector, severity,
-		 summary, fixed_in, references_json, fetched_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(ecosystem, package_name, package_version, cve_id) DO UPDATE SET
-			cvss_score=excluded.cvss_score,
-			cvss_vector=excluded.cvss_vector,
-			severity=excluded.severity,
-			summary=excluded.summary,
-			fixed_in=excluded.fixed_in,
-			references_json=excluded.references_json,
-			fetched_at=excluded.fetched_at,
-			expires_at=excluded.expires_at`,
-		e.ID, e.Ecosystem, e.PackageName, e.PackageVersion, e.CVEID, e.CVSSScore, e.CVSSVector,
-		string(e.Severity), e.Summary, e.FixedIn, e.ReferencesJSON,
-		e.FetchedAt.Unix(), e.ExpiresAt.Unix(),
-	)
+// ReplaceCVECache stores entries as the whole cached answer for one package version, or leaves the cache as it was.
+func (s *UpdateStore) ReplaceCVECache(ctx context.Context, ecosystem, packageName, packageVersion string, entries []*update.CVECacheEntry) error {
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM cve_cache WHERE ecosystem = ? AND package_name = ? AND package_version = ?`,
+			ecosystem, packageName, packageVersion); err != nil {
+			return err
+		}
+		for _, e := range entries {
+			e.ID = uid.New()
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO cve_cache
+				(id, ecosystem, package_name, package_version, cve_id, cvss_score, cvss_vector, severity,
+				 summary, fixed_in, references_json, fetched_at, expires_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(ecosystem, package_name, package_version, cve_id) DO UPDATE SET
+					cvss_score=excluded.cvss_score,
+					cvss_vector=excluded.cvss_vector,
+					severity=excluded.severity,
+					summary=excluded.summary,
+					fixed_in=excluded.fixed_in,
+					references_json=excluded.references_json,
+					fetched_at=excluded.fetched_at,
+					expires_at=excluded.expires_at`,
+				e.ID, ecosystem, packageName, packageVersion, e.CVEID, e.CVSSScore, e.CVSSVector,
+				string(e.Severity), e.Summary, e.FixedIn, e.ReferencesJSON,
+				e.FetchedAt.Unix(), e.ExpiresAt.Unix()); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
-		return "", fmt.Errorf("insert cve cache entry: %w", err)
+		return fmt.Errorf("replace cve cache: %w", err)
 	}
-	return e.ID, nil
+	return nil
 }
 
 func (s *UpdateStore) GetCVECacheEntries(ctx context.Context, ecosystem, packageName, packageVersion string) ([]*update.CVECacheEntry, error) {
@@ -434,12 +446,28 @@ func (s *UpdateStore) UpsertContainerCVE(ctx context.Context, c *update.Containe
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(agent_id, container_id, cve_id) DO UPDATE SET
 			severity=excluded.severity, cvss_score=excluded.cvss_score,
-			summary=excluded.summary, fixed_in=excluded.fixed_in`,
+			summary=excluded.summary, fixed_in=excluded.fixed_in, resolved_at=NULL`,
 		c.ID, uid.Agent(c.AgentID), c.ContainerID, c.CVEID, string(c.Severity), c.CVSSScore, c.Summary, c.FixedIn,
 		c.FirstDetectedAt.Unix(),
 	)
 	if err != nil {
 		return fmt.Errorf("upsert container cve: %w", err)
+	}
+	return nil
+}
+
+// ResolveContainerCVEs closes the active CVEs of a container that are not in keep.
+func (s *UpdateStore) ResolveContainerCVEs(ctx context.Context, agentID, containerID string, keep []string) error {
+	query := `UPDATE container_cves SET resolved_at = ? WHERE agent_id = ? AND container_id = ? AND resolved_at IS NULL`
+	args := []any{time.Now().Unix(), uid.Agent(agentID), containerID}
+	if len(keep) > 0 {
+		query += ` AND cve_id NOT IN (?` + strings.Repeat(", ?", len(keep)-1) + `)`
+		for _, id := range keep {
+			args = append(args, id)
+		}
+	}
+	if _, err := s.writer.Exec(ctx, query, args...); err != nil {
+		return fmt.Errorf("resolve container cves: %w", err)
 	}
 	return nil
 }
@@ -567,15 +595,16 @@ func (s *UpdateStore) GetCVEEvaluation(ctx context.Context, agentID, containerID
 func (s *UpdateStore) InsertVersionPin(ctx context.Context, p *update.VersionPin) (string, error) {
 	p.ID = uid.New()
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO version_pins (id, agent_id, container_id, image, pinned_tag, pinned_digest, reason, pinned_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO version_pins (id, agent_id, container_id, container_name, image, pinned_tag, pinned_digest, reason, pinned_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(agent_id, container_id) DO UPDATE SET
+			container_name=excluded.container_name,
 			image=excluded.image,
 			pinned_tag=excluded.pinned_tag,
 			pinned_digest=excluded.pinned_digest,
 			reason=excluded.reason,
 			pinned_at=excluded.pinned_at`,
-		p.ID, uid.Agent(p.AgentID), p.ContainerID, p.Image, p.PinnedTag, p.PinnedDigest, p.Reason, p.PinnedAt.Unix(),
+		p.ID, uid.Agent(p.AgentID), p.ContainerID, p.ContainerName, p.Image, p.PinnedTag, p.PinnedDigest, p.Reason, p.PinnedAt.Unix(),
 	)
 	if err != nil {
 		return "", fmt.Errorf("insert version pin: %w", err)
@@ -583,11 +612,87 @@ func (s *UpdateStore) InsertVersionPin(ctx context.Context, p *update.VersionPin
 	return p.ID, nil
 }
 
+const versionPinColumns = `id, agent_id, container_id, container_name, image, pinned_tag, pinned_digest, reason, pinned_at`
+
 func (s *UpdateStore) GetVersionPin(ctx context.Context, agentID, containerID string) (*update.VersionPin, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, agent_id, container_id, image, pinned_tag, pinned_digest, reason, pinned_at
+		`SELECT `+versionPinColumns+`
 		FROM version_pins WHERE agent_id = ? AND container_id = ?`, uid.Agent(agentID), containerID)
 	return scanVersionPin(row)
+}
+
+const pinHolderGone = `NOT EXISTS (SELECT 1 FROM containers c WHERE c.agent_id = version_pins.agent_id
+	AND c.external_id = version_pins.container_id AND c.archived = 0)`
+
+// AdoptVersionPin returns the pin that holds a container back: its own, else one for the same image repository set on its Swarm service on any host or left on its host by a gone container of the same name, which then moves to it.
+func (s *UpdateStore) AdoptVersionPin(ctx context.Context, agentID, containerID, name, image string) (*update.VersionPin, error) {
+	pin, err := s.GetVersionPin(ctx, agentID, containerID)
+	if err != nil || pin != nil {
+		return pin, err
+	}
+	ofService, err := s.listVersionPins(ctx,
+		`SELECT `+versionPinColumns+`
+		FROM version_pins WHERE EXISTS (
+			SELECT 1 FROM containers holder JOIN containers task ON task.swarm_service_id = holder.swarm_service_id
+			WHERE holder.agent_id = version_pins.agent_id AND holder.external_id = version_pins.container_id
+				AND task.agent_id = ? AND task.external_id = ? AND task.swarm_service_id <> '')
+		ORDER BY pinned_at DESC`, uid.Agent(agentID), containerID)
+	if err != nil {
+		return nil, fmt.Errorf("adopt version pin: %w", err)
+	}
+	for _, pin := range ofService {
+		if pinRepository(pin.Image) != pinRepository(image) {
+			continue
+		}
+		if _, err := s.writer.Exec(ctx, `UPDATE version_pins SET agent_id = ?, container_id = ? WHERE id = ? AND `+pinHolderGone,
+			uid.Agent(agentID), containerID, pin.ID); err != nil {
+			return nil, fmt.Errorf("adopt version pin: %w", err)
+		}
+		return pin, nil
+	}
+	if name == "" {
+		return nil, nil
+	}
+	left, err := s.listVersionPins(ctx,
+		`SELECT `+versionPinColumns+`
+		FROM version_pins WHERE agent_id = ? AND container_name = ? AND `+pinHolderGone+`
+		ORDER BY pinned_at DESC`, uid.Agent(agentID), name)
+	if err != nil {
+		return nil, fmt.Errorf("adopt version pin: %w", err)
+	}
+	for _, pin := range left {
+		if pinRepository(pin.Image) != pinRepository(image) {
+			continue
+		}
+		if _, err := s.writer.Exec(ctx, `UPDATE version_pins SET container_id = ? WHERE id = ?`, containerID, pin.ID); err != nil {
+			return nil, fmt.Errorf("adopt version pin: %w", err)
+		}
+		pin.ContainerID = containerID
+		return pin, nil
+	}
+	return nil, nil
+}
+
+func (s *UpdateStore) listVersionPins(ctx context.Context, query string, args ...any) ([]*update.VersionPin, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var pins []*update.VersionPin
+	for rows.Next() {
+		pin, err := scanVersionPin(rows)
+		if err != nil {
+			return nil, err
+		}
+		pins = append(pins, pin)
+	}
+	return pins, rows.Err()
+}
+
+func pinRepository(image string) string {
+	repo, _, _ := update.ParseImageRef(image)
+	return strings.TrimPrefix(repo, "library/")
 }
 
 func (s *UpdateStore) DeleteVersionPin(ctx context.Context, agentID, containerID string) error {
@@ -972,7 +1077,7 @@ func scanVersionPin(row rowScanner) (*update.VersionPin, error) {
 	var pinnedAt int64
 	var reason sql.NullString
 
-	err := row.Scan(&p.ID, &p.AgentID, &p.ContainerID, &p.Image, &p.PinnedTag, &p.PinnedDigest, &reason, &pinnedAt)
+	err := row.Scan(&p.ID, &p.AgentID, &p.ContainerID, &p.ContainerName, &p.Image, &p.PinnedTag, &p.PinnedDigest, &reason, &pinnedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

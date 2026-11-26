@@ -33,17 +33,70 @@ func TestConfigFromEnv_Retention(t *testing.T) {
 		assert.Equal(t, 5000, cfg.Retention.BatchSize)
 	})
 
-	// Unparseable or negative values fall back rather than disabling the purge.
-	t.Run("invalid values fall back to defaults", func(t *testing.T) {
-		t.Setenv("MAINTENANT_RETENTION_SNAPSHOTS", "abc")
-		t.Setenv("MAINTENANT_RETENTION_INTERVAL", "-5m")
-		t.Setenv("MAINTENANT_RETENTION_BATCH_SIZE", "not-a-number")
+}
+
+func TestConfigFromEnv_MalformedSettingFallsBackAndIsReported(t *testing.T) {
+	cases := []struct {
+		env, def string
+		raws     []string
+	}{
+		{"MAINTENANT_RETENTION_SNAPSHOTS", "48h0m0s", []string{"7d", "abc", "0", "-1h"}},
+		{"MAINTENANT_RETENTION_INTERVAL", "1h0m0s", []string{"abc", "0", "-5m"}},
+		{"MAINTENANT_RETENTION_BATCH_SIZE", "1000", []string{"not-a-number", "0", "-1"}},
+		{"MAINTENANT_UPDATE_INTERVAL", "24h0m0s", []string{"1d", "0", "-1h"}},
+		{"MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND", "1000", []string{"abc", "0", "-1"}},
+		{"MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS", "60", []string{"1m", "0", "-1"}},
+	}
+	for _, tc := range cases {
+		for _, raw := range tc.raws {
+			t.Run(tc.env+"="+raw, func(t *testing.T) {
+				t.Setenv(tc.env, raw)
+
+				cfg := ConfigFromEnv()
+
+				assert.NoError(t, cfg.ValidateMode())
+				assert.Equal(t, []InvalidSetting{{Name: tc.env, Raw: raw, Default: tc.def}}, cfg.InvalidSettings)
+				assert.Equal(t, resource.DefaultSnapshotRetention, cfg.Retention.Snapshots)
+				assert.Equal(t, time.Hour, cfg.Retention.Interval)
+				assert.Equal(t, 1000, cfg.Retention.BatchSize)
+				assert.Equal(t, 1000, cfg.MultiHost.AgentRateLimitPerSecond)
+				assert.Equal(t, 60, cfg.MultiHost.AgentStaleThresholdSeconds)
+			})
+		}
+	}
+}
+
+func TestValidateMode(t *testing.T) {
+	for _, mode := range []string{"embedded", "server", "agent"} {
+		t.Setenv("MAINTENANT_MODE", mode)
+		assert.NoError(t, ConfigFromEnv().ValidateMode(), mode)
+	}
+	for _, mode := range []string{"agnet", "standalone", "server agent"} {
+		t.Setenv("MAINTENANT_MODE", mode)
+		err := ConfigFromEnv().ValidateMode()
+		require.ErrorIs(t, err, ErrMode, mode)
+		assert.Contains(t, err.Error(), mode)
+	}
+}
+
+func TestConfigFromEnv_ModeIgnoresCaseAndOuterSpaces(t *testing.T) {
+	for raw, want := range map[string]string{
+		"Server": "server", "AGENT": "agent", " agent ": "agent", "Embedded\t": "embedded", "  ": "embedded",
+	} {
+		t.Setenv("MAINTENANT_MODE", raw)
 
 		cfg := ConfigFromEnv()
-		assert.Equal(t, resource.DefaultSnapshotRetention, cfg.Retention.Snapshots)
-		assert.Equal(t, time.Hour, cfg.Retention.Interval)
-		assert.Equal(t, 1000, cfg.Retention.BatchSize)
-	})
+
+		assert.Equal(t, want, cfg.Mode, raw)
+		assert.NoError(t, cfg.ValidateMode(), raw)
+	}
+}
+
+func TestConfigFromEnv_DefaultsReportNothing(t *testing.T) {
+	cfg := ConfigFromEnv()
+
+	assert.NoError(t, cfg.ValidateMode())
+	assert.Empty(t, cfg.InvalidSettings)
 }
 
 // MCP used to fail open: MAINTENANT_MCP=true with no OAuth credentials mounted

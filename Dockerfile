@@ -82,7 +82,7 @@ VOLUME /data
 # One image, two modes: the binary knows how to check itself. A server answers on
 # the address it was configured with, an agent has no port at all and reports
 # liveness through a file, so an HTTP probe here would fail every agent forever.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10m --retries=3 \
     CMD ["/app/maintenant", "healthcheck"]
 
 # Entrypoint runs as root only to chown root-owned volume mounts and auto-detect

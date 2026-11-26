@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import {
   listAlerts,
   getActiveAlerts,
@@ -45,7 +45,17 @@ export const useAlertsStore = defineStore('alerts', () => {
 
   const activeSilenceCount = computed(() => silenceRules.value.filter((r) => r.is_active).length)
 
+  let historyFilters: ListAlertsParams | undefined
+
+  function inHistory(a: Alert): boolean {
+    const f = historyFilters
+    return (!f?.source || f.source === a.source) &&
+      (!f?.severity || f.severity === a.severity) &&
+      (!f?.status || f.status === a.status)
+  }
+
   async function fetchAlerts(params?: ListAlertsParams) {
+    if (!params?.before) historyFilters = params
     loading.value = true
     error.value = null
     try {
@@ -64,15 +74,32 @@ export const useAlertsStore = defineStore('alerts', () => {
     }
   }
 
+  let activeRequest = 0
+  let appliedRequest = 0
+
   async function fetchActiveAlerts() {
-    activeAlertsError.value = null
+    const request = ++activeRequest
     try {
-      activeAlerts.value = await getActiveAlerts()
+      const res = await getActiveAlerts()
+      if (request > appliedRequest) {
+        appliedRequest = request
+        activeAlerts.value = res
+        activeAlertsError.value = null
+      }
     } catch (e) {
-      activeAlertsError.value = e instanceof Error ? e.message : 'Failed to fetch active alerts'
+      if (request === activeRequest) {
+        activeAlertsError.value = e instanceof Error ? e.message : 'Failed to fetch active alerts'
+      }
       console.error('Failed to fetch active alerts:', e)
     }
   }
+
+  watch(
+    () => sseBus.connected.value,
+    (up) => {
+      if (up && activeAlertsError.value) void fetchActiveAlerts()
+    },
+  )
 
   async function fetchSilenceRules(activeOnly = false) {
     silenceLoading.value = true
@@ -115,7 +142,7 @@ export const useAlertsStore = defineStore('alerts', () => {
     if (existingIdx >= 0) {
       alerts.value[existingIdx] = alert
     } else {
-      alerts.value = [alert, ...alerts.value]
+      if (inHistory(alert)) alerts.value = [alert, ...alerts.value]
       newAlertCount.value++
     }
     upsertActive(alert)
@@ -152,7 +179,8 @@ export const useAlertsStore = defineStore('alerts', () => {
     } catch {
       return
     }
-    alerts.value = [alert, ...alerts.value]
+    const rest = alerts.value.filter((a) => a.id !== alert.id)
+    alerts.value = inHistory(alert) ? [alert, ...rest] : rest
   }
 
   function onSilenceCreated(e: MessageEvent) {
@@ -179,6 +207,7 @@ export const useAlertsStore = defineStore('alerts', () => {
   }
 
   function onReconnected() {
+    fetchAlerts(historyFilters)
     fetchActiveAlerts()
     fetchSilenceRules()
   }
@@ -265,6 +294,7 @@ export const useAlertsStore = defineStore('alerts', () => {
     activeSilenceCount,
     fetchAlerts,
     fetchActiveAlerts,
+    retryActiveAlerts: fetchActiveAlerts,
     fetchSilenceRules,
     acknowledgeAlert,
     pinAlert,

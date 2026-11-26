@@ -95,6 +95,9 @@ func (s *stubStore) InsertVersionPin(_ context.Context, _ *VersionPin) (string, 
 func (s *stubStore) GetVersionPin(_ context.Context, _, _ string) (*VersionPin, error) {
 	return nil, nil
 }
+func (s *stubStore) AdoptVersionPin(_ context.Context, _, _, _, _ string) (*VersionPin, error) {
+	return nil, nil
+}
 func (s *stubStore) DeleteVersionPin(_ context.Context, _, _ string) error { return nil }
 func (s *stubStore) CreateExclusion(_ context.Context, _ *UpdateExclusion) (bool, error) {
 	return false, nil
@@ -103,8 +106,8 @@ func (s *stubStore) ListExclusions(_ context.Context) ([]*UpdateExclusion, error
 	return s.exclusions, nil
 }
 func (s *stubStore) DeleteExclusion(_ context.Context, _ string) error { return nil }
-func (s *stubStore) InsertCVECacheEntry(_ context.Context, _ *CVECacheEntry) (string, error) {
-	return "", nil
+func (s *stubStore) ReplaceCVECache(_ context.Context, _, _, _ string, _ []*CVECacheEntry) error {
+	return nil
 }
 func (s *stubStore) GetCVECacheEntries(_ context.Context, _, _, _ string) ([]*CVECacheEntry, error) {
 	return nil, nil
@@ -113,6 +116,9 @@ func (s *stubStore) IsCVECacheFresh(_ context.Context, _, _, _ string) (bool, er
 	return false, nil
 }
 func (s *stubStore) UpsertContainerCVE(_ context.Context, _ *ContainerCVE) error { return nil }
+func (s *stubStore) ResolveContainerCVEs(_ context.Context, _, _ string, _ []string) error {
+	return nil
+}
 func (s *stubStore) ListContainerCVEs(_ context.Context, _, _ string) ([]*ContainerCVE, error) {
 	return nil, nil
 }

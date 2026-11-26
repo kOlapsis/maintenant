@@ -30,17 +30,47 @@ type RegistryClient struct {
 	outbound  http.RoundTripper
 }
 
-// literalGuard refuses a request whose URL host is an IP literal the probe guard blocks, which the dial guard cannot see behind a proxy.
-type literalGuard struct{ next http.RoundTripper }
+const registryLookupTimeout = 2 * time.Second
 
-func (g literalGuard) RoundTrip(req *http.Request) (*http.Response, error) {
-	if ip := net.ParseIP(req.URL.Hostname()); ip != nil && ssrf.IsBlockedForProbe(ip) {
+// destinationGuard refuses a request to an address the probe guard blocks when the dial guard cannot see it: an IP literal, or behind a proxy a name that resolves to one.
+type destinationGuard struct {
+	next   *http.Transport
+	lookup func(ctx context.Context, host string) ([]net.IPAddr, error)
+}
+
+func (g *destinationGuard) RoundTrip(req *http.Request) (*http.Response, error) {
+	if ip := g.blocked(req); ip != nil {
 		if req.Body != nil {
 			_ = req.Body.Close()
 		}
 		return nil, fmt.Errorf("probe guard: blocked connection to %s", ip)
 	}
 	return g.next.RoundTrip(req)
+}
+
+func (g *destinationGuard) blocked(req *http.Request) net.IP {
+	host := req.URL.Hostname()
+	if ip := net.ParseIP(host); ip != nil {
+		if ssrf.IsBlockedForProbe(ip) {
+			return ip
+		}
+		return nil
+	}
+	if g.next.Proxy == nil {
+		return nil
+	}
+	if proxy, err := g.next.Proxy(req); err != nil || proxy == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(req.Context(), registryLookupTimeout)
+	defer cancel()
+	addrs, _ := g.lookup(ctx, host)
+	for _, a := range addrs {
+		if ssrf.IsBlockedForProbe(a.IP) {
+			return a.IP
+		}
+	}
+	return nil
 }
 
 // NewRegistryClient creates a new registry client.
@@ -50,7 +80,7 @@ func NewRegistryClient() *RegistryClient {
 	rc := &RegistryClient{transport: t, outbound: t}
 	if !ssrf.ProbeGuardDisabled() {
 		t.DialContext = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: ssrf.ProbeControl}).DialContext
-		rc.outbound = literalGuard{next: t}
+		rc.outbound = &destinationGuard{next: t, lookup: net.DefaultResolver.LookupIPAddr}
 	}
 	return rc
 }

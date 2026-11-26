@@ -392,7 +392,8 @@ When `MAINTENANT_MCP_CLIENT_ID` and `MAINTENANT_MCP_CLIENT_SECRET` are both conf
 - **Redirect URIs**: loopback addresses (`localhost`, `127.0.0.1`, `::1`, over http or https) are always accepted. Any other redirect URI has to be listed, exactly as sent, in `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` (comma-separated)
 - **Issuer**: `MAINTENANT_BASE_URL` (default `http://<MAINTENANT_ADDR>`) is the issuer and the base of every endpoint in the metadata. Set it to your public HTTPS URL, or clients are sent to an address they cannot reach
 - **Opaque tokens**: 32 random bytes; authorization codes, access tokens and refresh tokens are stored as SHA-256 hashes (a database leak does not expose usable tokens)
-- **Client secret**: not stored. It is read from the environment at startup, hashed in memory and compared in constant time
+- **Client secret rotation**: after a start with another client secret, every access token, refresh token and pending authorization code is revoked before the first MCP or OAuth request is answered, so changing the secret signs every client out. The upgrade that introduces this check revokes every existing token and code once
+- **Client secret**: not stored. It is read from the environment at startup, hashed in memory and compared in constant time; only its SHA-256 fingerprint is recorded, to notice a change
 - **Authorization codes** expire in 10 minutes and work once; **access tokens** expire after 1 hour, **refresh tokens** after 30 days
 - **Refresh token rotation**: each use invalidates the old token
 - **Replay detection**: reusing a consumed refresh token revokes the entire token family
@@ -442,7 +443,7 @@ Credentials that maintenant only has to verify are stored hashed, so a copy of t
 | Agent enrollment tokens | `sha256(token)` + a 14-character display prefix |
 | MCP OAuth authorization codes | `sha256(code)` |
 | MCP access and refresh tokens | `sha256(token)` |
-| MCP client secret | Not stored: read from `MAINTENANT_MCP_CLIENT_SECRET`, hashed in memory, compared in constant time |
+| MCP client secret | `sha256(secret)`, to notice when it changes; the secret itself is read from `MAINTENANT_MCP_CLIENT_SECRET`, hashed in memory and compared in constant time |
 | Agent identity | The server keeps the Ed25519 **public** key only. The private key stays on the agent host, in `identity.json` (mode `0600`) in its data directory |
 | License key | Signature verified with a build-injected public key; disk cache is `0600` |
 | Notification channel URL, headers and credential (the Telegram bot token) | Clear text. The API never returns the credential |

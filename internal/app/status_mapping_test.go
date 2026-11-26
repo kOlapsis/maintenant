@@ -9,10 +9,33 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/endpoint"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/status"
 )
+
+func TestCertificateStatus(t *testing.T) {
+	checked := time.Now()
+	tests := []struct {
+		name string
+		cert certificate.CertMonitor
+		want string
+	}{
+		{"valid", certificate.CertMonitor{Status: certificate.StatusValid, LastCheckAt: &checked}, status.StatusOperational},
+		{"expiring", certificate.CertMonitor{Status: certificate.StatusExpiring, LastCheckAt: &checked}, status.StatusDegraded},
+		{"expired", certificate.CertMonitor{Status: certificate.StatusExpired, LastCheckAt: &checked}, status.StatusMajorOutage},
+		{"error", certificate.CertMonitor{Status: certificate.StatusError, LastCheckAt: &checked, LastError: "dial tcp: timeout"}, status.StatusMajorOutage},
+		{"never checked", certificate.CertMonitor{Status: certificate.StatusUnknown}, status.StatusOperational},
+		{"unknown after a check", certificate.CertMonitor{Status: certificate.StatusUnknown, LastCheckAt: &checked}, status.StatusMajorOutage},
+		{"unknown with an error", certificate.CertMonitor{Status: certificate.StatusUnknown, LastError: "dial tcp: timeout"}, status.StatusMajorOutage},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, CertificateStatus(&tt.cert))
+		})
+	}
+}
 
 func TestEndpointStatus(t *testing.T) {
 	checked := time.Now()

@@ -35,8 +35,8 @@ curl -fsSL https://install.maintenant.dev | sudo bash
 3. Creates the `maintenant` system user (no login shell, home in the data directory) and adds it to the `docker` group when that group exists, see [The docker group](#the-docker-group).
 4. Creates the data directory (`0750`, owned by the service user) and the configuration directory (`0750`, `root:maintenant`).
 5. Merges the configuration flags you passed into `/etc/maintenant/maintenant.env`.
-6. Replaces the binary atomically (written next to `/usr/local/bin/maintenant`, then renamed).
-7. Writes the systemd unit, enables it, then restarts the service if it runs or starts it if not, and waits up to 10 seconds for it to become active.
+6. Replaces the binary atomically (written next to `/usr/local/bin/maintenant`, then renamed). On an upgrade, the previous binary is kept next to it as `.maintenant.previous` until the service check of the next step has passed.
+7. Writes the systemd unit, enables it, then restarts the service if it runs or starts it if not. Five seconds later it checks that the service is still running and that systemd has not restarted it; otherwise it prints the last 50 log lines and exits with code 31. On an upgrade it first puts the previous binary back and restarts the service on it, and says so; the flags given to that run stay in the env file. The same happens when a `systemctl` command fails.
 8. Prints a summary: version, binary path and the address it listens on.
 
 ---
@@ -108,7 +108,7 @@ sudo bash install.sh \
 
 - `--sha256sums` checks the binary against a `SHA256SUMS` file. The binary can have any file name: it is matched by checksum against a `linux-<arch>` entry of the file, and the version shown in the summary comes from that entry. A checksum that matches nothing for this architecture exits with code 21.
 - Without `--sha256sums`, the script warns that the integrity of the binary is not checked and installs it, with the version `local`.
-- The cosign signature is never verified offline, and the script says so. To check it, verify `SHA256SUMS` with `SHA256SUMS.bundle` on the connected machine first, see [Manual verification](#manual-verification).
+- The cosign signature is never verified offline: the script says so, again in its final summary, and `--require-cosign` refuses an offline install. To check it, verify `SHA256SUMS` with `SHA256SUMS.bundle` on the connected machine first, see [Manual verification](#manual-verification).
 - Neither `curl` nor `wget` is required. Every other flag works as usual (`--no-service`, configuration flags).
 - A missing `--binary` file exits with code 2.
 
@@ -190,6 +190,7 @@ Run `maintenant --help` to see this list with descriptions at any time.
 | `--uninstall` | Remove the binary and the service. Keeps the data, the configuration and the user. |
 | `--purge` | With `--uninstall`: also remove the data, the configuration and the user. |
 | `--skip-cosign` | Skip the cosign signature check. The SHA256 check stays mandatory. |
+| `--require-cosign` | Stop with exit code 22 when the signature cannot be checked: `cosign` missing or older than 3, or an offline install. Cannot be combined with `--skip-cosign`. |
 | `--binary <path>` | Install this local binary instead of downloading one. |
 | `--sha256sums <path>` | With `--binary`: check it against this `SHA256SUMS` file. |
 | `--help`, `-h` | Print the usage and exit. |
@@ -201,6 +202,7 @@ Run `maintenant --help` to see this list with descriptions at any time.
 | `MAINTENANT_DATA_DIR` | `/var/lib/maintenant` | Data directory. |
 | `MAINTENANT_CONFIG_DIR` | `/etc/maintenant` | Configuration directory. |
 | `MAINTENANT_SKIP_COSIGN` | unset | Any non-empty value behaves like `--skip-cosign`. |
+| `MAINTENANT_REQUIRE_COSIGN` | unset | Any non-empty value behaves like `--require-cosign`. |
 | `NO_COLOR` | unset | Disable ANSI colors. |
 
 Because `sudo` does not pass the environment through, give these on the `sudo` command line, as in `sudo MAINTENANT_VERSION=v1.13.1 bash`.
@@ -230,6 +232,8 @@ sudo nano /etc/maintenant/maintenant.env
 sudo systemctl restart maintenant
 ```
 
+systemd removes the backslashes and the outer spaces of an unquoted value. The script therefore writes a value holding anything other than letters, digits and `. _ / : @ % + , = -` between double quotes, with `\` and `"` escaped: `MAINTENANT_SMTP_PASSWORD="pa\"ss\\word"`. Do the same when you add such a value by hand.
+
 Re-running the script with flags **merges** them into the existing file: only the keys you pass are replaced, or added when missing, and every other line is kept as it is, comments and extra variables such as `DOCKER_HOST` included. The script reports `N keys replaced, M keys added, other lines kept`. The file is untouched when you pass no configuration flag.
 
 The unit applies `ProtectSystem=strict`, `ProtectHome=true` and `PrivateTmp=true`: a file you point maintenant to (a CA bundle, a TLS key) must live outside `/home` and be readable by the `maintenant` user.
@@ -246,7 +250,7 @@ curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
 
 - The data directory is the first of: `--data-dir`, `MAINTENANT_DATA_DIR` in the env file, the `MAINTENANT_DATA_DIR` environment variable of the script, `/var/lib/maintenant`. It must be an absolute path other than `/`.
 - The database is the first of: `--db`, `MAINTENANT_DB` in the env file, `./maintenant.db`. A relative path lands in the data directory; an absolute path can point anywhere.
-- The script creates both directories, owned by the service user with `0750`, and writes a unit with the matching `WorkingDirectory`, `ReadWritePaths`, `Environment=MAINTENANT_DATA_DIR`, `User`, `ExecStart` and `EnvironmentFile`.
+- The script creates both directories, owned by the service user with `0750`, and writes a unit with the matching `WorkingDirectory`, `ReadWritePaths`, `Environment=MAINTENANT_DATA_DIR`, `Environment=SQLITE_TMPDIR` (SQLite writes its temporary files in the data directory, because `/tmp` is often a small tmpfs), `User`, `ExecStart` and `EnvironmentFile`.
 - An existing directory that is not empty and belongs to another owner is refused (exit code 30): use a dedicated directory, or `chown` it to `maintenant` first.
 - The install, configuration, data and database directories accept only the characters `A-Z a-z 0-9 . _ / @ + -`; any other character exits with code 2.
 - `--uninstall --purge` removes the real data directory. A database directory outside it is kept, with a warning.
@@ -287,7 +291,7 @@ curl -fsSL https://install.maintenant.dev | sudo bash -s -- --uninstall
 curl -fsSL https://install.maintenant.dev | sudo bash -s -- --uninstall --purge
 ```
 
-`--purge` deletes the data directory, the configuration directory and the `maintenant` user. It prompts for confirmation when the script reads from a terminal. In a non-interactive pipe (`curl | bash`), it executes directly: only pass `--purge` when you mean it. If you installed with `--data-dir` or `--db`, pass the same flags (or keep them in the env file) so the script finds what to remove.
+`--purge` deletes the data directory, the configuration directory and the `maintenant` user. It prompts for confirmation when the script reads from a terminal. In a non-interactive pipe (`curl | bash`), it executes directly: only pass `--purge` when you mean it. A data directory that is not empty and does not belong to the `maintenant` user is never deleted: the script stops with exit code 30 before removing anything. If you installed with `--data-dir` or `--db`, pass the same flags (or keep them in the env file) so the script finds what to remove.
 
 ---
 
@@ -316,9 +320,15 @@ disk always names the script that produced it.
 2. Verifies the binary against its SHA256 checksum: **mandatory**, exits code 21 on mismatch.
 3. If `cosign` 3 or later is in `$PATH` and `--skip-cosign` is not set, verifies the `SHA256SUMS` signature from the bundle against the Sigstore transparency log, asserting that the signature was produced by the official `release.yml` workflow on the correct tag.
 
-**cosign 3 is required.** `sign-blob` dropped `--output-signature` and `--output-certificate`, so a release carries a bundle and nothing else, and reading that bundle needs a 3.x binary. An older cosign is treated like an absent one: the script says so and continues, rather than reporting a signature failure that would say nothing about the signature.
+**cosign 3 is required.** `sign-blob` dropped `--output-signature` and `--output-certificate`, so a release carries a bundle and nothing else, and reading that bundle needs a 3.x binary. An older cosign is treated like an absent one.
 
-The cosign check is **best-effort**: if `cosign` is absent, the script warns and continues. Install it for full supply-chain protection:
+The binary and `SHA256SUMS` come from the same release, so the checksum alone only proves that the download is intact. The signature is what proves who built it.
+
+- With `cosign` 3 or later, a signature that does not verify stops the install with exit code 22.
+- Without it, the script installs on the checksum alone. It warns when it skips the check and again after the final summary, under `SIGNATURE NOT VERIFIED`, with the commands that verify the installed binary afterwards.
+- With `--require-cosign`, the script stops with exit code 22 instead of warning.
+
+To have the signature checked, install cosign first, in a directory that `sudo` keeps in its `PATH` such as `/usr/local/bin`:
 
 ```bash
 # Install cosign (see https://docs.sigstore.dev/cosign/system_config/installation/)
@@ -360,12 +370,12 @@ gh attestation verify --owner kOlapsis maintenant-${VERSION}-linux-${ARCH}
 |---|---|
 | `0` | Success, or `--help` |
 | `1` | Unexpected failure, for example `useradd` failing |
-| `2` | Invalid argument: unknown flag, missing or empty value, bad boolean, unsupported character in a path, `--sha256sums` without `--binary`, or a `--binary` or `--sha256sums` file that does not exist |
+| `2` | Invalid argument: unknown flag, missing or empty value, bad boolean, unsupported character in a path, `--sha256sums` without `--binary`, `--skip-cosign` with `--require-cosign`, or a `--binary` or `--sha256sums` file that does not exist |
 | `10` | Unsupported OS or architecture |
 | `11` | Not running as root |
 | `12` | Missing required tool: `curl` or `wget` (unless `--binary`), `install`, `useradd`, or `systemctl` (unless `--no-service`) |
 | `20` | Release not found, release without standalone binaries, or download failure |
 | `21` | SHA256 checksum mismatch, or (offline) no matching `linux-<arch>` entry in `SHA256SUMS` |
-| `22` | cosign signature invalid |
-| `30` | Filesystem error, including a non-empty directory owned by someone else |
-| `31` | systemd failure: a `systemctl` command failed, or the service was not active after 10 seconds |
+| `22` | cosign signature invalid, or signature not checkable with `--require-cosign` |
+| `30` | Filesystem error, including a non-empty directory owned by someone else, at install or at `--purge` |
+| `31` | systemd failure: a `systemctl` command failed, or the service stopped or was restarted within 5 seconds of its start |

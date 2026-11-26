@@ -300,6 +300,17 @@ func TestDurableDelivery_ResumeSkipsAFullQueue(t *testing.T) {
 	assert.Equal(t, 1, queued, "a full queue must not keep another channel's due delivery out of its queue")
 }
 
+func TestDurableDelivery_AQueuedDeliveryIsNotQueuedTwice(t *testing.T) {
+	f := newQueueFixture(t)
+	ch := f.channel(t, "https://example.com/hook")
+	n := f.notifier()
+	n.Enqueue(job(f.delivery(t, ch, alert.EventFired, alert.StatusActive), ch))
+
+	n.Resume(f.ctx)
+	n.Resume(f.ctx)
+	assert.Equal(t, []string{ch.ID}, n.QueuedChannels(), "a delivery waiting in its queue is not queued again by the passes that find it due")
+}
+
 func TestNotifier_AnIdleOrDeletedChannelLeavesNoWorker(t *testing.T) {
 	f := newQueueFixture(t)
 	srv := newHookServer(t, always(http.StatusOK))

@@ -89,6 +89,10 @@ type osvVulnRecord struct {
 	Affected   []osvAffected  `json:"affected"`
 	References []osvReference `json:"references"`
 	Aliases    []string       `json:"aliases"`
+
+	DatabaseSpecific struct {
+		Severity string `json:"severity"`
+	} `json:"database_specific"`
 }
 
 type osvSeverity struct {
@@ -140,9 +144,10 @@ func (c *CVEClient) QueryCVEs(ctx context.Context, queries []ImageCVEQuery) (map
 		}
 		if fresh {
 			entries, err := c.store.GetCVECacheEntries(ctx, q.Ecosystem, q.PackageName, q.Version)
-			if err == nil {
-				results[q.ContainerID] = entries
+			if err != nil {
+				return results, fmt.Errorf("read cve cache: %w", err)
 			}
+			results[q.ContainerID] = entries
 			continue
 		}
 		uncached = append(uncached, q)
@@ -165,11 +170,12 @@ func (c *CVEClient) QueryCVEs(ctx context.Context, queries []ImageCVEQuery) (map
 		return results, err
 	}
 
+	if len(batchResp.Results) != len(uncached) {
+		return results, fmt.Errorf("osv answered %d of %d queries", len(batchResp.Results), len(uncached))
+	}
+
 	vulnIDs := make([][]string, len(uncached))
 	for i := range uncached {
-		if i >= len(batchResp.Results) {
-			break
-		}
 		ids, err := c.paginateResult(ctx, osvQueries[i], batchResp.Results[i])
 		if err != nil {
 			return results, err
@@ -177,7 +183,10 @@ func (c *CVEClient) QueryCVEs(ctx context.Context, queries []ImageCVEQuery) (map
 		vulnIDs[i] = ids
 	}
 
-	records := c.hydrateVulns(ctx, vulnIDs)
+	records, err := c.hydrateVulns(ctx, vulnIDs)
+	if err != nil {
+		return results, err
+	}
 
 	now := time.Now()
 	expires := now.Add(cveCacheTTL)
@@ -185,15 +194,10 @@ func (c *CVEClient) QueryCVEs(ctx context.Context, queries []ImageCVEQuery) (map
 	for i, q := range uncached {
 		var entries []*update.CVECacheEntry
 		for _, id := range vulnIDs[i] {
-			rec, ok := records[id]
-			if !ok {
-				continue
-			}
-			entry := c.buildCVECacheEntry(q, rec, now, expires)
-			if _, err := c.store.InsertCVECacheEntry(ctx, entry); err != nil {
-				c.logger.Warn("cve: failed to cache entry", "cve", entry.CVEID, "error", err)
-			}
-			entries = append(entries, entry)
+			entries = append(entries, c.buildCVECacheEntry(q, records[id], now, expires))
+		}
+		if err := c.store.ReplaceCVECache(ctx, q.Ecosystem, q.PackageName, q.Version, entries); err != nil {
+			c.logger.Warn("cve: failed to cache the answer", "package", q.PackageName, "error", err)
 		}
 		results[q.ContainerID] = entries
 	}
@@ -210,8 +214,7 @@ func (c *CVEClient) paginateResult(ctx context.Context, q osvQuery, first osvBat
 
 	for token != "" {
 		if page >= maxOSVPages {
-			c.logger.Warn("cve: osv pagination cap reached", "package", q.Package.Name, "ecosystem", q.Package.Ecosystem)
-			break
+			return ids, fmt.Errorf("osv lists more than %d pages of vulnerabilities for %s", maxOSVPages, q.Package.Name)
 		}
 
 		select {
@@ -228,7 +231,7 @@ func (c *CVEClient) paginateResult(ctx context.Context, q osvQuery, first osvBat
 		}
 		page++
 		if len(resp.Results) == 0 {
-			break
+			return ids, fmt.Errorf("osv answered page %d of %s with no result", page, q.Package.Name)
 		}
 		ids = append(ids, idsFromVulns(resp.Results[0].Vulns)...)
 		token = resp.Results[0].NextPageToken
@@ -269,8 +272,7 @@ func (c *CVEClient) postBatch(ctx context.Context, queries []osvQuery) (osvBatch
 }
 
 // hydrateVulns fetches each distinct vuln id once, memoising across queries.
-// A fetch failure for one id is logged and skipped, never fails the run.
-func (c *CVEClient) hydrateVulns(ctx context.Context, perQueryIDs [][]string) map[string]*osvVulnRecord {
+func (c *CVEClient) hydrateVulns(ctx context.Context, perQueryIDs [][]string) (map[string]*osvVulnRecord, error) {
 	records := make(map[string]*osvVulnRecord)
 	seen := make(map[string]bool)
 	fetched := false
@@ -285,7 +287,7 @@ func (c *CVEClient) hydrateVulns(ctx context.Context, perQueryIDs [][]string) ma
 			if fetched {
 				select {
 				case <-ctx.Done():
-					return records
+					return nil, ctx.Err()
 				case <-time.After(c.delay):
 				}
 			}
@@ -293,14 +295,13 @@ func (c *CVEClient) hydrateVulns(ctx context.Context, perQueryIDs [][]string) ma
 
 			rec, err := c.fetchVuln(ctx, id)
 			if err != nil {
-				c.logger.Warn("cve: failed to fetch vuln", "id", id, "error", err)
-				continue
+				return nil, err
 			}
 			records[id] = rec
 		}
 	}
 
-	return records
+	return records, nil
 }
 
 func (c *CVEClient) fetchVuln(ctx context.Context, id string) (*osvVulnRecord, error) {
@@ -351,6 +352,10 @@ func (c *CVEClient) buildCVECacheEntry(q ImageCVEQuery, rec *osvVulnRecord, now,
 		}
 	}
 
+	if entry.Severity == update.CVESeverityUnknown {
+		entry.Severity = databaseSeverity(rec.DatabaseSpecific.Severity)
+	}
+
 	if len(rec.References) > 0 {
 		if b, err := json.Marshal(rec.References); err == nil {
 			entry.ReferencesJSON = string(b)
@@ -368,6 +373,21 @@ func idsFromVulns(vulns []osvBatchVuln) []string {
 	return ids
 }
 
+// databaseSeverity reads the rating an advisory database gives when the record carries no CVSS v3 vector.
+func databaseSeverity(rating string) update.CVESeverity {
+	switch strings.ToUpper(rating) {
+	case "CRITICAL":
+		return update.CVESeverityCritical
+	case "HIGH":
+		return update.CVESeverityHigh
+	case "MODERATE", "MEDIUM":
+		return update.CVESeverityMedium
+	case "LOW":
+		return update.CVESeverityLow
+	}
+	return update.CVESeverityUnknown
+}
+
 func cvssV3Vector(rec *osvVulnRecord) (string, bool) {
 	for _, s := range rec.Severity {
 		if s.Type == "CVSS_V3" {
@@ -377,14 +397,31 @@ func cvssV3Vector(rec *osvVulnRecord) (string, bool) {
 	return "", false
 }
 
+// fixedInFor returns the fix of the affected range the queried version sits in.
 func fixedInFor(q ImageCVEQuery, rec *osvVulnRecord) string {
+	current, err := update.ParseTag(q.Version)
+	if err != nil {
+		return ""
+	}
 	for _, a := range rec.Affected {
 		if a.Package.Ecosystem != q.Ecosystem || !strings.EqualFold(a.Package.Name, q.PackageName) {
 			continue
 		}
 		for _, r := range a.Ranges {
+			if r.Type != "SEMVER" && r.Type != "ECOSYSTEM" {
+				continue
+			}
+			inRange := false
 			for _, e := range r.Events {
-				if e.Fixed != "" {
+				if e.Introduced != "" {
+					v, err := update.ParseTag(e.Introduced)
+					inRange = err == nil && !current.LessThan(v)
+					continue
+				}
+				if e.Fixed == "" || !inRange {
+					continue
+				}
+				if v, err := update.ParseTag(e.Fixed); err == nil && current.LessThan(v) {
 					return e.Fixed
 				}
 			}

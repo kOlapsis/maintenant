@@ -611,6 +611,13 @@ func mapPod(pod *corev1.Pod) K8sPod {
 	var totalRestarts int32
 	containerStatuses := make([]K8sContainerStatus, 0, len(pod.Status.ContainerStatuses))
 
+	for _, cs := range pod.Status.InitContainerStatuses {
+		totalRestarts += cs.RestartCount
+		if w := cs.State.Waiting; w != nil && isPodBackOff(w.Reason) {
+			statusReason = w.Reason
+		}
+	}
+
 	for _, cs := range pod.Status.ContainerStatuses {
 		totalRestarts += cs.RestartCount
 
@@ -626,7 +633,7 @@ func mapPod(pod *corev1.Pod) K8sPod {
 		case cs.State.Waiting != nil:
 			state = "waiting"
 			stateReason = cs.State.Waiting.Reason
-			if stateReason == "CrashLoopBackOff" || stateReason == "ImagePullBackOff" || stateReason == "ErrImagePull" {
+			if isPodBackOff(stateReason) {
 				statusReason = stateReason
 			}
 		case cs.State.Terminated != nil:
@@ -654,6 +661,12 @@ func mapPod(pod *corev1.Pod) K8sPod {
 		})
 	}
 
+	for _, c := range pod.Status.Conditions {
+		if statusReason == "" && c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse && c.Reason == corev1.PodReasonUnschedulable {
+			statusReason = c.Reason
+		}
+	}
+
 	workloadRef := podWorkloadRef(pod)
 
 	return K8sPod{
@@ -670,6 +683,15 @@ func mapPod(pod *corev1.Pod) K8sPod {
 		Ignored:      cmodel.IgnoredByLabels(pod.Annotations),
 		CreatedAt:    pod.CreationTimestamp.Time,
 	}
+}
+
+// isPodBackOff reports whether a waiting reason means the kubelet keeps failing to run the container.
+func isPodBackOff(reason string) bool {
+	switch reason {
+	case "CrashLoopBackOff", "ImagePullBackOff", "ErrImagePull", "CreateContainerConfigError", "InvalidImageName":
+		return true
+	}
+	return false
 }
 
 // podWorkloadRef returns the owning workload ID for a pod, the Deployment for a
@@ -706,13 +728,23 @@ func workloadStatus(ready, desired int32, conditions []K8sCondition, progressing
 	if desired == 0 {
 		return "healthy" // scaled to zero is intentional
 	}
-	if ready >= desired {
+	if ready >= desired && !rolloutStuck(conditions) {
 		return "healthy"
 	}
 	if ready == 0 {
 		return "failed"
 	}
 	return "degraded"
+}
+
+// rolloutStuck reports whether a Deployment's rollout went past its progress deadline.
+func rolloutStuck(conditions []K8sCondition) bool {
+	for _, c := range conditions {
+		if c.Type == string(appsv1.DeploymentProgressing) && c.Status == string(corev1.ConditionFalse) && c.Reason == "ProgressDeadlineExceeded" {
+			return true
+		}
+	}
+	return false
 }
 
 // workloadID identifies a controller as namespace/Kind/name.

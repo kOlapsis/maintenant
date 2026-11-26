@@ -119,6 +119,18 @@ func TestComputeUptime_TransitionBeforeWindow(t *testing.T) {
 	assert.Equal(t, 100.0, pct)
 }
 
+func TestComputeUptime_FirstTransitionInsideWindow_CountsFromIt(t *testing.T) {
+	from := epoch
+	to := epoch.Add(time.Hour)
+
+	transitions := []*StateTransition{
+		{NewState: StateRunning, Timestamp: epoch.Add(30 * time.Minute)},
+		{NewState: StateExited, Timestamp: epoch.Add(45 * time.Minute)},
+	}
+
+	assert.Equal(t, 50.0, computeUptime(transitions, from, to))
+}
+
 func TestComputeUptime_TransitionAfterWindow(t *testing.T) {
 	// The last span runs past `to`; it must be clamped.
 	// running 0–30m, exited 30m–∞ (but window ends at 60m).

@@ -69,6 +69,7 @@ func main() {
 		logger.Info("demo mode enabled: instance is read-only")
 	}
 
+	warnIgnoredSettings(cfg, logger)
 	validateStartup(cfg, logger)
 
 	// --copy-store-to runs the copy and exits: the binary has
@@ -119,8 +120,18 @@ func loadConfig(args []string) (app.Config, map[string]string) {
 		os.Exit(2)
 	}
 
-	// Environment first, CLI second: flags win, as the help text promises.
-	cfg := app.ConfigFromEnv()
+	// A flag replaces its variable before the environment is read, so one parser judges both.
+	for _, spec := range app.Registry {
+		if v, ok := visited[spec.FlagName]; ok && !spec.NoEnv {
+			if err := os.Setenv(spec.EnvName, v); err != nil {
+				fmt.Fprintf(os.Stderr, "error: flag --%s: %v\n", spec.FlagName, err)
+				os.Exit(2)
+			}
+		}
+	}
+
+	fromEnv := app.ConfigFromEnv()
+	cfg := fromEnv
 	cfg.Version = version
 	cfg.Commit = commit
 	cfg.BuildDate = buildDate
@@ -130,6 +141,11 @@ func loadConfig(args []string) (app.Config, map[string]string) {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
 	}
+	// A flag value the environment parser normalised or replaced by its default must not come back through the merge.
+	cfg.Mode = fromEnv.Mode
+	cfg.Retention = fromEnv.Retention
+	cfg.MultiHost.AgentRateLimitPerSecond = fromEnv.MultiHost.AgentRateLimitPerSecond
+	cfg.MultiHost.AgentStaleThresholdSeconds = fromEnv.MultiHost.AgentStaleThresholdSeconds
 	return cfg, visited
 }
 
@@ -144,6 +160,19 @@ func runMCPStdio(cfg app.Config, logger *slog.Logger) {
 	if err != nil {
 		logger.Error("MCP stdio relay failed", "error", err)
 		os.Exit(1)
+	}
+}
+
+func warnIgnoredSettings(cfg app.Config, logger *slog.Logger) {
+	for _, s := range cfg.InvalidSettings {
+		logger.Warn("setting is not a usable value, the default is used instead",
+			"variable", s.Name, "value", s.Raw, "default", s.Default,
+			"accepted", "a positive Go duration such as 30m or 48h (no day unit), or a positive whole number")
+	}
+	for _, s := range cfg.MistypedBooleans {
+		logger.Warn("boolean setting is not a recognised value and is read as false",
+			"variable", s.Name, "value", s.Raw,
+			"accepted", "1, t, true, y, yes, on, 0, f, false, n, no, off")
 	}
 }
 
@@ -190,6 +219,16 @@ func validateStartup(cfg app.Config, logger *slog.Logger) {
 	// would leave the operator believing the check runs.
 	if err := cfg.ValidateAlerting(); err != nil {
 		logger.Error("invalid alerting configuration", "error", err)
+		os.Exit(1)
+	}
+
+	if err := cfg.ValidateBooleans(); err != nil {
+		logger.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
+
+	if err := cfg.ValidateMode(); err != nil {
+		logger.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}
 

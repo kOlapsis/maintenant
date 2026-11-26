@@ -5,7 +5,6 @@ package mcp
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/kolapsis/maintenant/internal/kubernetes"
@@ -81,7 +80,7 @@ func listKubernetesNamespacesHandler(svc *Services) gomcp.ToolHandlerFor[listKub
 		}
 		ns, err := svc.Kubernetes.ListNamespaces(ctx, resolveAgentScope(input.AgentID))
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list namespaces: %w", err)
+			return storeErrResult(err, "list namespaces")
 		}
 		return jsonResult(ns)
 	}
@@ -94,7 +93,7 @@ func listKubernetesWorkloadsHandler(svc *Services) gomcp.ToolHandlerFor[listKube
 		}
 		groups, err := svc.Kubernetes.ListWorkloads(ctx, resolveAgentScope(input.AgentID), input.Namespaces)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list workloads: %w", err)
+			return storeErrResult(err, "list workloads")
 		}
 		return jsonResult(groups)
 	}
@@ -108,7 +107,7 @@ func listKubernetesPodsHandler(svc *Services) gomcp.ToolHandlerFor[listKubernete
 		filters := kubernetes.PodFilters{Workload: input.Workload, Node: input.Node, Status: input.Status}
 		pods, err := svc.Kubernetes.ListPods(ctx, resolveAgentScope(input.AgentID), input.Namespaces, filters)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list pods: %w", err)
+			return storeErrResult(err, "list pods")
 		}
 		return jsonResult(pods)
 	}
@@ -121,7 +120,7 @@ func listKubernetesNodesHandler(svc *Services) gomcp.ToolHandlerFor[listKubernet
 		}
 		nodes, err := svc.Kubernetes.ListNodes(ctx, resolveAgentScope(input.AgentID))
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list nodes: %w", err)
+			return storeErrResult(err, "list nodes")
 		}
 		return jsonResult(nodes)
 	}

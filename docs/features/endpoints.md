@@ -8,7 +8,7 @@ Define HTTP or TCP checks directly as Docker labels: no config files, no UI clic
 
 ## How It Works
 
-maintenant reads endpoint definitions from Docker labels on your containers. When a container with endpoint labels starts, maintenant automatically begins monitoring those endpoints at the configured interval. A stopped container pauses its checks and its endpoints show `unknown` ("container stopped") until it starts again.
+maintenant reads endpoint definitions from Docker labels on your containers. When a container with endpoint labels starts, maintenant automatically begins monitoring those endpoints at the configured interval. A stopped container pauses its checks and its endpoints show `unknown` ("container stopped") until it starts again. The same applies to a container on a [remote agent](multihost.md), and the endpoints of a container that the agent no longer lists are removed.
 
 Each check records:
 
@@ -16,7 +16,7 @@ Each check records:
 - **Status**: `up`, `down`, `degraded` or `unknown`, based on the HTTP status code or the TCP connection
 - **Uptime history**: daily uptime percentages and sparkline charts
 
-An endpoint is `degraded` when the host answers but its TLS certificate is not trusted (see [Untrusted certificates](certificates.md#untrusted-certificates-are-degraded-not-down)), and `unknown` until its first check.
+An endpoint is `degraded` when the host answers with an expected status but its TLS certificate is not trusted (an endpoint with custom headers, or with credentials or a query string in its URL, is then judged on its TLS answer only, see [Untrusted certificates](certificates.md#untrusted-certificates-are-degraded-not-down)), and `unknown` until its first check.
 
 When the container behind a label-discovered endpoint disappears, or the label is removed, the endpoint
 is **retired**: checks stop and it leaves the list. Retirement happens on the
@@ -178,7 +178,7 @@ POST /api/v1/endpoints
 | `POST` | `/api/v1/endpoints/{id}/check` | Check now, processed like a scheduled check |
 | `GET` | `/api/v1/endpoints/{id}/uptime/daily` | Daily uptime |
 
-Only endpoints the server probes can be checked on demand: an endpoint probed by a remote agent answers `409 AGENT_PROBED`, and a second check while one is running answers `409 CHECK_IN_PROGRESS`.
+Only endpoints the server probes can be checked on demand: an endpoint probed by a remote agent answers `409 AGENT_PROBED`, and a second check while one is running answers `409 CHECK_IN_PROGRESS`. A check that takes more than 8 seconds answers `202` with `pending: true` and the endpoint as it stands; the check goes on, its result is recorded, and the dashboard shows it when it arrives.
 
 Community is limited to **10 endpoints**, label endpoints included. Personal and Pro have no cap. Above the cap, creation answers `403 QUOTA_EXCEEDED`.
 
@@ -204,6 +204,8 @@ Endpoints declared on the containers of a [remote agent](multihost.md) are probe
 ## Events
 
 Endpoint events are broadcast on the SSE stream (`GET /api/v1/containers/events`), for label, manual and agent-probed endpoints alike:
+
+An endpoint alert, in its message, in its details and in the `endpoint.alert` and `endpoint.recovery` events, names the target by scheme, host and port only: the path, the query string and any `user:password@` part can hold a credential and are left out. The error text of a check quotes URLs the same way.
 
 | Event | Sent when | Main fields |
 |-------|-----------|-------------|

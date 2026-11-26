@@ -31,6 +31,7 @@ import {
 import { docUrl } from '@/utils/docs'
 import { updateUrgency } from '@/utils/updateUrgency'
 import UiButton from '@/components/ui/UiButton.vue'
+import InlineAlert from '@/components/ui/InlineAlert.vue'
 import {
   RefreshCw,
   AlertTriangle,
@@ -188,6 +189,8 @@ onUnmounted(() => {
           </UiButton>
         </div>
       </div>
+
+      <InlineAlert v-if="updates.error" severity="critical" title="Updates unavailable" tag="">{{ updates.error }}</InlineAlert>
 
       <FeatureHint
         storage-key="updates"
@@ -363,10 +366,17 @@ onUnmounted(() => {
       </template>
 
       <!-- Empty state -->
-      <div v-if="updates.updates.length === 0 && !updates.loading" class="flex flex-col items-center justify-center py-16">
-        <CheckCircle :size="40" class="text-emerald-500/30 mb-3" />
-        <p class="text-sm text-mnt-muted font-medium">All containers are up to date</p>
-        <p class="text-[10px] text-mnt-muted mt-1">Run a scan to check for available updates</p>
+      <div v-if="updates.summary && updates.updates.length === 0 && !updates.loading && !updates.error" class="flex flex-col items-center justify-center py-16">
+        <template v-if="updates.summary.scan_status === 'completed'">
+          <CheckCircle :size="40" class="text-mnt-status-ok opacity-30 mb-3" />
+          <p class="text-sm text-mnt-muted font-medium">All containers are up to date</p>
+        </template>
+        <template v-else>
+          <p class="text-sm text-mnt-muted font-medium">
+            {{ updates.summary.scan_status === 'idle' ? 'No scan has run yet' : 'The last scan did not finish' }}
+          </p>
+          <p class="text-[10px] text-mnt-muted mt-1">Run a scan to check for available updates</p>
+        </template>
       </div>
     </div>
 

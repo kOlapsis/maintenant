@@ -5,13 +5,14 @@
 -->
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useStatusAdminStore } from '@/stores/statusAdmin'
 import { useConfirm } from '@/composables/useConfirm'
 import {
   createIncident,
   postIncidentUpdate,
   deleteIncident,
+  listIncidents,
   type Incident,
 } from '@/services/statusApi'
 import FormField from '@/components/ui/FormField.vue'
@@ -103,9 +104,37 @@ function startPostUpdate(inc: Incident) {
   updateForm.value = { status: inc.status, message: '' }
 }
 
-function applyFilter() {
-  store.fetchIncidents({ status: statusFilter.value || undefined })
+const filtered = ref<{ incidents: Incident[]; total: number } | null>(null)
+const filterState = ref<'idle' | 'loading' | 'failed'>('idle')
+
+async function loadFiltered() {
+  const status = statusFilter.value
+  if (!status) {
+    filtered.value = null
+    filterState.value = 'idle'
+    return
+  }
+  filterState.value = 'loading'
+  try {
+    const res = await listIncidents({ status })
+    if (status !== statusFilter.value) return
+    filtered.value = { incidents: res.incidents ?? [], total: res.total ?? 0 }
+    filterState.value = 'idle'
+  } catch (e) {
+    if (status !== statusFilter.value) return
+    filterState.value = 'failed'
+    error.value = e instanceof Error ? e.message : 'Failed to load incidents'
+  }
 }
+
+watch([statusFilter, () => store.incidents], loadFiltered)
+
+const visibleIncidents = computed(() =>
+  (filtered.value?.incidents ?? store.incidents ?? []).filter(
+    (inc) => !statusFilter.value || inc.status === statusFilter.value,
+  ),
+)
+const visibleTotal = computed(() => filtered.value?.total ?? store.incidentsTotal)
 
 const severityColors: Record<string, { bg: string; color: string }> = {
   minor: { bg: 'var(--mnt-status-warn-bg)', color: 'var(--mnt-status-warn)' },
@@ -133,7 +162,6 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
           v-model="statusFilter"
           size="sm"
           :options="[{ value: '', label: 'All statuses' }, ...incidentStatusOptions.map((s) => ({ value: s, label: s }))]"
-          @change="applyFilter"
         />
         <UiButton variant="primary" @click="showCreateForm = true">Create Incident</UiButton>
       </div>
@@ -181,13 +209,13 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
     </div>
 
     <!-- Incident list -->
-    <div v-if="(store.incidents?.length ?? 0) === 0 && !store.incidentsLoading" class="rounded-lg border p-6 text-center" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
+    <div v-if="visibleIncidents.length === 0 && !store.incidentsLoading && filterState === 'idle'" class="rounded-lg border p-6 text-center" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
       <p class="text-sm" style="color: var(--mnt-text-muted)">No incidents</p>
     </div>
 
     <div class="space-y-3">
       <div
-        v-for="inc in store.incidents"
+        v-for="inc in visibleIncidents"
         :key="inc.id"
         class="rounded-lg border p-4"
         style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
@@ -275,8 +303,8 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
       </div>
     </div>
 
-    <p v-if="store.incidentsTotal > (store.incidents?.length ?? 0)" class="mt-3 text-center text-xs" style="color: var(--mnt-text-muted)">
-      Showing {{ store.incidents?.length ?? 0 }} of {{ store.incidentsTotal }} incidents
+    <p v-if="filterState === 'idle' && visibleTotal > visibleIncidents.length" class="mt-3 text-center text-xs" style="color: var(--mnt-text-muted)">
+      Showing {{ visibleIncidents.length }} of {{ visibleTotal }} incidents
     </p>
   </div>
 </template>

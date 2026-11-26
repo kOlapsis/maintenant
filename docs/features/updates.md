@@ -29,13 +29,13 @@ Images of Docker Hub's official library count: `nginx` and `redis:latest` are lo
 
 ### Fixed version tags
 
-For a tag written `major.minor.patch`, maintenant picks the highest newer version in the repository's tag list that has the same variant suffix (`-alpine`, `-bookworm`, `-slim-bookworm`, and the other [known variants](#default-behavior)). Pre-releases and tags without dots (build numbers) are ignored. The update is classified `major`, `minor` or `patch` by the first component that changed. The digest of the running image plays no part: a republished `1.25.3` is not reported.
+For a tag written `major.minor.patch`, maintenant picks the highest newer version in the repository's tag list that has the same variant suffix (`-alpine`, `-bookworm`, `-slim-bookworm`, and the other [known variants](#default-behavior)). Pre-releases and tags without dots (build numbers) are ignored. The update is classified `major`, `minor` or `patch` by the first component that changed. A fourth numeric part (`4.0.8.1874`) is read as a build of the patch: `4.0.8.1900` is a newer `patch`, and `4.0.9` is newer than both. The digest of the running image plays no part: a republished `1.25.3` is not reported.
 
 When a newer version exists both inside the current major version and in a later major version, the update reported is the one inside the current major version, and the later major version is shown next to it (`major_tag` in the API). A container on `postgres:18.7` with `18.8` and `19.0` published is reported as `18.7 → 18.8`, with `19.0` as the next major. The same holds for a floating tag republished under the same name: the new digest is the update reported and the later major version comes with it. With `maintenant.update.track` set to `minor`, `patch` or `digest`, no next major is reported.
 
 ### Floating tags and digests
 
-A tag is floating when it is not a version (`latest`, `lts`, `stable`) or when it is a partial version (`v3`, `1.2`, `16-bookworm`), which the registry keeps pointing at the newest release of that line. A container on `traefik:v3` already runs whatever `v3` resolves to, so `v3.7.10` is not an update. A newer tag written the same way (`v4`) still is, and is reported as a major update.
+A tag is floating when it is not a version (`latest`, `lts`, `stable`) or when it is a partial version (`v3`, `1.2`, `16-bookworm`), which the registry keeps pointing at the newest release of that line. A container on `traefik:v3` already runs whatever `v3` resolves to, so `v3.7.10` is not an update. A newer tag written the same way (`v4`) still is, and is reported as a major update. A tag that does not start with a version number, such as `latest` or a dated release name, is never compared with other tags: the detail panel of its update says so.
 
 For a floating tag, maintenant reports a `digest_only` update for as long as the container does not run what the tag points at now. A multi-platform tag counts as matching when the container runs the digest of the index or of any of its platform manifests.
 
@@ -68,7 +68,7 @@ The scan interval is configured via the `MAINTENANT_UPDATE_INTERVAL` environment
 MAINTENANT_UPDATE_INTERVAL=24h  # Default: check once per day
 ```
 
-Accepts Go duration format: `12h`, `6h`, `30m`, etc. A value that does not parse, or that is not positive, falls back to `24h`.
+Accepts Go duration format: `12h`, `6h`, `30m`, etc. A value that does not parse, or that is not positive, is replaced by `24h`, and the startup logs a warning.
 
 The first scan runs 30 seconds after startup. Within a scan, images are checked one at a time with one second between two of them, so a large fleet takes a while and sends few requests per second to a registry.
 
@@ -130,6 +130,8 @@ DELETE /api/v1/updates/pin/{container_id}
 
 `container_id` is the `container_id` of the update in `GET /api/v1/updates`, which is the container's runtime ID (`namespace/Kind/name` for a Kubernetes workload). For a container on a remote agent, add `?agent_id=` with the update's `agent_id`: two clusters can run a workload under the same name, and each one is pinned on its own. Without `agent_id` the call acts on the local runtime when it runs the container, else on the only agent that does, and answers `400 AGENT_REQUIRED` when several remote agents do. Pinning needs an update to pin: it answers `404 NOT_FOUND` when none is pending for the container. The pin records the tag and digest the container runs. The update shows as **Pinned** until the next scan, which skips the container, drops the update and resolves its alert. `DELETE` removes the pin and the container is checked again.
 
+A pin on a Kubernetes workload is kept by its `namespace/Kind/name`, which does not change when its pods are replaced. A pin on a Docker container follows the container when it is recreated. Docker gives a recreated container a new ID, so the pin also records a name: the container name, or the service name for a Swarm task. At the next scan, a container that carries that name on the same host and runs an image of the same repository, whatever its tag, takes over the pin of a container that is gone. A container of another image under the same name is not pinned, and the pin left behind goes when its container is purged. A pin set on a Swarm task holds for its whole service: every task of the service is pinned, on whichever host it runs, and the pin stays when the tasks are rescheduled on other hosts. A scan that cannot read the pins counts the container as a scan error and reports no update for it.
+
 ---
 
 ## Update Exclusions
@@ -156,7 +158,7 @@ DELETE /api/v1/updates/exclusions/{id}
 | `image` | The image name without tag or digest (`myregistry.example.com/internal-app`), then its short Docker Hub form (`library/nginx` becomes `nginx`), then the full reference as written (`nginx:1.25`). |
 | `tag` | The tag the container runs now. |
 
-Patterns are shell-style globs, not regular expressions: `*` matches any run of characters except `/`, `?` one character, `[a-z]` a range. `myregistry.example.com/*` therefore excludes `myregistry.example.com/app` but not `myregistry.example.com/team/app`. Creating a new exclusion answers `201`, and creating one that exists already answers `200` with the stored one. Any other `pattern_type` answers `400 INVALID_TYPE`.
+Patterns are shell-style globs, not regular expressions: `*` matches any run of characters except `/`, `?` one character, `[a-z]` a range. `myregistry.example.com/*` therefore excludes `myregistry.example.com/app` but not `myregistry.example.com/team/app`. Creating a new exclusion answers `201`, and creating one that exists already answers `200` with the stored one. Any other `pattern_type` answers `400 INVALID_TYPE`, and a pattern that is not a valid glob, such as an unclosed `[`, answers `400 INVALID_PATTERN`.
 
 ---
 
@@ -273,32 +275,31 @@ The regex pattern has a syntax error. Check for unbalanced brackets or other Go 
 
 ## Update and Rollback Commands
 
-For every update, maintenant writes the command that applies it and the command that puts the previous image back. They are shown in the detail panel of the Updates page, returned as `update_command` and `rollback_command` by `GET /api/v1/updates/container/{container_id}`, and, with Personal, carried by the `update_available` alert so that the Discord, Slack, Teams and email notifications include them. maintenant never runs them: it observes, you decide.
+For every update, maintenant writes the command that applies it and the command that puts the previous image back. They are shown in the detail panel of the Updates page, returned as `update_command` and `rollback_command` by `GET /api/v1/updates/container/{container_id}`, and, with Personal, carried by the `update_available` alert so that the Discord, Slack, Teams and email notifications include them. maintenant never runs them: it observes, you decide. Every value is quoted for a POSIX shell, and no command is written when a name, the image reference, a tag or a digest contains a control character or three backticks in a row.
 
-**Docker Compose.** A container with the Compose project and service labels gets commands that start with `cd` to the project's `com.docker.compose.project.working_dir` (`<compose-project-dir>` when the label is missing). There is no `--project-directory` flag. Compose pulls the tag written in the compose file, so when the update changes the tag, the command tells you to edit the file first:
+**Docker Compose.** A container with the Compose project and service labels gets commands that start with `cd` to the project's `com.docker.compose.project.working_dir` (`<compose-project-dir>` when the label is missing). Every `docker compose` call names the project with `-p`, from the `com.docker.compose.project` label, so a project started under another name than its directory is the one that gets updated. There is no `--project-directory` flag and no `-f`: when the project was started from other files than the default one of its directory, add the same `-f` options. Compose pulls the tag written in the compose file, so when the update changes the tag, the command tells you to edit the file first:
 
 ```bash
 # A newer tag (nginx:1.25.3 to 1.27.0)
 cd /srv/app
 # Set the image of service web to nginx:1.27.0 in the compose file, then:
-docker compose pull web
-docker compose up -d web
+docker compose -p app pull web
+docker compose -p app up -d web
 
 # The same tag, republished
 cd /srv/app
-docker compose pull web
-docker compose up -d --force-recreate web
+docker compose -p app pull web
+docker compose -p app up -d --force-recreate web
 ```
 
 **Standalone Docker container.**
 
 ```bash
 docker pull nginx:1.27.0
-docker stop web && docker rm web
-docker run -d --name web nginx:1.27.0
+# Recreate web with the options it was started with, using nginx:1.27.0
 ```
 
-This form only names the image. The `docker run` line carries none of the original options (ports, volumes, environment): use it as a template, or recreate the container the way you created it.
+maintenant does not know the options the container was started with (ports, volumes, environment, network, restart policy), so it pulls the image and leaves the recreation to you. It never prints a `docker stop`, `docker rm` or `docker run` line.
 
 **Docker Swarm.** A task gets the command that points its service at the new image, and Swarm replaces the tasks with its rolling update:
 
@@ -320,10 +321,10 @@ On Kubernetes and Swarm, when the tag is unchanged (a republished floating tag),
 cd /srv/app
 docker pull nginx@sha256:…
 docker tag nginx@sha256:… nginx:latest
-docker compose up -d --pull never --force-recreate web
+docker compose -p app up -d --pull never --force-recreate web
 ```
 
-When the update changed the tag, the rollback tells you to set the image of the service back to the previous reference in the compose file, then to run `docker compose up -d <service>`. Standalone containers use `docker pull`, `stop`, `rm` and `run` with the previous reference, Swarm tasks `docker service update --image <previous reference> <service>`, and Kubernetes `kubectl set image` with the previous reference.
+When the update changed the tag, the rollback tells you to set the image of the service back to the previous reference in the compose file, then to run `docker compose -p <project> up -d <service>`. Standalone containers get the `docker pull` of the previous reference and the same line telling you to recreate the container with it, Swarm tasks `docker service update --image <previous reference> <service>`, and Kubernetes `kubectl set image` with the previous reference.
 
 ---
 
@@ -355,9 +356,9 @@ The **Software lifecycle** block of the Updates page lists every running contain
 
 With Personal, update intelligence goes beyond digest comparison. Each scan enriches what it found:
 
-- **CVE details**: known vulnerabilities of the version the container runs, from [OSV.dev](https://osv.dev) (results are cached for 24 hours). The lookup covers every running container that is neither ignored nor archived and whose image maps to a known software ecosystem, whether or not an update is pending, and including the containers left out of update tracking (pinned, `maintenant.update.enabled: "false"`, excluded images). For a CVE with a known fix, the detail of an update says whether the update fixes it (`is_fixed_by_update`) and gives the update command for the fixed version (`fix_command`, in the form of the runtime: Compose, `docker run`, `docker service update --image <ref> <service>` on Swarm or `kubectl set image`). `fix_command` is empty when the fixed version is not a version tag newer than the one that runs. How an image is mapped to an ecosystem is described in [Network Security Insights](security.md).
+- **CVE details**: known vulnerabilities of the version the container runs, from [OSV.dev](https://osv.dev) (results are cached for 24 hours). The lookup covers every running container that is neither ignored nor archived and whose image is one of the [supported images](security.md#cve-ecosystem-mapping), whether or not an update is pending, and including the containers left out of update tracking (pinned, `maintenant.update.enabled: "false"`, excluded images). For a CVE with a known fix, the detail of an update says whether the update fixes it (`is_fixed_by_update`) and gives the update command for the fixed version (`fix_command`, in the form of the runtime: Compose, `docker pull` for a standalone container, `docker service update --image <ref> <service>` on Swarm or `kubectl set image`). The fixed version is the one that closes the affected range the running version sits in. `fix_command` writes it the way the running tag is written, with its variant suffix and its `v` prefix (`1.25.3-alpine` and a fix in `1.25.4` give `1.25.4-alpine`), and is empty when the fixed version is not a plain release number newer than the one that runs. Any other image is recorded as unsupported, never as free of CVEs.
 - **Risk scoring**: the CVEs the update fixes raise the [risk score](#risk-score): the highest severity gives critical 90, high 65, medium 40 or low 20, plus 10 when the container is publicly exposed, and restarts during the last day add up to 10. Risk levels are `critical` from 81, `high` from 61, `moderate` from 31 and `low` below.
-- **Changelog**: the release notes of the new version. maintenant reads the source repository from the image's `org.opencontainers.image.source` (or `org.label-schema.vcs-url`) label, and when it is on GitHub, takes the release that matches the new tag, else the latest one. It returns the link, a summary of up to 500 characters and a `has_breaking_changes` flag set from keywords such as "breaking change" or "migration required". Set the `GITHUB_TOKEN` environment variable to raise GitHub's rate limit.
+- **Changelog**: the release notes of the new version. maintenant reads the source repository from the image's `org.opencontainers.image.source` (or `org.label-schema.vcs-url`) label, and when it is on GitHub, takes the release whose tag is the new tag, with or without a `v` prefix. It returns the link, a summary of up to 500 characters and a `has_breaking_changes` flag set from the keywords "breaking change", "breaking:", "migration required" and "incompatible". When none of the five latest releases carries that tag, only the link to the source repository is returned. Set the `GITHUB_TOKEN` environment variable to raise GitHub's rate limit.
 
 Without Personal, every pending update still has a score from its type and from the support of the running version, and the Updates page groups updates the same way.
 
@@ -393,7 +394,7 @@ With Personal, the alert details carry the `update_command` and the `rollback_co
 
 ## Data Retention
 
-Once a day, maintenant deletes the scan records older than 30 days, the expired CVE cache entries, the baselines of containers that no longer exist and the risk score history older than 90 days. A scan that a pending update still refers to is kept. Pending updates are never deleted by age: one stays until a scan no longer finds it or its container is gone, see [When an update goes away](#when-an-update-goes-away).
+At startup and then once a day, maintenant deletes the scan records older than 30 days, the expired CVE cache entries, the baselines of containers that no longer exist and the risk score history older than 90 days. A scan that a pending update still refers to is kept. Pending updates are never deleted by age: one stays until a scan no longer finds it or its container is gone, see [When an update goes away](#when-an-update-goes-away).
 
 ---
 

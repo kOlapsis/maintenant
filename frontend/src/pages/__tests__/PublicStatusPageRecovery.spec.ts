@@ -1,15 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import PublicStatusPage from '@/pages/PublicStatusPage.vue'
+import { sessionExpired } from '@/services/authGuard'
 
-const { guardedFetch } = vi.hoisted(() => ({ guardedFetch: vi.fn() }))
-
-vi.mock('@/services/apiFetch', () => ({ guardedFetch }))
+const fetchMock = vi.fn()
+vi.stubGlobal('fetch', fetchMock)
 
 class FakeEventSource {
   static instances: FakeEventSource[] = []
   listeners = new Map<string, () => void>()
+  static CLOSED = 2
+  readyState = 1
   onopen: (() => void) | null = null
+  onerror: (() => void) | null = null
   constructor() {
     FakeEventSource.instances.push(this)
   }
@@ -36,7 +39,7 @@ const snapshot = {
 
 function serve(...statuses: number[]) {
   let n = 0
-  guardedFetch.mockImplementation(async (url: string) => {
+  fetchMock.mockImplementation(async (url: string) => {
     if (url !== '/status/api') return response(404, {})
     const status = statuses[Math.min(n++, statuses.length - 1)]!
     return response(status, status === 200 ? snapshot : {})
@@ -44,12 +47,12 @@ function serve(...statuses: number[]) {
 }
 
 function statusCalls() {
-  return guardedFetch.mock.calls.filter(([url]) => url === '/status/api').length
+  return fetchMock.mock.calls.filter(([url]) => url === '/status/api').length
 }
 
 describe('PublicStatusPage recovery', () => {
   beforeEach(() => {
-    guardedFetch.mockReset()
+    fetchMock.mockReset()
     FakeEventSource.instances = []
   })
 
@@ -107,5 +110,56 @@ describe('PublicStatusPage recovery', () => {
     await vi.advanceTimersByTimeAsync(60_000)
 
     expect(statusCalls()).toBe(initial + 1)
+  })
+
+  it('says it could not refresh and how old the data is', async () => {
+    vi.useFakeTimers()
+    serve(200, 503)
+    const wrapper = mount(PublicStatusPage)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(wrapper.text()).not.toContain('Could not refresh')
+
+    await vi.advanceTimersByTimeAsync(5 * 60_000)
+
+    expect(wrapper.text()).toContain('Could not refresh')
+    expect(wrapper.text()).toContain('Updated 5 minutes ago')
+  })
+
+  it('reopens a stream the server closed, waiting longer each time', async () => {
+    vi.useFakeTimers()
+    serve(200)
+    mount(PublicStatusPage)
+    await vi.advanceTimersByTimeAsync(0)
+
+    const first = FakeEventSource.instances[0]!
+    first.onopen!()
+    first.readyState = FakeEventSource.CLOSED
+    first.onerror!()
+    await vi.advanceTimersByTimeAsync(999)
+    expect(FakeEventSource.instances).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(FakeEventSource.instances).toHaveLength(2)
+
+    const second = FakeEventSource.instances[1]!
+    second.readyState = FakeEventSource.CLOSED
+    second.onerror!()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(FakeEventSource.instances).toHaveLength(2)
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(FakeEventSource.instances).toHaveLength(3)
+
+    const initial = statusCalls()
+    FakeEventSource.instances[2]!.onopen!()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(statusCalls()).toBe(initial + 1)
+  })
+
+  it('never takes a refused answer for an expired session', async () => {
+    fetchMock.mockImplementation(async () => ({ ok: false, status: 403, redirected: true, json: async () => { throw new Error('not json') } }))
+    const wrapper = mount(PublicStatusPage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('HTTP 403')
+    expect(sessionExpired.value).toBe(false)
   })
 })

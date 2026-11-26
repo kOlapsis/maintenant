@@ -118,7 +118,8 @@ run_uninstall() {
         DATA_DIR='$FAKE_DATA_DIR'
         CONFIG_DIR='$FAKE_CONFIG_DIR'
         SERVICE_FILE='/tmp/no-such-service-$$.service'
-        export INSTALL_DIR DATA_DIR CONFIG_DIR SERVICE_FILE NO_COLOR
+        SERVICE_USER='$(id -un)'
+        export INSTALL_DIR DATA_DIR CONFIG_DIR SERVICE_FILE SERVICE_USER NO_COLOR
         _INSTALL_SH_TESTING=1 . '$SCRIPT'
         parse_maintenant_flags --uninstall --purge
         check_prereqs
@@ -128,6 +129,39 @@ run_uninstall() {
     [ ! -d "$CUSTOM_DATA_DIR" ]
 
     rm -rf "$FAKE_INSTALL_DIR" "$FAKE_DATA_DIR" "$FAKE_CONFIG_DIR" "$CUSTOM_DATA_DIR"
+}
+
+@test "uninstall --purge: refuses a data dir that belongs to someone else" {
+    FAKE_INSTALL_DIR=$(mktemp -d)
+    FAKE_DATA_DIR=$(mktemp -d)
+    FAKE_CONFIG_DIR=$(mktemp -d)
+    touch "$FAKE_INSTALL_DIR/maintenant" "$FAKE_DATA_DIR/other-app.conf"
+
+    run bash -c "
+        NO_COLOR=1
+        id()        { echo 0; }
+        systemctl() { return 0; }
+        getent()    { return 1; }
+        userdel()   { return 0; }
+        export -f id systemctl getent userdel
+        INSTALL_DIR='$FAKE_INSTALL_DIR'
+        DATA_DIR='$FAKE_DATA_DIR'
+        CONFIG_DIR='$FAKE_CONFIG_DIR'
+        SERVICE_FILE='/tmp/no-such-service-$$.service'
+        SERVICE_USER=nobody
+        export INSTALL_DIR DATA_DIR CONFIG_DIR SERVICE_FILE SERVICE_USER NO_COLOR
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
+        parse_maintenant_flags --uninstall --purge
+        check_prereqs
+        uninstall
+    "
+    [ "$status" -eq 30 ]
+    [[ "$output" == *"does not belong to nobody"* ]]
+    [ -f "$FAKE_DATA_DIR/other-app.conf" ]
+    [ -f "$FAKE_INSTALL_DIR/maintenant" ]
+    [ -d "$FAKE_CONFIG_DIR" ]
+
+    rm -rf "$FAKE_INSTALL_DIR" "$FAKE_DATA_DIR" "$FAKE_CONFIG_DIR"
 }
 
 @test "uninstall on system without maintenant returns 0 (idempotent)" {

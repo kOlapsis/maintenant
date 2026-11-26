@@ -36,8 +36,8 @@ type Service struct {
 }
 
 type finding struct {
-	Type InsightType
-	Key  string
+	Type    InsightType
+	Details string
 }
 
 // NewService creates a new security insight service.
@@ -73,7 +73,8 @@ func (s *Service) UpdateContainer(containerID string, containerName string, newI
 	oldFindings := s.previous[containerID]
 	newFindings := make(map[finding]bool, len(newInsights))
 	for _, i := range newInsights {
-		newFindings[finding{i.Type, InsightFindingKey(i)}] = true
+		// fmt prints a map with its keys sorted, so equal details give equal text.
+		newFindings[finding{i.Type, fmt.Sprint(i.Details)}] = true
 	}
 
 	hadInsights := len(oldFindings) > 0

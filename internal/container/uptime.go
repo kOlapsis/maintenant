@@ -92,17 +92,24 @@ func (u *UptimeCalculator) calculateWindow(ctx context.Context, containerID stri
 	return &pct, nil
 }
 
-// computeUptime calculates uptime percentage from a list of transitions in a time window.
+// computeUptime calculates uptime percentage from a list of transitions in a time window, counted from the first transition when it falls inside the window.
 // Health-aware: running+healthy=up for containers with health checks.
 func computeUptime(transitions []*StateTransition, from, to time.Time) float64 {
-	totalSeconds := to.Sub(from).Seconds()
-	if totalSeconds <= 0 {
+	if !to.After(from) {
 		return 0
 	}
 
 	if len(transitions) == 0 {
 		// No transitions: assume container was in its current state for the entire window
 		return 100.0
+	}
+
+	if first := transitions[0].Timestamp; first.After(from) {
+		from = first
+	}
+	totalSeconds := to.Sub(from).Seconds()
+	if totalSeconds <= 0 {
+		return 0
 	}
 
 	var upSeconds float64

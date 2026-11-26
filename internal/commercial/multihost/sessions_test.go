@@ -177,7 +177,7 @@ func TestSessions_StaleWatcher_ReportsAgentAbsentWithNoSession(t *testing.T) {
 	rec := &hookRecorder{}
 	sessions.SetLifecycleAlertHook(rec.record)
 
-	sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, 0, staleFn("agent-gone"))
+	go sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, 0, staleFn("agent-gone"))
 
 	require.Eventually(t, func() bool { return len(rec.snapshot()) > 0 }, time.Second, 5*time.Millisecond,
 		"an agent absent with no live stream must be reported")
@@ -194,7 +194,7 @@ func TestSessions_StaleWatcher_GraceHoldsBackOfflineReports(t *testing.T) {
 	rec := &hookRecorder{}
 	sessions.SetLifecycleAlertHook(rec.record)
 
-	sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, time.Hour, staleFn("agent-gone"))
+	go sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, time.Hour, staleFn("agent-gone"))
 
 	time.Sleep(60 * time.Millisecond)
 	assert.Empty(t, rec.snapshot(), "an agent still on its way back must not page during the grace period")
@@ -210,7 +210,7 @@ func TestSessions_StaleWatcher_ReapsDeadStreamDuringGrace(t *testing.T) {
 
 	sessions.Open("agent-A", func(error) {}, "addr", nil, nil)
 
-	sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, time.Hour, staleFn("agent-A"))
+	go sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, time.Hour, staleFn("agent-A"))
 
 	require.Eventually(t, func() bool { return !sessions.IsConnected("agent-A") }, time.Second, 5*time.Millisecond,
 		"a stale live stream must be reaped whatever the grace period")
@@ -231,7 +231,7 @@ func TestSessions_StaleWatcher_DoesNotRepeatAnAnnouncedDrop(t *testing.T) {
 	sessions.Open("agent-A", func(error) {}, "addr", nil, nil)
 	sessions.Close("agent-A", "stream_ended")
 
-	sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, 0, staleFn("agent-A"))
+	go sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, 0, staleFn("agent-A"))
 
 	time.Sleep(60 * time.Millisecond)
 	assert.Equal(t, []string{"agent-A//true", "agent-A/stream_ended/false"}, rec.snapshot(),
@@ -244,7 +244,7 @@ func TestSessions_StaleWatcher_ReconnectReArmsReporting(t *testing.T) {
 	rec := &hookRecorder{}
 	sessions.SetLifecycleAlertHook(rec.record)
 
-	sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, 0, staleFn("agent-gone"))
+	go sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, 0, staleFn("agent-gone"))
 
 	require.Eventually(t, func() bool { return len(rec.snapshot()) == 1 }, time.Second, 5*time.Millisecond)
 
@@ -376,7 +376,7 @@ func TestSessions_StaleWatcher_SkipsStreamOpenedDuringSweep(t *testing.T) {
 		return []string{"agent-A"}, nil
 	}
 
-	sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, 0, staleAgents)
+	go sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, 0, staleAgents)
 
 	require.Eventually(t, func() bool { return sessions.IsConnected("agent-A") }, time.Second, 5*time.Millisecond)
 	time.Sleep(60 * time.Millisecond) // several more sweeps

@@ -288,6 +288,32 @@ ENV
     rm -rf "$FAKE_TMPDIR" "$FAKE_CONFIG_DIR"
 }
 
+@test "merge_env_file: quotes a value systemd would otherwise rewrite" {
+    FAKE_TMPDIR=$(mktemp -d)
+    FAKE_CONFIG_DIR=$(mktemp -d)
+
+    for pass in create merge; do
+        mkdir -p "$FAKE_TMPDIR"
+        SECRET='pa"ss\word$1' ORG='My Org' run bash -c "
+            NO_COLOR=1
+            TMPDIR_INSTALL='$FAKE_TMPDIR'
+            CONFIG_DIR='$FAKE_CONFIG_DIR'
+            SERVICE_USER=nobody
+            chown() { return 0; }
+            export -f chown
+            export NO_COLOR TMPDIR_INSTALL CONFIG_DIR SERVICE_USER
+            _INSTALL_SH_TESTING=1 . '$SCRIPT'
+            parse_maintenant_flags --smtpPassword \"\$SECRET\" --organisationName \"\$ORG\" --addr 0.0.0.0:9000
+            merge_env_file
+        "
+        [ "$status" -eq 0 ]
+        grep -qxF 'MAINTENANT_SMTP_PASSWORD="pa\"ss\\word$1"' "$FAKE_CONFIG_DIR/maintenant.env"
+        grep -qxF 'MAINTENANT_ORGANISATION_NAME="My Org"' "$FAKE_CONFIG_DIR/maintenant.env"
+        grep -qxF 'MAINTENANT_ADDR=0.0.0.0:9000' "$FAKE_CONFIG_DIR/maintenant.env"
+    done
+    rm -rf "$FAKE_TMPDIR" "$FAKE_CONFIG_DIR"
+}
+
 # ── boolean and value flags ───────────────────────────────────────────────────
 
 parse_and_print() {

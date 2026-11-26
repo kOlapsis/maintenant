@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const { fetchEdition } = vi.hoisted(() => ({ fetchEdition: vi.fn() }))
 
@@ -19,6 +19,10 @@ describe('useEdition load failures', () => {
     fetchEdition.mockReset()
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('keeps the known edition when a reload fails', async () => {
     fetchEdition.mockResolvedValueOnce(pro)
     const ed = await freshEdition()
@@ -31,10 +35,38 @@ describe('useEdition load failures', () => {
     expect(ed.hasFeature('smtp')).toBe(true)
   })
 
-  it('falls back to community when no edition was ever loaded', async () => {
+  it('stays unknown, never Community, while no edition could be loaded', async () => {
     fetchEdition.mockRejectedValue(new Error('HTTP 503'))
     const ed = await freshEdition()
     await ed.reload()
-    expect(ed.editionName.value).toBe('community')
+
+    expect(ed.editionName.value).toBeNull()
+    expect(ed.isCommunity.value).toBe(false)
+    expect(ed.isLoaded.value).toBe(false)
+  })
+
+  it('retries with a growing delay until the edition loads', async () => {
+    vi.useFakeTimers()
+    fetchEdition
+      .mockRejectedValueOnce(new Error('HTTP 503'))
+      .mockRejectedValueOnce(new Error('HTTP 503'))
+      .mockResolvedValue(pro)
+    const ed = await freshEdition()
+    let ready = false
+    void ed.whenLoaded().then(() => (ready = true))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchEdition).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(fetchEdition).toHaveBeenCalledTimes(2)
+    expect(ready).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(1_999)
+    expect(fetchEdition).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(fetchEdition).toHaveBeenCalledTimes(3)
+    expect(ed.editionName.value).toBe('pro')
+    expect(ready).toBe(true)
   })
 })

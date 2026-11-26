@@ -11,6 +11,7 @@ import UiModal from '@/components/ui/UiModal.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import SegmentedToggle from '@/components/ui/SegmentedToggle.vue'
 import InlineAlert from '@/components/ui/InlineAlert.vue'
+import { copyText } from '@/utils/copyText'
 
 const props = defineProps<{
   token: EnrollmentTokenCreated
@@ -61,16 +62,11 @@ const currentTemplate = computed(() => props.token.install_templates[selectedMod
 const copiedCommand = ref(false)
 const copiedToken = ref(false)
 
-function copyText(text: string, which: 'command' | 'token') {
-  navigator.clipboard.writeText(text).then(() => {
-    if (which === 'command') {
-      copiedCommand.value = true
-      setTimeout(() => { copiedCommand.value = false }, 2000)
-    } else {
-      copiedToken.value = true
-      setTimeout(() => { copiedToken.value = false }, 2000)
-    }
-  })
+async function copy(text: string, which: 'command' | 'token') {
+  if (!(await copyText(text))) return
+  const copied = which === 'command' ? copiedCommand : copiedToken
+  copied.value = true
+  setTimeout(() => { copied.value = false }, 2000)
 }
 
 const hasLocalWarning = props.token.warnings?.includes('public_url_appears_local') ?? false
@@ -102,7 +98,7 @@ watch(open, (value) => {
           <code
             class="flex-1 block rounded-lg bg-mnt-primary border border-mnt-default px-3 py-2 font-mono text-xs text-mnt-secondary break-all"
           >{{ token.token }}</code>
-          <UiButton variant="secondary" size="sm" @click="copyText(token.token, 'token')">
+          <UiButton variant="secondary" size="sm" @click="copy(token.token, 'token')">
             {{ copiedToken ? 'Copied!' : 'Copy' }}
           </UiButton>
         </div>
@@ -128,7 +124,7 @@ watch(open, (value) => {
         <UiButton
           variant="secondary"
           class="mt-2 w-full"
-          @click="copyText(currentTemplate, 'command')"
+          @click="copy(currentTemplate, 'command')"
         >
           {{ copiedCommand ? 'Copied!' : 'Copy install command' }}
         </UiButton>

@@ -262,7 +262,7 @@ func TestChannels_SingleHeaderIsMasked(t *testing.T) {
 	assert.Equal(t, true, created["has_headers"])
 }
 
-// US3 scenario 4, FR-023, SC-004: platform URLs are cut after the host; a generic webhook keeps its URL.
+// US3 scenario 4, FR-023, SC-004: webhook URLs are cut after the host.
 func TestChannels_PlatformURLsAreTruncated(t *testing.T) {
 	for _, tc := range []struct {
 		typ, url, want string
@@ -271,7 +271,7 @@ func TestChannels_PlatformURLsAreTruncated(t *testing.T) {
 		{"slack", "https://hooks.slack.com/services/T000/B000/XXXXsecret", "https://hooks.slack.com", true},
 		{"discord", "https://discord.com/api/webhooks/1234/abcdTOKEN", "https://discord.com", true},
 		{"teams", "https://acme.webhook.office.com/webhookb2/guid/IncomingWebhook/id/key", "https://acme.webhook.office.com", true},
-		{"webhook", "https://hooks.example.com/path/kept", "https://hooks.example.com/path/kept", false},
+		{"webhook", "https://hooks.example.com/path/cut?token=s3cr3t", "https://hooks.example.com", true},
 	} {
 		t.Run(tc.typ, func(t *testing.T) {
 			c := newChannelHarness(t)

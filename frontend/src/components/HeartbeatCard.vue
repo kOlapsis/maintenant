@@ -10,6 +10,7 @@ import { deleteHeartbeat, pauseHeartbeat, resumeHeartbeat } from '@/services/hea
 import { fetchHeartbeatDailyUptime, type UptimeDay } from '@/services/uptimeApi'
 import { useConfirm } from '@/composables/useConfirm'
 import { timeAgo } from '@/utils/time'
+import { copyText } from '@/utils/copyText'
 import HeartbeatStatusBadge from './HeartbeatStatusBadge.vue'
 import AgentBadge from './AgentBadge.vue'
 import UptimeBar90 from './ui/UptimeBar90.vue'
@@ -51,7 +52,7 @@ function formatDuration(ms: number | undefined): string {
 
 async function copyPingUrl() {
   const url = `${window.location.origin}/ping/${props.heartbeat.ping_token}`
-  await navigator.clipboard.writeText(url)
+  if (!(await copyText(url))) return
   copied.value = true
   setTimeout(() => (copied.value = false), 2000)
 }

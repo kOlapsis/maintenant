@@ -6,6 +6,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -16,9 +17,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kolapsis/maintenant/internal/agentproto"
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
+	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/store/storetest"
 )
@@ -169,4 +173,54 @@ func TestEscalationTools_ACreationThatCannotListPoliciesNeverShowsSQL(t *testing
 	require.NoError(t, err)
 	assert.True(t, r.IsError)
 	assertNoStoreText(t, textFromContent(t, r.Content))
+}
+
+type failingK8sStore struct{ mcpK8sStore }
+
+func (failingK8sStore) ListPods(context.Context, string, []string, kubernetes.PodFilters) ([]kubernetes.K8sPod, error) {
+	return nil, errSQLText
+}
+
+func TestReadTools_AStoreFailureNeverShowsSQL(t *testing.T) {
+	svc := &Services{Kubernetes: &failingK8sStore{}, Logger: slog.Default(), Version: "test"}
+
+	res, _, err := listKubernetesPodsHandler(svc)(context.Background(), nil, listKubernetesPodsInput{})
+
+	require.NoError(t, err, "a store failure is a tool result, not an error the SDK would copy to the client")
+	require.True(t, res.IsError)
+	assert.Equal(t, "list pods failed: internal error", textFromContent(t, res.Content))
+}
+
+type failingLogs struct{ err error }
+
+func (f failingLogs) FetchLogs(context.Context, string, int, bool) ([]string, error) {
+	return nil, f.err
+}
+
+type failingAgentLogs struct{ err error }
+
+func (f failingAgentLogs) FetchLogs(context.Context, string, string, int, bool) ([]string, error) {
+	return nil, f.err
+}
+
+func TestGetContainerLogs_AFailureNeverShowsTheRuntimeError(t *testing.T) {
+	local := &Services{
+		Containers: container.NewService(container.Deps{Store: containersWith{c: &container.Container{ID: "c1", ExternalID: "ext1"}}, Logger: slog.Default()}),
+		LogFetcher: failingLogs{errors.New(`Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.47/containers/ext1/logs": dial unix /var/run/docker.sock: connect: permission denied`)},
+		Logger:     slog.Default(),
+	}
+	res, _, err := getContainerLogsHandler(local)(context.Background(), nil, getContainerLogsInput{ContainerID: "c1"})
+	require.NoError(t, err)
+	require.True(t, res.IsError)
+	assert.Equal(t, "logs unavailable: the container runtime or its agent did not answer", textFromContent(t, res.Content))
+
+	remote := &Services{
+		Containers: container.NewService(container.Deps{Store: containersWith{c: &container.Container{ID: "c1", ExternalID: "ext1", AgentID: "agent-7"}}, Logger: slog.Default()}),
+		AgentLogs:  failingAgentLogs{fmt.Errorf("send: %w", agentproto.ErrAgentNotConnected)},
+		Logger:     slog.Default(),
+	}
+	res, _, err = getContainerLogsHandler(remote)(context.Background(), nil, getContainerLogsInput{ContainerID: "c1"})
+	require.NoError(t, err)
+	require.True(t, res.IsError)
+	assert.Equal(t, "logs unavailable: agent not connected", textFromContent(t, res.Content))
 }

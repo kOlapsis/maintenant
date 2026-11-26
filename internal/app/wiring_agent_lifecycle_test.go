@@ -57,3 +57,45 @@ func TestAgentLifecycleEvent(t *testing.T) {
 		})
 	}
 }
+
+func TestAgentAlertEvents(t *testing.T) {
+	type want struct {
+		alertType string
+		severity  string
+		recover   bool
+	}
+	cases := []struct {
+		name      string
+		reason    string
+		connected bool
+		want      []want
+	}{
+		{"runtime stops answering", "runtime_unreachable", true, []want{{"runtime_unreachable", alert.SeverityWarning, false}}},
+		{"runtime answers again", "runtime_reachable", true, []want{{"runtime_unreachable", alert.SeverityInfo, true}}},
+		{"connect clears the disconnection only", "", true, []want{{"disconnected", alert.SeverityInfo, true}}},
+		{"stream drop resolves the runtime alert", "stream_ended", false, []want{{"disconnected", alert.SeverityWarning, false}, {"runtime_unreachable", alert.SeverityInfo, true}}},
+		{"stale liveness resolves the runtime alert", "stale", false, []want{{"disconnected", alert.SeverityWarning, false}, {"runtime_unreachable", alert.SeverityInfo, true}}},
+		{"revoked clears both", "revoked", false, []want{{"disconnected", alert.SeverityInfo, true}, {"runtime_unreachable", alert.SeverityInfo, true}}},
+		{"deleted clears both", "deleted", false, []want{{"disconnected", alert.SeverityInfo, true}, {"runtime_unreachable", alert.SeverityInfo, true}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			events := agentAlertEvents("agent-uuid", "web-01", tc.reason, tc.connected)
+			if len(events) != len(tc.want) {
+				t.Fatalf("got %d events, want %d", len(events), len(tc.want))
+			}
+			for i, evt := range events {
+				got := want{evt.AlertType, evt.Severity, evt.IsRecover}
+				if got != tc.want[i] {
+					t.Errorf("event %d = %+v, want %+v", i, got, tc.want[i])
+				}
+				if evt.Source != alert.SourceAgent || evt.EntityType != "agent" || evt.EntityID != "agent-uuid" || evt.AgentID != "agent-uuid" {
+					t.Errorf("event %d: unexpected envelope %+v", i, evt)
+				}
+				if evt.EntityName != "web-01" || evt.Message == "" {
+					t.Errorf("event %d: name %q, message %q", i, evt.EntityName, evt.Message)
+				}
+			}
+		})
+	}
+}

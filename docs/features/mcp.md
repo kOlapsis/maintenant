@@ -129,7 +129,8 @@ These four routes are served only when `MAINTENANT_MCP=true` and both OAuth cred
 
 - **PKCE S256** is mandatory on all authorization requests, and the verifier is checked at the token endpoint.
 - **Tokens are opaque** (random 32 bytes, hex-encoded). They are stored as SHA-256 hashes: even a database leak does not expose usable tokens.
-- **The client secret is not stored.** maintenant reads it from the environment and keeps only its hash in memory.
+- **The client secret is not stored.** maintenant reads it from the environment and keeps only its hash in memory. Its SHA-256 fingerprint is recorded in the database, to notice when it changes.
+- **Changing the client secret signs every client out.** After a start with a `MAINTENANT_MCP_CLIENT_SECRET` other than the one the stored tokens were issued under, every access token, refresh token and pending authorization code is revoked before the first MCP or OAuth request is answered, and every client signs in again. This also holds when MCP was switched off in between. This is how to cut access after a leak. The upgrade to the first version that records this fingerprint revokes every existing token and code once, because nothing says under which secret they were issued: every client signs in again after that upgrade.
 - **Refresh token rotation**: each use of a refresh token invalidates it and issues a new one.
 - **Replay detection**: reusing an already-consumed refresh token revokes all tokens in the session (family), forcing re-authorization.
 - **Automatic cleanup**: expired tokens and codes are garbage-collected every 15 minutes.
@@ -208,11 +209,11 @@ and add an `agent_label` to each row that belongs to a remote agent.
 | `list_containers` | List all monitored containers with state, health, and metadata | Community |
 | `get_container` | Detailed info for one container (`container_id`) with recent state transitions | Community |
 | `get_container_logs` | Recent log lines from a container (`container_id`): `lines` (default 100, at most 1000) and optional `timestamps`. A container on a remote agent is read through that agent. The answer starts with a fixed line warning that what follows is untrusted container output; a line over 4096 bytes is cut there and marked ` …[truncated]`, and when the lines exceed 1 MiB (1 048 576 bytes) the oldest are dropped and their count is given on the first line. | Community |
-| `list_endpoints` | Active HTTP/TCP endpoints with status, last response time, HTTP status and error, and `limited` (a limited endpoint is not checked) | Community |
-| `get_endpoint_history` | Check history for a specific endpoint (`endpoint_id`, `limit` defaulting to 50) | Community |
+| `list_endpoints` | Active HTTP/TCP endpoints with status, last response time, HTTP status and error, and `limited` (a limited endpoint is not checked). Header values are masked as `***`, and the `target` of an HTTP endpoint and the URLs quoted in its last error are cut after the host and port | Community |
+| `get_endpoint_history` | Check history for a specific endpoint (`endpoint_id`, `limit` defaulting to 50). URLs quoted in an error are cut after the host and port | Community |
 | `list_heartbeats` | All heartbeat monitors with status, last ping, periods | Community |
 | `list_certificates` | TLS certificate monitors with status (`valid`, `expiring`, `expired`, `error`, `unknown`), check times and last error, and `limited` (a limited monitor is not scanned) | Community |
-| `list_alerts` | Active alerts that are not yet acknowledged (or the last 100 alerts, acknowledged, resolved and silenced included, with `active_only: false`) | Community |
+| `list_alerts` | Active alerts that are not yet acknowledged (or the last 100 alerts, acknowledged, resolved and silenced included, with `active_only: false`). URLs quoted in a message or in the details are cut after the host and port | Community |
 | `get_resources` | Resource summary: CPU, memory and network throughput (`net_rx_rate` and `net_tx_rate`, in bytes per second) across the containers, plus disk usage of the server's root filesystem | Community |
 | `get_top_consumers` | Containers ranked by CPU or memory usage (`metric`, `limit` defaulting to 10, at most 20), live or over a history window (`period`) | Community (see above) |
 | `get_updates` | Returns `updates` (available image updates, with `major_tag` when a later major version exists), `hosts` (each host's OS and end-of-support status), `images` (each running container of a tracked official image with the support status of its release line) and `eol_table` | Community |
@@ -253,7 +254,7 @@ The write tools of this section change configuration: channels, triggers and esc
 
 | Tool | Description | Edition |
 |------|-------------|---------|
-| `list_channels` / `get_channel` | List or fetch notification channels; `get_channel` adds the delivery health and the triggers routing to it. Header values are masked as `***` and Slack, Discord and Teams webhook URLs are cut after the host, here and in the answers of `create_channel` and `update_channel`; the secret is never returned. | Community |
+| `list_channels` / `get_channel` | List or fetch notification channels; `get_channel` adds the delivery health and the triggers routing to it. Header values are masked as `***` and webhook URLs are cut after the host, here and in the answers of `create_channel` and `update_channel`; the secret is never returned. | Community |
 | `create_channel` / `update_channel` / `delete_channel` | Manage notification channels (webhook is Community; email and Telegram need Personal, Slack and Teams need Pro). A channel is created enabled unless `enabled` is `false`. An email channel takes `config` `{"subject_label":"prod"}` to replace `maintenant` in its subject. | Community |
 | `test_channel` | Send a test notification through a channel | Community |
 | `list_triggers` / `get_trigger` | List or fetch alert triggers (entity to channel routing) | Community |

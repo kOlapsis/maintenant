@@ -16,6 +16,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/redact"
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/kolapsis/maintenant/internal/update"
@@ -167,12 +168,16 @@ func restartAlertEvent(ra *alert.RestartAlert) alert.Event {
 
 // restartRecoveryEvent resolves a container's restart_loop alert. Caller sets Timestamp.
 func restartRecoveryEvent(m map[string]any) alert.Event {
+	msg := fmt.Sprintf("Container %s restart rate returned to normal", toString(m["container_name"]))
+	if state, _ := m["state"].(container.ContainerState); state == container.StateCompleted {
+		msg = fmt.Sprintf("Container %s stopped cleanly, it no longer restarts", toString(m["container_name"]))
+	}
 	return alert.Event{
 		Source:     alert.SourceContainer,
 		AlertType:  restartLoopAlertType,
 		Severity:   alert.SeverityInfo,
 		IsRecover:  true,
-		Message:    fmt.Sprintf("Container %s restart rate returned to normal", toString(m["container_name"])),
+		Message:    msg,
 		EntityType: "container",
 		EntityID:   toString(m["container_id"]),
 		EntityName: toString(m["container_name"]),
@@ -294,15 +299,15 @@ func endpointTrustEvent(ep *endpoint.Endpoint, result endpoint.CheckResult) (ale
 	switch {
 	case result.Degraded:
 		evt.Severity = alert.SeverityWarning
-		evt.Message = fmt.Sprintf("Endpoint %s is reachable but its certificate is not trusted: %s", ep.Target, result.DegradedReason)
+		evt.Message = fmt.Sprintf("Endpoint %s is reachable but its certificate is not trusted: %s", redact.URL(ep.Target), redact.Text(result.DegradedReason))
 		evt.Details = map[string]any{
-			"target": ep.Target,
-			"reason": result.DegradedReason,
+			"target": redact.URL(ep.Target),
+			"reason": redact.Text(result.DegradedReason),
 		}
 	case result.Success:
 		evt.Severity = alert.SeverityInfo
 		evt.IsRecover = true
-		evt.Message = fmt.Sprintf("Endpoint %s now presents a trusted certificate", ep.Target)
+		evt.Message = fmt.Sprintf("Endpoint %s now presents a trusted certificate", redact.URL(ep.Target))
 	default:
 		return evt, false
 	}
@@ -315,31 +320,32 @@ func endpointThresholdAlert(ep *endpoint.Endpoint, al *alert.EndpointAlert) (ale
 	if entityName == "" {
 		entityName = ep.Name
 	}
+	target, lastError := redact.URL(al.Target), redact.Text(al.LastError)
 	if al.Type == "alert" {
 		evt := alert.Event{
 			Source:     alert.SourceEndpoint,
 			AlertType:  "consecutive_failure",
 			Severity:   alert.SeverityCritical,
-			Message:    fmt.Sprintf("Endpoint %s failed %d consecutive checks", al.Target, al.Failures),
+			Message:    fmt.Sprintf("Endpoint %s failed %d consecutive checks", target, al.Failures),
 			EntityType: "endpoint",
 			EntityID:   al.EndpointID,
 			EntityName: entityName,
 			AgentID:    ep.AgentID,
 			Details: map[string]any{
-				"target":     al.Target,
+				"target":     target,
 				"failures":   al.Failures,
 				"threshold":  al.Threshold,
-				"last_error": al.LastError,
+				"last_error": lastError,
 			},
 			Timestamp: al.Timestamp,
 		}
 		return evt, "endpoint.alert", map[string]any{
 			"endpoint_id":          al.EndpointID,
 			"container_name":       al.ContainerName,
-			"target":               al.Target,
+			"target":               target,
 			"consecutive_failures": al.Failures,
 			"threshold":            al.Threshold,
-			"last_error":           al.LastError,
+			"last_error":           lastError,
 			"timestamp":            al.Timestamp,
 		}
 	}
@@ -348,13 +354,13 @@ func endpointThresholdAlert(ep *endpoint.Endpoint, al *alert.EndpointAlert) (ale
 		AlertType:  "consecutive_failure",
 		Severity:   alert.SeverityInfo,
 		IsRecover:  true,
-		Message:    fmt.Sprintf("Endpoint %s recovered after %d consecutive successes", al.Target, al.Successes),
+		Message:    fmt.Sprintf("Endpoint %s recovered after %d consecutive successes", target, al.Successes),
 		EntityType: "endpoint",
 		EntityID:   al.EndpointID,
 		EntityName: entityName,
 		AgentID:    ep.AgentID,
 		Details: map[string]any{
-			"target":    al.Target,
+			"target":    target,
 			"successes": al.Successes,
 			"threshold": al.Threshold,
 		},
@@ -363,7 +369,7 @@ func endpointThresholdAlert(ep *endpoint.Endpoint, al *alert.EndpointAlert) (ale
 	return evt, "endpoint.recovery", map[string]any{
 		"endpoint_id":           al.EndpointID,
 		"container_name":        al.ContainerName,
-		"target":                al.Target,
+		"target":                target,
 		"consecutive_successes": al.Successes,
 		"threshold":             al.Threshold,
 		"timestamp":             al.Timestamp,
@@ -797,6 +803,45 @@ func agentLifecycleEvent(agentID, name, reason string, connected bool) alert.Eve
 	return evt
 }
 
+// agentRuntimeEvent builds the alert raised while a connected agent reports that its container runtime stopped answering, or its recovery.
+func agentRuntimeEvent(agentID, name string, unreachable bool) alert.Event {
+	evt := alert.Event{
+		Source:     alert.SourceAgent,
+		AlertType:  "runtime_unreachable",
+		EntityType: "agent",
+		EntityID:   agentID,
+		EntityName: name,
+		AgentID:    agentID,
+	}
+	if unreachable {
+		evt.Severity = alert.SeverityWarning
+		evt.Message = fmt.Sprintf("Agent %s is connected but its container runtime stopped answering", name)
+		evt.Details = map[string]any{"agent_id": agentID}
+		return evt
+	}
+	evt.Severity = alert.SeverityInfo
+	evt.IsRecover = true
+	evt.Message = fmt.Sprintf("The container runtime of agent %s answers again", name)
+	return evt
+}
+
+// agentAlertEvents translates what the session registry tells about an agent into the alert events to emit.
+func agentAlertEvents(agentID, name, reason string, connected bool) []alert.Event {
+	switch reason {
+	case "runtime_unreachable":
+		return []alert.Event{agentRuntimeEvent(agentID, name, true)}
+	case "runtime_reachable":
+		return []alert.Event{agentRuntimeEvent(agentID, name, false)}
+	}
+	lifecycle := agentLifecycleEvent(agentID, name, reason, connected)
+	if connected {
+		return []alert.Event{lifecycle}
+	}
+	gone := agentRuntimeEvent(agentID, name, false)
+	gone.Message = lifecycle.Message
+	return []alert.Event{lifecycle, gone}
+}
+
 // wireAgentLifecycleAlerts raises a Warning alert when a remote agent's stream
 // drops unexpectedly (network outage, or stale liveness past the threshold) and
 // resolves it when the agent reconnects. Intentional removals (revoke/delete)
@@ -813,9 +858,11 @@ func (a *App) wireAgentLifecycleAlerts() {
 			return
 		}
 
-		evt := agentLifecycleEvent(agentID, a.agentName(ctx, agentID), reason, connected)
-		evt.Timestamp = time.Now()
-		a.emitAlert(evt)
+		now := time.Now()
+		for _, evt := range agentAlertEvents(agentID, a.agentName(ctx, agentID), reason, connected) {
+			evt.Timestamp = now
+			a.emitAlert(evt)
+		}
 	})
 }
 

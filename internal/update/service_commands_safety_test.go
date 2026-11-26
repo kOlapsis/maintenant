@@ -30,15 +30,22 @@ func TestGenerateUpdateCommand_QuotesAHostileComposeServiceName(t *testing.T) {
 	got := svc.GenerateUpdateCommand(composeService("web; curl x | sh #", "/srv/app"), "latest", "sha256:new")
 
 	assert.Equal(t, "cd /srv/app\n"+
-		"docker compose pull 'web; curl x | sh #'\n"+
-		"docker compose up -d --force-recreate 'web; curl x | sh #'", got)
+		"docker compose -p app pull 'web; curl x | sh #'\n"+
+		"docker compose -p app up -d --force-recreate 'web; curl x | sh #'", got)
 	assert.Equal(t, strings.Count(got, "web; curl x | sh #"), strings.Count(got, "'web; curl x | sh #'"),
 		"no occurrence of the value may sit outside single quotes")
 
 	other := svc.GenerateUpdateCommand(composeService("api; wget y | sh", "/srv/api"), "latest", "sha256:new")
 	assert.Equal(t, "cd /srv/api\n"+
-		"docker compose pull 'api; wget y | sh'\n"+
-		"docker compose up -d --force-recreate 'api; wget y | sh'", other)
+		"docker compose -p app pull 'api; wget y | sh'\n"+
+		"docker compose -p app up -d --force-recreate 'api; wget y | sh'", other)
+
+	hostileProject := composeService("web", "/srv/app")
+	hostileProject.OrchestrationGroup = "app; curl x | sh #"
+	assert.Equal(t, "cd /srv/app\n"+
+		"docker compose -p 'app; curl x | sh #' pull web\n"+
+		"docker compose -p 'app; curl x | sh #' up -d --force-recreate web",
+		svc.GenerateUpdateCommand(hostileProject, "latest", "sha256:new"))
 }
 
 // US1 scenario 2, FR-001: a command substitution is quoted.
@@ -47,13 +54,13 @@ func TestGenerateUpdateCommand_QuotesACommandSubstitution(t *testing.T) {
 
 	got := svc.GenerateUpdateCommand(composeService("$(id)", "/srv/app"), "latest", "sha256:new")
 	assert.Equal(t, "cd /srv/app\n"+
-		"docker compose pull '$(id)'\n"+
-		"docker compose up -d --force-recreate '$(id)'", got)
+		"docker compose -p app pull '$(id)'\n"+
+		"docker compose -p app up -d --force-recreate '$(id)'", got)
 
 	got = svc.GenerateUpdateCommand(composeService("`whoami`", "/srv/app"), "latest", "sha256:new")
 	assert.Equal(t, "cd /srv/app\n"+
-		"docker compose pull '`whoami`'\n"+
-		"docker compose up -d --force-recreate '`whoami`'", got)
+		"docker compose -p app pull '`whoami`'\n"+
+		"docker compose -p app up -d --force-recreate '`whoami`'", got)
 }
 
 // US1 scenario 3, FR-001: an apostrophe is escaped so the shell reads the value back unchanged.
@@ -62,13 +69,13 @@ func TestGenerateUpdateCommand_EscapesAnApostrophe(t *testing.T) {
 
 	got := svc.GenerateUpdateCommand(composeService("it's", "/srv/app"), "latest", "sha256:new")
 	assert.Equal(t, "cd /srv/app\n"+
-		"docker compose pull 'it'\\''s'\n"+
-		"docker compose up -d --force-recreate 'it'\\''s'", got)
+		"docker compose -p app pull 'it'\\''s'\n"+
+		"docker compose -p app up -d --force-recreate 'it'\\''s'", got)
 
 	got = svc.GenerateUpdateCommand(composeService("o'neil's", "/srv/app"), "latest", "sha256:new")
 	assert.Equal(t, "cd /srv/app\n"+
-		"docker compose pull 'o'\\''neil'\\''s'\n"+
-		"docker compose up -d --force-recreate 'o'\\''neil'\\''s'", got)
+		"docker compose -p app pull 'o'\\''neil'\\''s'\n"+
+		"docker compose -p app up -d --force-recreate 'o'\\''neil'\\''s'", got)
 }
 
 // US1 scenario 1 and 4 together: a working directory with a space is quoted, as in the contract example.
@@ -77,8 +84,8 @@ func TestGenerateUpdateCommand_QuotesAComposeDirWithASpace(t *testing.T) {
 	got := svc.GenerateUpdateCommand(composeService("web; curl x | sh #", "/srv/my app"), "latest", "sha256:new")
 
 	assert.Equal(t, "cd '/srv/my app'\n"+
-		"docker compose pull 'web; curl x | sh #'\n"+
-		"docker compose up -d --force-recreate 'web; curl x | sh #'", got)
+		"docker compose -p app pull 'web; curl x | sh #'\n"+
+		"docker compose -p app up -d --force-recreate 'web; curl x | sh #'", got)
 }
 
 // US1 scenario 4, FR-002: a Compose directory that is not a clean absolute path is replaced by the marker.
@@ -95,6 +102,7 @@ func TestGenerateCommands_UncleanComposeDirBecomesTheMarker(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := composeService("web", dir)
+			c.OrchestrationGroup = "shop" // keeps the project out of the dir values checked below
 			update := svc.GenerateUpdateCommand(c, "latest", "sha256:new")
 			assert.True(t, strings.HasPrefix(update, "cd <compose-project-dir>\n"), "update: %q", update)
 			if dir != "" {
@@ -135,14 +143,14 @@ func TestGenerateCommands_ControlCharacterProducesNoCommand(t *testing.T) {
 		kubeNamed := kube("api", "prod", "Deployment", "")
 		kubeNamed.Name = "api" + ctrl
 		cases := map[string]ContainerInfo{
-			"compose service":   compose("web" + ctrl + "x"),
-			"kube name as pod":  kubeNamed,
-			"kube namespace":    kube("api", "prod"+ctrl+"x", "Deployment", "server"),
-			"kube unit":         kube("api"+ctrl, "prod", "Deployment", "server"),
-			"kube kind":         kube("api", "prod", "Deployment"+ctrl, "server"),
-			"swarm service":     swarm("shop_web" + ctrl),
-			"standalone name":   standalone("web" + ctrl + "x"),
-			"compose project":   {Name: "app-web-1", Image: "nginx:1.24.0", RuntimeType: "docker", OrchestrationGroup: "app" + ctrl, OrchestrationUnit: "web", ComposeWorkingDir: "/srv/app"},
+			"compose service":    compose("web" + ctrl + "x"),
+			"kube name as pod":   kubeNamed,
+			"kube namespace":     kube("api", "prod"+ctrl+"x", "Deployment", "server"),
+			"kube unit":          kube("api"+ctrl, "prod", "Deployment", "server"),
+			"kube kind":          kube("api", "prod", "Deployment"+ctrl, "server"),
+			"swarm service":      swarm("shop_web" + ctrl),
+			"standalone name":    standalone("web" + ctrl + "x"),
+			"compose project":    {Name: "app-web-1", Image: "nginx:1.24.0", RuntimeType: "docker", OrchestrationGroup: "app" + ctrl, OrchestrationUnit: "web", ComposeWorkingDir: "/srv/app"},
 			"kube pod container": kube("api", "prod", "Deployment", "server"+ctrl+"x"),
 		}
 		for caseName, c := range cases {
@@ -158,7 +166,7 @@ func TestGenerateCommands_ControlCharacterProducesNoCommand(t *testing.T) {
 	}
 }
 
-// US1 scenario 6, FR-004, SC-002: ordinary values give the commands of today, byte for byte, with no quote.
+// US1 scenario 6, FR-004, SC-002: ordinary values give the FR-004 commands byte for byte, with no quote.
 func TestGenerateCommands_OrdinaryValuesAreUnchanged(t *testing.T) {
 	svc := &Service{}
 
@@ -166,7 +174,7 @@ func TestGenerateCommands_OrdinaryValuesAreUnchanged(t *testing.T) {
 		Name: "app-web-1", Image: "nginx:latest", OrchestrationGroup: "app", OrchestrationUnit: "web",
 		ComposeWorkingDir: "/srv/app", RuntimeType: "docker",
 	}
-	assert.Equal(t, "cd /srv/app\ndocker compose pull web\ndocker compose up -d --force-recreate web",
+	assert.Equal(t, "cd /srv/app\ndocker compose -p app pull web\ndocker compose -p app up -d --force-recreate web",
 		svc.GenerateUpdateCommand(compose, "latest", "sha256:new"))
 
 	kube := ContainerInfo{
@@ -187,8 +195,8 @@ func TestGenerateCommands_OrdinaryValuesAreUnchanged(t *testing.T) {
 
 	standalone := ContainerInfo{Name: "web-1.prod", Image: "ghcr.io/acme/web:2.1.0", RuntimeType: "docker"}
 	assert.Equal(t, "docker pull ghcr.io/acme/web:2.2.0\n"+
-		"docker stop web-1.prod && docker rm web-1.prod\n"+
-		"docker run -d --name web-1.prod ghcr.io/acme/web:2.2.0", svc.GenerateUpdateCommand(standalone, "2.2.0", "sha256:new"))
+		"# Recreate web-1.prod with the options it was started with, using ghcr.io/acme/web:2.2.0",
+		svc.GenerateUpdateCommand(standalone, "2.2.0", "sha256:new"))
 
 	for _, c := range []ContainerInfo{compose, kube, swarm, standalone} {
 		assert.NotContains(t, svc.GenerateUpdateCommand(c, "2.2.0", "sha256:new"), "'", "%s", c.Name)
@@ -233,11 +241,10 @@ func TestGenerateCommands_StandaloneContainerNameIsQuoted(t *testing.T) {
 	c := ContainerInfo{Name: "web; id", Image: "ghcr.io/acme/web:2.1.0", RuntimeType: "docker"}
 
 	assert.Equal(t, "docker pull ghcr.io/acme/web:2.2.0\n"+
-		"docker stop 'web; id' && docker rm 'web; id'\n"+
-		"docker run -d --name 'web; id' ghcr.io/acme/web:2.2.0", svc.GenerateUpdateCommand(c, "2.2.0", "sha256:new"))
+		"# Recreate 'web; id' with the options it was started with, using ghcr.io/acme/web:2.2.0",
+		svc.GenerateUpdateCommand(c, "2.2.0", "sha256:new"))
 	assert.Equal(t, "docker pull ghcr.io/acme/web@sha256:old\n"+
-		"docker stop 'web; id' && docker rm 'web; id'\n"+
-		"docker run -d --name 'web; id' ghcr.io/acme/web@sha256:old",
+		"# Recreate 'web; id' with the options it was started with, using ghcr.io/acme/web@sha256:old",
 		svc.GenerateRollbackCommand(c, &ImageUpdate{Image: c.Image, CurrentTag: "2.1.0", LatestTag: "2.2.0", PreviousDigest: "sha256:old"}))
 }
 
@@ -251,12 +258,12 @@ func TestGenerateRollbackAndFixCommands_ComposeServiceIsQuotedEverywhere(t *test
 	require.NotEmpty(t, rollback)
 	assert.Equal(t, "cd /srv/app\n"+
 		"# Set the image of service 'web it' back to nginx@sha256:old in the compose file, then:\n"+
-		"docker compose up -d 'web it'", rollback)
+		"docker compose -p app up -d 'web it'", rollback)
 
 	fix := svc.GenerateFixCommand(c, "1.24.0", "1.25.0")
 	require.NotEmpty(t, fix)
 	assert.Equal(t, "cd /srv/app\n"+
 		"# Set the image of service 'web it' to nginx:1.25.0 in the compose file, then:\n"+
-		"docker compose pull 'web it'\n"+
-		"docker compose up -d 'web it'", fix)
+		"docker compose -p app pull 'web it'\n"+
+		"docker compose -p app up -d 'web it'", fix)
 }

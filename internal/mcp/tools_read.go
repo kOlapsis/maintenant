@@ -6,11 +6,14 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"syscall"
 	"unicode/utf8"
 
+	"github.com/kolapsis/maintenant/internal/agentproto"
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
@@ -18,6 +21,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/eol"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/redact"
 	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/kolapsis/maintenant/internal/update"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -189,11 +193,11 @@ func listContainersHandler(svc *Services) gomcp.ToolHandlerFor[listContainersInp
 		}
 		containers, err := svc.Containers.ListContainers(ctx, opts)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list containers: %w", err)
+			return storeErrResult(err, "list containers")
 		}
 		enriched, err := enrichWithAgentLabel(ctx, svc, containers)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to enrich containers: %w", err)
+			return storeErrResult(err, "enrich containers")
 		}
 		return jsonResult(enriched)
 	}
@@ -208,7 +212,7 @@ func getContainerHandler(svc *Services) gomcp.ToolHandlerFor[getContainerInput, 
 		}
 		c, err := svc.Containers.GetContainer(ctx, input.ContainerID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get container: %w", err)
+			return storeErrResult(err, "get container")
 		}
 		if c == nil {
 			return errResult("not found: container does not exist")
@@ -233,7 +237,7 @@ func getContainerLogsHandler(svc *Services) gomcp.ToolHandlerFor[getContainerLog
 		}
 		c, err := svc.Containers.GetContainer(ctx, input.ContainerID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get container: %w", err)
+			return storeErrResult(err, "get container")
 		}
 		if c == nil {
 			return errResult("not found: container does not exist")
@@ -261,7 +265,14 @@ func getContainerLogsHandler(svc *Services) gomcp.ToolHandlerFor[getContainerLog
 			logLines, err = svc.LogFetcher.FetchLogs(ctx, c.ExternalID, lines, input.Timestamps)
 		}
 		if err != nil {
-			return errResult(fmt.Sprintf("logs unavailable: %s", err.Error()))
+			slog.Error("mcp container logs", "container_id", c.ID, "error", err)
+			reason := "the container runtime or its agent did not answer"
+			for _, known := range []error{agentproto.ErrAgentNotConnected, agentproto.ErrAgentCannotServe, agentproto.ErrTooManyRequests} {
+				if errors.Is(err, known) {
+					reason = known.Error()
+				}
+			}
+			return errResult("logs unavailable: " + reason)
 		}
 		return textResult(frameLogs(logLines))
 	}
@@ -273,16 +284,16 @@ func listAlertsHandler(svc *Services) gomcp.ToolHandlerFor[listAlertsInput, any]
 		if input.ActiveOnly == nil || *input.ActiveOnly {
 			alerts, err := svc.Alerts.ListUnacknowledgedActiveAlerts(ctx)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to list active alerts: %w", err)
+				return storeErrResult(err, "list active alerts")
 			}
-			return jsonResult(alerts)
+			return jsonResult(alertViews(alerts))
 		}
 		const recent = 100
 		alerts, err := svc.Alerts.ListAlerts(ctx, alert.ListAlertsOpts{Limit: recent})
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list alerts: %w", err)
+			return storeErrResult(err, "list alerts")
 		}
-		return jsonResult(alerts[:min(len(alerts), recent)])
+		return jsonResult(alertViews(alerts[:min(len(alerts), recent)]))
 	}
 }
 
@@ -362,7 +373,7 @@ func getTopConsumersHandler(svc *Services) gomcp.ToolHandlerFor[getTopConsumersI
 
 		rows, err := svc.Resources.GetTopConsumersByPeriod(ctx, input.Metric, window.Name, limit, nil)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get top consumers: %w", err)
+			return storeErrResult(err, "get top consumers")
 		}
 		return jsonResult(rows)
 	}
@@ -376,11 +387,11 @@ func listEndpointsHandler(svc *Services) gomcp.ToolHandlerFor[listEndpointsInput
 		}
 		endpoints, err := svc.Endpoints.ListEndpoints(ctx, opts)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list endpoints: %w", err)
+			return storeErrResult(err, "list endpoints")
 		}
 		enriched, err := enrichWithAgentLabel(ctx, svc, endpointViews(endpoints))
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to enrich endpoints: %w", err)
+			return storeErrResult(err, "enrich endpoints")
 		}
 		return jsonResult(enriched)
 	}
@@ -394,7 +405,11 @@ func getEndpointHistoryHandler(svc *Services) gomcp.ToolHandlerFor[getEndpointHi
 		}
 		checks, _, err := svc.Endpoints.ListCheckResults(ctx, input.EndpointID, endpoint.ListChecksOpts{Limit: limit})
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list endpoint checks: %w", err)
+			return storeErrResult(err, "list endpoint checks")
+		}
+		for _, c := range checks {
+			c.ErrorMessage = redact.Text(c.ErrorMessage)
+			c.DegradedReason = redact.Text(c.DegradedReason)
 		}
 		return jsonResult(checks)
 	}
@@ -408,11 +423,11 @@ func listHeartbeatsHandler(svc *Services) gomcp.ToolHandlerFor[listHeartbeatsInp
 		}
 		heartbeats, err := svc.Heartbeats.ListHeartbeats(ctx, opts)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list heartbeats: %w", err)
+			return storeErrResult(err, "list heartbeats")
 		}
 		enriched, err := enrichWithAgentLabel(ctx, svc, heartbeatViews(heartbeats))
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to enrich heartbeats: %w", err)
+			return storeErrResult(err, "enrich heartbeats")
 		}
 		return jsonResult(enriched)
 	}
@@ -426,11 +441,11 @@ func listCertificatesHandler(svc *Services) gomcp.ToolHandlerFor[listCertificate
 		}
 		certs, err := svc.Certificates.ListMonitors(ctx, opts)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list certificates: %w", err)
+			return storeErrResult(err, "list certificates")
 		}
 		enriched, err := enrichWithAgentLabel(ctx, svc, certs)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to enrich certificates: %w", err)
+			return storeErrResult(err, "enrich certificates")
 		}
 		return jsonResult(enriched)
 	}
@@ -442,11 +457,11 @@ func getUpdatesHandler(svc *Services) gomcp.ToolHandlerFor[getUpdatesInput, any]
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, _ getUpdatesInput) (*gomcp.CallToolResult, any, error) {
 		updates, err := svc.Updates.ListImageUpdates(ctx, update.ListImageUpdatesOpts{})
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list updates: %w", err)
+			return storeErrResult(err, "list updates")
 		}
 		enriched, err := enrichWithAgentLabel(ctx, svc, updates)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to enrich updates: %w", err)
+			return storeErrResult(err, "enrich updates")
 		}
 		if !extension.Allows(extension.CapChangelog) {
 			for _, row := range enriched {
@@ -457,17 +472,17 @@ func getUpdatesHandler(svc *Services) gomcp.ToolHandlerFor[getUpdatesInput, any]
 		}
 		images, err := svc.Updates.ListImageSupport(ctx)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list image support: %w", err)
+			return storeErrResult(err, "list image support")
 		}
 		renderedImages, err := enrichWithAgentLabel(ctx, svc, images)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to enrich image support: %w", err)
+			return storeErrResult(err, "enrich image support")
 		}
 		out := map[string]any{"updates": enriched, "images": renderedImages, "hosts": []map[string]any{}, "eol_table": eol.TableStatus{}}
 		if svc.EOL != nil {
 			hosts, err := svc.EOL.HostSupports(ctx)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to list host operating systems: %w", err)
+				return storeErrResult(err, "list host operating systems")
 			}
 			rendered := make([]map[string]any, 0, len(hosts))
 			for _, host := range hosts {
@@ -501,7 +516,7 @@ func listAgentsHandler(svc *Services) gomcp.ToolHandlerFor[listAgentsInput, any]
 		}
 		agents, err := svc.Agents.List(ctx, "active")
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list agents: %w", err)
+			return storeErrResult(err, "list agents")
 		}
 		type agentRow struct {
 			AgentID         string `json:"agent_id"`
@@ -535,6 +550,18 @@ func listAgentsHandler(svc *Services) gomcp.ToolHandlerFor[listAgentsInput, any]
 
 // --- Helpers ---
 
+// alertViews returns copies of alerts whose message and details quote URLs as scheme, host and port only.
+func alertViews(alerts []*alert.Alert) []*alert.Alert {
+	views := make([]*alert.Alert, len(alerts))
+	for i, a := range alerts {
+		cp := *a
+		cp.Message = redact.Text(cp.Message)
+		cp.Details = redact.Text(cp.Details)
+		views[i] = &cp
+	}
+	return views
+}
+
 type heartbeatView struct {
 	*heartbeat.Heartbeat
 	PingToken *struct{} `json:"ping_token,omitempty"` // shadows the embedded field so the token is never serialized
@@ -555,7 +582,9 @@ type endpointConfigView struct {
 
 type endpointView struct {
 	*endpoint.Endpoint
-	Config endpointConfigView `json:"config"`
+	Target    string             `json:"target"`
+	LastError string             `json:"last_error,omitempty"`
+	Config    endpointConfigView `json:"config"`
 }
 
 func endpointViews(eps []*endpoint.Endpoint) []endpointView {
@@ -565,7 +594,10 @@ func endpointViews(eps []*endpoint.Endpoint) []endpointView {
 		for name := range ep.Config.Headers {
 			headers[name] = "***"
 		}
-		views[i] = endpointView{Endpoint: ep, Config: endpointConfigView{EndpointConfig: ep.Config, Headers: headers}}
+		views[i] = endpointView{
+			Endpoint: ep, Target: redact.URL(ep.Target), LastError: redact.Text(ep.LastError),
+			Config: endpointConfigView{EndpointConfig: ep.Config, Headers: headers},
+		}
 	}
 	return views
 }

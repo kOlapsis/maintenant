@@ -8,10 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/redact"
 )
 
 // Alert sources.
@@ -335,9 +336,7 @@ type SilenceStore interface {
 
 var errInvalidHeaders = errors.New("headers must be a JSON object of strings")
 
-var secretURLTypes = map[string]bool{"slack": true, "discord": true, "teams": true}
-
-// Redact replaces header values by *** and cuts a platform webhook URL after its host, for every read surface.
+// Redact replaces header values by *** and cuts an HTTP destination after its host, for every read surface.
 func (c *NotificationChannel) Redact() {
 	c.HasSecret = c.Secret != ""
 	headers, err := ParseHeaders(c.Headers)
@@ -350,11 +349,9 @@ func (c *NotificationChannel) Redact() {
 		b, _ := json.Marshal(headers)
 		c.Headers = string(b)
 	}
-	if secretURLTypes[c.Type] {
-		if u, err := url.Parse(c.URL); err == nil && u.Scheme != "" && u.Host != "" {
-			c.URL = u.Scheme + "://" + u.Host
-			c.HasURLSecret = true
-		}
+	if strings.Contains(c.URL, "://") {
+		c.URL = redact.URL(c.URL)
+		c.HasURLSecret = true
 	}
 }
 

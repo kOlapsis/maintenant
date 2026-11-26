@@ -40,6 +40,9 @@ service:
   type: ClusterIP
   port: 80
 
+## When enabled, MAINTENANT_BASE_URL is set to https://<host> (http://<host>
+## without a tls entry): the dashboard answers on that host and builds its links
+## from it. If TLS ends before the ingress, set MAINTENANT_BASE_URL in extraEnv.
 ingress:
   enabled: false
   className: ""
@@ -86,7 +89,10 @@ serviceAccount:
   name: ""
   annotations: {}
 
-## ClusterRole & ClusterRoleBinding are always created when serviceAccount.create=true
+## ClusterRole and ClusterRoleBinding for the ServiceAccount the pod runs as,
+## created by the chart or yours. Set to false to manage the permissions yourself.
+## With serviceAccount.create=false the chart needs serviceAccount.name or
+## rbac.create=false: it never binds the namespace's default ServiceAccount.
 rbac:
   create: true
 

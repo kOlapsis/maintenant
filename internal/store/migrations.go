@@ -59,7 +59,17 @@ func Migrate(ctx context.Context, db *DB, logger *slog.Logger) error {
 	var driver database.Driver
 	switch db.dialect {
 	case DialectPostgres:
-		driver, err = migratepgx.WithInstance(db.db, &migratepgx.Config{})
+		// The driver holds a connection until its Close, which also closes the pool it was given.
+		pool, openErr := sql.Open("pgx", db.dsn)
+		if openErr != nil {
+			return fmt.Errorf("open migration connection: %w", openErr)
+		}
+		driver, err = migratepgx.WithInstance(pool, &migratepgx.Config{})
+		if err != nil {
+			_ = pool.Close()
+		} else {
+			defer func() { _ = driver.Close() }()
+		}
 	default:
 		driver, err = migratesqlite.WithInstance(db.db, &migratesqlite.Config{NoTxWrap: false})
 	}

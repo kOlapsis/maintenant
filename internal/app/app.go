@@ -1066,7 +1066,7 @@ func (a *App) startAgentWatchers(ctx context.Context) {
 	if threshold == 0 {
 		threshold = 60 * time.Second
 	}
-	a.agentSessions.StartWatchers(ctx, threshold, a.agentStore.StaleAgents)
+	a.background.Go(func() { a.agentSessions.StartWatchers(ctx, threshold, a.agentStore.StaleAgents) })
 }
 
 // startEnrollmentTokenGC purges unconsumed enrollment tokens older than 7 days, every hour.
@@ -1122,9 +1122,12 @@ func (a *App) startAgentServer(ctx context.Context) error {
 
 func (a *App) startMCPSocket(ctx context.Context) {
 	if a.cfg.Mode != "agent" && (a.cfg.MCP.Enabled || a.cfg.MCP.Socket) {
-		if err := mcp.ServeSocket(ctx, a.mcpServer, mcp.SocketPath(a.cfg.DBPath), a.logger); err != nil {
+		wait, err := mcp.ServeSocket(ctx, a.mcpServer, mcp.SocketPath(a.cfg.DBPath), a.logger)
+		if err != nil {
 			a.logger.Warn("local MCP socket unavailable, --mcp-stdio cannot reach this instance", "error", err)
+			return
 		}
+		a.background.Go(wait)
 	} else if a.cfg.Mode != "agent" {
 		a.logger.Info("local MCP socket not served", "enable", "MAINTENANT_MCP=true or MAINTENANT_MCP_SOCKET=true")
 	}
@@ -1163,10 +1166,6 @@ func (a *App) Shutdown() error {
 		a.logger.Error("HTTP server shutdown error", "error", err)
 	}
 
-	if a.licenseMgr != nil {
-		a.licenseMgr.Stop()
-	}
-
 	// A grace of its own: a slow HTTP drain must not leave the rest an expired context.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
@@ -1194,6 +1193,9 @@ func (a *App) Shutdown() error {
 	_ = a.rt.Close()
 
 	a.stopWriter()
+	if err := a.db.Writer().Wait(shutdownCtx); err != nil {
+		a.logger.Warn("database writer still writing at shutdown, closing the database anyway")
+	}
 
 	// Drop this instance's row before closing: a clean restart must not see
 	// its own previous run as a peer until the stale purge catches up.
@@ -1219,6 +1221,9 @@ func (a *App) waitBackground(ctx context.Context) {
 		a.background.Wait()
 		if m := a.swarmMgr.Load(); m != nil {
 			m.loops.Wait()
+		}
+		if a.licenseMgr != nil {
+			a.licenseMgr.Stop()
 		}
 		a.endpointSvc.Stop()
 		a.heartbeatSvc.Wait()

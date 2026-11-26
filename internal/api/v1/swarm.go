@@ -12,6 +12,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/swarm"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // swarmTopologyReader serves per-agent swarm services and tasks from the store.
@@ -230,10 +231,40 @@ func (h *SwarmHandler) HandleGetNodeDetail(w http.ResponseWriter, r *http.Reques
 
 	resp := nodeToJSON(node)
 
-	// Enrich with tasks running on this node.
 	tasks := make([]map[string]interface{}, 0)
-	disc := h.discovery()
-	if disc != nil {
+	if isRemoteScope(node.AgentID) {
+		services, err := h.topo.ListServices(r.Context(), node.AgentID)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get node tasks")
+			return
+		}
+		byID := make(map[string]*swarm.SwarmService, len(services))
+		for _, svc := range services {
+			byID[svc.ServiceID] = svc
+		}
+		stored, err := h.topo.ListTasks(r.Context(), node.AgentID, "")
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get node tasks")
+			return
+		}
+		for _, t := range stored {
+			if t.NodeID != nodeID {
+				continue
+			}
+			entry := map[string]interface{}{
+				"task_id":    t.TaskID,
+				"service_id": t.ServiceID,
+				"slot":       t.Slot,
+				"state":      t.State,
+				"timestamp":  t.Timestamp.Format(time.RFC3339),
+			}
+			if svc := byID[t.ServiceID]; svc != nil {
+				entry["service_name"] = svc.Name
+				entry["image"] = svc.Image
+			}
+			tasks = append(tasks, entry)
+		}
+	} else if disc := h.discovery(); disc != nil {
 		for _, svc := range disc.ListServices() {
 			for _, t := range disc.GetTasksForService(svc.ServiceID) {
 				if t.NodeID == nodeID {
@@ -435,7 +466,7 @@ func (h *SwarmHandler) HandleGetDashboard(w http.ResponseWriter, r *http.Request
 	// Nodes.
 	nodeResults := make([]map[string]interface{}, 0)
 	if h.nodeStore != nil {
-		nodes, err := h.nodeStore.ListNodes(r.Context(), "")
+		nodes, err := h.nodeStore.ListNodes(r.Context(), uid.LocalAgent)
 		if err == nil {
 			for _, n := range nodes {
 				nodeResults = append(nodeResults, map[string]interface{}{
@@ -496,7 +527,7 @@ func (h *SwarmHandler) HandleGetCluster(w http.ResponseWriter, r *http.Request) 
 	var nodes []*swarm.SwarmNode
 
 	if h.nodeStore != nil {
-		stored, err := h.nodeStore.ListNodes(r.Context(), "")
+		stored, err := h.nodeStore.ListNodes(r.Context(), uid.LocalAgent)
 		if err == nil {
 			nodes = stored
 			for _, n := range nodes {

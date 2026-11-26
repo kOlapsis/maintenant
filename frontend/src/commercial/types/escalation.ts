@@ -44,11 +44,7 @@ export interface EscalationRun {
   started_at: string
   ended_at: string | null
   next_action_at: string | null
-  deliveries_summary?: {
-    sent: number
-    failed: number
-    pending: number
-  }
+  deliveries?: EscalationDelivery[]
 }
 
 export interface EscalationDelivery {

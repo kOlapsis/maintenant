@@ -32,12 +32,17 @@ import { sseBus } from '@/services/sseBus'
 import { isLocalAgent } from '@/services/apiFetch'
 import { useEdition } from '@/composables/useEdition'
 
+function failure(e: unknown, fallback: string): string {
+  return e instanceof Error ? e.message : fallback
+}
+
 export const useUpdatesStore = defineStore('updates', () => {
   const { hasFeature } = useEdition()
   const updates = ref<ImageUpdate[]>([])
   const summary = ref<UpdateSummary | null>(null)
   const scanning = ref(false)
   const loading = ref(false)
+  const error = ref<string | null>(null)
   const containerCves = ref<Record<string, CVEInfo[]>>({})
   const riskScores = ref<RiskListResponse | null>(null)
   const exclusions = ref<Exclusion[]>([])
@@ -156,13 +161,14 @@ export const useUpdatesStore = defineStore('updates', () => {
 
   async function fetchAllUpdates(filters?: { status?: string; update_type?: string; min_risk?: number }) {
     loading.value = true
+    error.value = null
     try {
       const data = await fetchUpdates(filters)
       updates.value = data.updates || []
       lastScan.value = data.last_scan
       nextScan.value = data.next_scan
-    } catch {
-      // ignore
+    } catch (e) {
+      error.value = failure(e, 'Failed to load updates')
     } finally {
       loading.value = false
     }
@@ -171,8 +177,8 @@ export const useUpdatesStore = defineStore('updates', () => {
   async function fetchSummary() {
     try {
       summary.value = await fetchUpdateSummary()
-    } catch {
-      // ignore
+    } catch (e) {
+      error.value = failure(e, 'Failed to load the update summary')
     }
   }
 
@@ -205,17 +211,18 @@ export const useUpdatesStore = defineStore('updates', () => {
           await fetchAllUpdates()
           clearInterval(poll)
         }
-      } catch {
+      } catch (e) {
         clearInterval(poll)
         scanning.value = false
+        error.value = failure(e, 'Lost track of the running scan')
       }
     }, 3000)
-    setTimeout(() => { clearInterval(poll); scanning.value = false }, 120_000)
   }
 
   async function startScan() {
     if (scanning.value) return
     scanning.value = true
+    error.value = null
     try {
       await triggerScan()
       pollUntilDone()
@@ -225,6 +232,7 @@ export const useUpdatesStore = defineStore('updates', () => {
         pollUntilDone()
       } else {
         scanning.value = false
+        error.value = failure(e, 'Failed to start the scan')
       }
     }
   }
@@ -281,6 +289,7 @@ export const useUpdatesStore = defineStore('updates', () => {
     summary,
     scanning,
     loading,
+    error,
     containerCves,
     riskScores,
     exclusions,

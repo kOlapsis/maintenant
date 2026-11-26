@@ -125,10 +125,10 @@ The server's own Swarm manager raises the alerts below. They go through the [Ale
 | Alert | Severity | Raised when | Resolved when |
 |-------|----------|-------------|---------------|
 | `replica_unhealthy` | Warning | A replicated service has fewer running tasks than desired replicas for 5 minutes. The delay starts when the shortfall is first seen, by the check that runs every 60 seconds or by a service event (a scale, an image update), and a service that recovers before it ends raises nothing. | The running count reaches the desired count again, the service is scaled to zero, ignored or removed |
-| `crash_loop` | Critical | 3 tasks of a service failed within 5 minutes, on any node of the cluster. Failed tasks are read from the snapshot taken every 30 seconds. A task that Swarm shut down (a rolling update, a scale-down) does not count, nor one that exited with code 0 or 143 (a clean stop). Exit code 137 counts, because the task list does not say whether the out-of-memory killer sent it. | The service had no new failure for 10 minutes, was removed, or is now ignored with `maintenant.ignore` |
+| `crash_loop` | Critical | 3 tasks of a service failed within 5 minutes, on any node of the cluster. A task its node rejected (an image that cannot be pulled, a mount that does not exist) counts as failed. Failed tasks are read from the snapshot taken every 30 seconds. A task that Swarm shut down (a rolling update, a scale-down) does not count, nor one that exited with code 0 or 143 (a clean stop). Exit code 137 counts, because the task list does not say whether the out-of-memory killer sent it. | The service had no new failure for 10 minutes, was removed, or is now ignored with `maintenant.ignore` |
 | `update_rollback` | Warning | A rolling update ended in a rollback | The next rolling update of the service completes, or the service is ignored or removed |
 | `update_stalled` | Warning | A rolling update is paused | The next rolling update of the service completes, or the service is ignored or removed |
-| `node_down` | Critical | A node that was ready becomes `down` or `disconnected` | The node is ready again, or left the cluster |
+| `node_down` | Critical | A node that was ready becomes `down` or `disconnected`, or a node is `down` or `disconnected` the first time maintenant sees it | The node is ready again, or left the cluster |
 | `node_drain` | Warning | The availability of a node is set to `drain` | The node leaves `drain`, or left the cluster |
 | `quorum_degraded` | Critical | Fewer managers are ready than a majority of the managers (for 3 managers, fewer than 2), or the swarm has no leader, which stops the manager from listing its nodes | The quorum is back: the nodes can be listed again and a majority of managers is ready |
 
@@ -152,7 +152,7 @@ The Nodes page lists every node with its role, status, availability, engine vers
 
 An [agent](../guides/agent-setup.md) on a Swarm manager reports the cluster of that manager to a central maintenant: it is detected automatically, or forced with `--runtime=swarm` (`MAINTENANT_RUNTIME=swarm`). Without the flag, the agent checks the Swarm membership of a Docker host every minute: joining or leaving a Swarm restarts collection under the new runtime, and leaving makes the server drop the cluster it held for that agent. Every 30 seconds it sends a snapshot of the services, tasks and nodes, which shows up in the Services, Tasks and Nodes pages with the name of the agent. The Swarm fields of its containers (service, node, slot) are reported too. Agents are a multi-host feature: they need the Personal edition or above.
 
-- Run the agent on a **manager**. On a worker it reports the containers but the topology snapshot fails, because a worker cannot list services.
+- Run the agent on a **manager**. On a worker it reports the containers only, without services, tasks and nodes, because a worker cannot list them. A node promoted to manager starts reporting the cluster at its next snapshot, and a demoted one makes the server drop the cluster it held for that agent.
 - The alerts above are not raised for an agent's cluster.
 - The API lists take an `agent_id` parameter to pick one agent, or `local` for the server's own swarm.
 
@@ -181,7 +181,7 @@ All Swarm routes are read-only and open in every edition. Except where noted, th
 | `GET` | `/api/v1/swarm/services/{serviceID}` | Service detail with its tasks. `404 SWARM_SERVICE_NOT_FOUND` if unknown. |
 | `GET` | `/api/v1/swarm/tasks` | List tasks. `?service=`, `?node=` and `?state=` filter them. |
 | `GET` | `/api/v1/swarm/nodes` | List nodes with role, status and task count, plus manager and worker counts. |
-| `GET` | `/api/v1/swarm/nodes/{nodeID}` | Node detail with the tasks running on it (from the server's own cluster). `404 SWARM_NODE_NOT_FOUND` if unknown. |
+| `GET` | `/api/v1/swarm/nodes/{nodeID}` | Node detail with the tasks running on it: live for a node of the server's own cluster, as last reported by its agent for a remote node. `404 SWARM_NODE_NOT_FOUND` if unknown. |
 | `GET` | `/api/v1/swarm/services/{serviceID}/update-status` | Rolling update progress. Server's own cluster only. |
 | `GET` | `/api/v1/swarm/services/{serviceID}/resources` | CPU, memory and network of each running task. The values are `null` for a task that does not run on the node where maintenant runs. Server's own cluster only. |
 | `GET` | `/api/v1/swarm/dashboard` | Cluster summary with nodes, services and crash-loop state. Server's own cluster only. |

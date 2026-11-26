@@ -23,6 +23,7 @@ export interface CertMonitor {
   last_error?: string
   created_at: string
   latest_check?: CertCheckResult
+  days_remaining?: number
   agent_id?: string | null
   limited: boolean
 }
@@ -39,7 +40,7 @@ export interface CertCheckResult {
   signature_algorithm: string
   not_before?: string
   not_after?: string
-  days_remaining: number
+  days_remaining?: number
   chain_valid?: boolean
   chain_error?: string
   hostname_match?: boolean

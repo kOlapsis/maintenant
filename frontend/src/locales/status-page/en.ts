@@ -3,10 +3,12 @@ const en = {
   globalDegraded: 'Some services degraded',
   globalPartialOutage: 'Partial system outage',
   globalMajorOutage: 'Major system outage',
+  globalMaintenance: 'Under maintenance',
   statusOperational: 'Operational',
   statusDegraded: 'Degraded',
   statusPartialOutage: 'Partial Outage',
   statusMajorOutage: 'Major Outage',
+  statusUnderMaintenance: 'Under Maintenance',
   statusUnknown: 'Unknown',
   sectionComponents: 'System Components',
   sectionActiveIncidents: 'Active Incidents',
@@ -33,6 +35,7 @@ const en = {
   subscribeUnavailable: 'Email updates are not available right now.',
   subscribeFailed: 'The subscription failed. Try again later.',
   updatedAt: 'Updated',
+  refreshFailed: 'Could not refresh. The status shown may be out of date.',
   poweredBy: 'Powered by Maintenant',
 } as const
 

@@ -407,6 +407,16 @@ func (m *mockCertStore) CountActiveMonitors(_ context.Context, sources ...CertSo
 	}
 	return count, nil
 }
+func (m *mockCertStore) CountAgentLabelMonitors(_ context.Context, agentID string) (int, error) {
+	count := 0
+	for _, mon := range m.monitors {
+		if mon.Source == SourceLabel && mon.AgentID == agentID {
+			count++
+		}
+	}
+	return count, nil
+}
+
 func (m *mockCertStore) CountLimitedMonitors(_ context.Context) (int, error) {
 	count := 0
 	for _, mon := range m.monitors {

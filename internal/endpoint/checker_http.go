@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/redact"
 	"github.com/kolapsis/maintenant/internal/ssrf"
 	"github.com/kolapsis/maintenant/internal/trust"
 )
@@ -62,43 +63,68 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 	req, err := newRequest()
 	if err != nil {
 		result.ResponseTimeMs = time.Since(start).Milliseconds()
-		result.ErrorMessage = fmt.Sprintf("create request: %v", err)
+		result.ErrorMessage = redact.Text(fmt.Sprintf("create request: %v", err))
 		return result
 	}
 
 	resp, err := client.Do(req)
+	leftHost := false
 
 	if err != nil {
 		reason, isTrustFailure := trustFailureReason(err)
 		if !cfg.TLSVerify || !isTrustFailure {
 			result.ResponseTimeMs = time.Since(start).Milliseconds()
-			result.ErrorMessage = fmt.Sprintf("request failed: %v", err)
+			result.ErrorMessage = redact.Text(fmt.Sprintf("request failed: %v", err))
 			return result
 		}
 
-		// A bare handshake tells degraded from down and yields the chain; the
-		// request is never resent, so its secrets never reach an unverified peer.
+		// A bare handshake tells degraded from down and yields the chain.
 		result.ResponseTimeMs = time.Since(start).Milliseconds()
 
 		addr, host, addrErr := hostPort(ep.Target)
 		if addrErr != nil {
-			result.ErrorMessage = fmt.Sprintf("request failed: %v", err)
+			result.ErrorMessage = redact.Text(fmt.Sprintf("request failed: %v", err))
 			return result
 		}
 
 		state, dialErr := trust.DialInspectControl(ctx, addr, host, timeout, control)
 		if dialErr != nil {
-			result.ErrorMessage = fmt.Sprintf("request failed: %v", err)
+			result.ErrorMessage = redact.Text(fmt.Sprintf("request failed: %v", err))
 			return result
 		}
 
 		result.Degraded = true
 		result.DegradedReason = reason
-		result.Success = true
 		result.TLSPeerCertificates = state.PeerCertificates
 		result.TLSOCSPResponse = state.OCSPResponse
-		result.ErrorMessage = reason
-		return result
+
+		// Headers, URL credentials and query strings never reach a peer whose certificate was rejected.
+		if carriesSecret(ep) {
+			result.Success = true
+			result.ErrorMessage = reason
+			return result
+		}
+
+		unverified := newHTTPClient(cfg, timeout, true, control)
+		defer unverified.CloseIdleConnections()
+		follow := unverified.CheckRedirect
+		unverified.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			if req.URL.Scheme != via[0].URL.Scheme || req.URL.Host != via[0].URL.Host {
+				leftHost = true
+				return http.ErrUseLastResponse
+			}
+			return follow(req, via)
+		}
+
+		req, err = newRequest()
+		if err == nil {
+			resp, err = unverified.Do(req)
+		}
+		if err != nil {
+			result.ResponseTimeMs = time.Since(start).Milliseconds()
+			result.ErrorMessage = redact.Text(fmt.Sprintf("request failed: %v", err)) + "; " + reason
+			return result
+		}
 	}
 
 	result.ResponseTimeMs = time.Since(start).Milliseconds()
@@ -111,7 +137,7 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 	for first.Request != nil && first.Request.Response != nil {
 		first = first.Request.Response
 	}
-	if first.TLS != nil && len(first.TLS.PeerCertificates) > 0 {
+	if !result.Degraded && first.TLS != nil && len(first.TLS.PeerCertificates) > 0 {
 		result.TLSPeerCertificates = first.TLS.PeerCertificates
 		result.TLSOCSPResponse = first.TLS.OCSPResponse
 	}
@@ -120,7 +146,7 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 	result.HTTPStatus = &statusCode
 
 	matcher := NewStatusMatcher(cfg.ExpectedStatus)
-	result.Success = matcher.Matches(statusCode)
+	result.Success = matcher.Matches(statusCode) || leftHost
 	if !result.Success {
 		result.ErrorMessage = fmt.Sprintf("unexpected status %d", statusCode)
 	}
@@ -144,6 +170,12 @@ func probeGuard(ep *Endpoint) func(string, string, syscall.RawConn) error {
 		return nil
 	}
 	return ssrf.ProbeControl
+}
+
+// carriesSecret reports whether the request of ep holds custom headers, credentials in its URL or a query string.
+func carriesSecret(ep *Endpoint) bool {
+	u, err := url.Parse(ep.Target)
+	return err != nil || u.User != nil || u.RawQuery != "" || len(ep.Config.Headers) > 0
 }
 
 // newHTTPClient builds the probe client. skipVerify is the per-endpoint

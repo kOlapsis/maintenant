@@ -87,6 +87,13 @@ type Config struct {
 	Mode      string // "embedded" | "server" | "agent"
 	MultiHost MultiHostConfig
 
+	// InvalidSettings lists the durations and counts replaced by their default because their value is not usable.
+	InvalidSettings []InvalidSetting
+	// MistypedBooleans lists the boolean variables read as false because their value is not a boolean.
+	MistypedBooleans []InvalidSetting
+	// RefusedBooleans lists the mistyped booleans whose true value restricts what the product does.
+	RefusedBooleans []InvalidSetting
+
 	// Dev
 	AllowPrivateWebhooks bool
 
@@ -130,8 +137,9 @@ type MultiHostConfig struct {
 // InvalidSetting is a configuration value that was rejected rather than
 // replaced by its default.
 type InvalidSetting struct {
-	Name string
-	Raw  string
+	Name    string
+	Raw     string
+	Default string
 }
 
 func (m *MultiHostConfig) acceptSpoolSetting(env string) {
@@ -320,6 +328,31 @@ func (c Config) ValidateAgentSpool() error {
 	return errors.Join(errs...)
 }
 
+// ErrMode refuses a mode the binary does not know.
+var ErrMode = errors.New("MAINTENANT_MODE is not a known mode: use embedded, server or agent")
+
+// ErrRestrictingBoolean refuses a mistyped boolean that would leave a restriction off.
+var ErrRestrictingBoolean = errors.New(
+	"boolean setting is not a recognised value, and reading it as false would leave off a restriction you asked for: use true or false")
+
+// ValidateBooleans refuses a mistyped value on a boolean that closes an access or a network call.
+func (c Config) ValidateBooleans() error {
+	var errs []error
+	for _, s := range c.RefusedBooleans {
+		errs = append(errs, fmt.Errorf("%w (%s=%q)", ErrRestrictingBoolean, s.Name, s.Raw))
+	}
+	return errors.Join(errs...)
+}
+
+// ValidateMode refuses an unknown mode.
+func (c Config) ValidateMode() error {
+	switch c.Mode {
+	case "embedded", "server", "agent":
+		return nil
+	}
+	return fmt.Errorf("%w (got %q)", ErrMode, c.Mode)
+}
+
 // ValidateHTTP rejects a configuration that must not be served over HTTP.
 func (c Config) ValidateHTTP() error {
 	if c.MCP.Enabled && !c.MCP.AllowUnauthenticated &&
@@ -367,6 +400,7 @@ const DefaultAddr = "127.0.0.1:8080"
 // ConfigFromEnv reads configuration from environment variables.
 func ConfigFromEnv() Config {
 	addr := envOr("MAINTENANT_ADDR", DefaultAddr)
+	var mistyped, refused []InvalidSetting
 	cfg := Config{
 		Addr:        addr,
 		BaseURL:     envOr("MAINTENANT_BASE_URL", "http://"+addr),
@@ -382,17 +416,17 @@ func ConfigFromEnv() Config {
 			Password: os.Getenv("MAINTENANT_SMTP_PASSWORD"),
 			From:     envOr("MAINTENANT_SMTP_FROM", "maintenant@localhost"),
 
-			AllowPlaintext: parseTruthy(os.Getenv("MAINTENANT_SMTP_ALLOW_PLAINTEXT")),
+			AllowPlaintext: envBool("MAINTENANT_SMTP_ALLOW_PLAINTEXT", &mistyped),
 		},
 
 		MCP: MCPConfig{
-			Enabled:              parseTruthy(os.Getenv("MAINTENANT_MCP")),
+			Enabled:              envBool("MAINTENANT_MCP", &mistyped),
 			ClientID:             os.Getenv("MAINTENANT_MCP_CLIENT_ID"),
 			ClientSecret:         os.Getenv("MAINTENANT_MCP_CLIENT_SECRET"),
 			AllowedRedirectURIs:  os.Getenv("MAINTENANT_MCP_ALLOWED_REDIRECT_URIS"),
-			AllowUnauthenticated: parseTruthy(os.Getenv("MAINTENANT_MCP_ALLOW_UNAUTHENTICATED")),
-			ReadOnly:             parseTruthy(os.Getenv("MAINTENANT_MCP_READ_ONLY")),
-			Socket:               parseTruthy(os.Getenv("MAINTENANT_MCP_SOCKET")),
+			AllowUnauthenticated: envBool("MAINTENANT_MCP_ALLOW_UNAUTHENTICATED", &mistyped),
+			ReadOnly:             envBool("MAINTENANT_MCP_READ_ONLY", &refused),
+			Socket:               envBool("MAINTENANT_MCP_SOCKET", &mistyped),
 		},
 
 		CORSOrigins:    os.Getenv("MAINTENANT_CORS_ORIGINS"),
@@ -417,38 +451,44 @@ func ConfigFromEnv() Config {
 		cfg.SecurityScoreThreshold = n
 	}
 
+	invalid := &cfg.InvalidSettings
 	cfg.Retention = RetentionConfig{
-		Snapshots: envDurationOr("MAINTENANT_RETENTION_SNAPSHOTS", resource.DefaultSnapshotRetention),
-		Interval:  envDurationOr("MAINTENANT_RETENTION_INTERVAL", time.Hour),
-		BatchSize: envIntOr("MAINTENANT_RETENTION_BATCH_SIZE", 1000),
+		Snapshots: envDurationOr("MAINTENANT_RETENTION_SNAPSHOTS", resource.DefaultSnapshotRetention, invalid),
+		Interval:  envDurationOr("MAINTENANT_RETENTION_INTERVAL", time.Hour, invalid),
+		BatchSize: envIntOr("MAINTENANT_RETENTION_BATCH_SIZE", 1000, invalid),
 	}
+	// Read by internal/update from the environment: only checked here.
+	envDurationOr("MAINTENANT_UPDATE_INTERVAL", 24*time.Hour, invalid)
 
 	cfg.ContainerDownAfter, cfg.ContainerDownAfterInvalid = envOptionalDuration("MAINTENANT_CONTAINER_DOWN_AFTER")
 	cfg.MaxBodySize, cfg.MaxBodySizeInvalid = envBodySize("MAINTENANT_MAX_BODY_SIZE", 1048576)
 
-	cfg.DisableTelemetry = parseTruthy(os.Getenv("MAINTENANT_DISABLE_TELEMETRY"))
-	cfg.DisableOSEOLRefresh = parseTruthy(os.Getenv("MAINTENANT_DISABLE_OS_EOL_REFRESH"))
-	cfg.ProxyLabels = parseTruthy(os.Getenv("MAINTENANT_PROXY_LABELS"))
-	cfg.AllowPrivateWebhooks = parseTruthy(os.Getenv("MAINTENANT_ALLOW_PRIVATE_WEBHOOKS"))
+	cfg.DisableTelemetry = envBool("MAINTENANT_DISABLE_TELEMETRY", &refused)
+	cfg.DisableOSEOLRefresh = envBool("MAINTENANT_DISABLE_OS_EOL_REFRESH", &refused)
+	cfg.ProxyLabels = envBool("MAINTENANT_PROXY_LABELS", &mistyped)
+	cfg.AllowPrivateWebhooks = envBool("MAINTENANT_ALLOW_PRIVATE_WEBHOOKS", &mistyped)
 
-	cfg.Mode = envOr("MAINTENANT_MODE", "embedded")
+	cfg.Mode = strings.ToLower(strings.TrimSpace(os.Getenv("MAINTENANT_MODE")))
+	if cfg.Mode == "" {
+		cfg.Mode = "embedded"
+	}
 
 	cfg.MultiHost = MultiHostConfig{
 		GRPCPublicURL:              os.Getenv("MAINTENANT_GRPC_URL"),
 		GRPCListen:                 envOr("MAINTENANT_GRPC_LISTEN", "127.0.0.1:8443"),
-		AgentRateLimitPerSecond:    envIntOr("MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND", 1000),
-		AgentStaleThresholdSeconds: envIntOr("MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS", 60),
+		AgentRateLimitPerSecond:    envIntOr("MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND", 1000, invalid),
+		AgentStaleThresholdSeconds: envIntOr("MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS", 60, invalid),
 		TLSCertFile:                os.Getenv("MAINTENANT_GRPC_TLS_CERT"),
 		TLSKeyFile:                 os.Getenv("MAINTENANT_GRPC_TLS_KEY"),
-		InsecureGRPC:               parseTruthy(os.Getenv("MAINTENANT_GRPC_TLS_INSECURE")),
+		InsecureGRPC:               envBool("MAINTENANT_GRPC_TLS_INSECURE", &mistyped),
 		ServerURL:                  os.Getenv("MAINTENANT_SERVER"),
 		EnrollmentToken:            os.Getenv("MAINTENANT_ENROLLMENT_TOKEN"),
 		RuntimeOverride:            os.Getenv("MAINTENANT_RUNTIME"),
 		Label:                      os.Getenv("MAINTENANT_LABEL"),
 		NodeName:                   os.Getenv("MAINTENANT_NODE_NAME"),
-		InsecureSkipVerify:         parseTruthy(os.Getenv("MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY")),
+		InsecureSkipVerify:         envBool("MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY", &mistyped),
 		ServerFingerprint:          os.Getenv("MAINTENANT_GRPC_SERVER_FINGERPRINT"),
-		EmbeddedAgent:              parseTruthy(os.Getenv("MAINTENANT_EMBEDDED_AGENT")),
+		EmbeddedAgent:              envBool("MAINTENANT_EMBEDDED_AGENT", &mistyped),
 	}
 
 	var invalidSpool []InvalidSetting
@@ -459,6 +499,8 @@ func ConfigFromEnv() Config {
 	cfg.MultiHost.AgentSpoolMaxAgeSeconds = envAgentSpoolSetting(
 		"MAINTENANT_AGENT_SPOOL_MAX_AGE_SECONDS", DefaultAgentSpoolMaxAgeSeconds, &invalidSpool)
 	cfg.MultiHost.InvalidSpoolSettings = invalidSpool
+	cfg.MistypedBooleans = mistyped
+	cfg.RefusedBooleans = refused
 
 	return cfg
 }
@@ -474,6 +516,16 @@ func envBodySize(key string, def int64) (int64, string) {
 		return 0, raw
 	}
 	return n, ""
+}
+
+func envBool(key string, mistyped *[]InvalidSetting) bool {
+	raw := strings.TrimSpace(os.Getenv(key))
+	switch strings.ToLower(raw) {
+	case "", "1", "t", "true", "y", "yes", "on", "0", "f", "false", "n", "no", "off":
+	default:
+		*mistyped = append(*mistyped, InvalidSetting{Name: key, Raw: raw})
+	}
+	return parseTruthy(raw)
 }
 
 func parseTruthy(raw string) bool {
@@ -492,13 +544,17 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-func envIntOr(key string, fallback int) int {
-	if v := os.Getenv(key); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
+func envIntOr(key string, fallback int, invalid *[]InvalidSetting) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
 	}
-	return fallback
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		*invalid = append(*invalid, InvalidSetting{Name: key, Raw: v, Default: strconv.Itoa(fallback)})
+		return fallback
+	}
+	return n
 }
 
 // envOptionalDuration parses a duration whose absence is meaningful. It returns
@@ -516,13 +572,17 @@ func envOptionalDuration(key string) (time.Duration, string) {
 	return d, ""
 }
 
-func envDurationOr(key string, fallback time.Duration) time.Duration {
-	if v := os.Getenv(key); v != "" {
-		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			return d
-		}
+func envDurationOr(key string, fallback time.Duration, invalid *[]InvalidSetting) time.Duration {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
 	}
-	return fallback
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		*invalid = append(*invalid, InvalidSetting{Name: key, Raw: v, Default: fallback.String()})
+		return fallback
+	}
+	return d
 }
 
 // ErrStatusURL refuses a status page URL whose host name cannot be read.

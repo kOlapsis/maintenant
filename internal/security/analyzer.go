@@ -82,7 +82,7 @@ func analyzePortBindings(containerID string, containerName string, bindings []Po
 				ContainerName: containerName,
 				Title:         "Database port publicly exposed",
 				Description:   fmt.Sprintf("%s port %d is exposed on all interfaces (0.0.0.0).", dbType, b.Port),
-				Details:       map[string]any{"port": b.Port, "protocol": b.Protocol, "database_type": dbType},
+				Details:       map[string]any{"port": b.Port, "protocol": b.Protocol, "host_port": b.HostPort, "database_type": dbType},
 				DetectedAt:    now,
 			})
 		} else {
@@ -93,7 +93,7 @@ func analyzePortBindings(containerID string, containerName string, bindings []Po
 				ContainerName: containerName,
 				Title:         "Port exposed on all interfaces",
 				Description:   fmt.Sprintf("Port %d/%s is bound to 0.0.0.0, making it accessible from any network interface.", b.Port, b.Protocol),
-				Details:       map[string]any{"port": b.Port, "protocol": b.Protocol},
+				Details:       map[string]any{"port": b.Port, "protocol": b.Protocol, "host_port": b.HostPort},
 				DetectedAt:    now,
 			})
 		}

@@ -775,7 +775,8 @@ CREATE TABLE version_pins (
     pinned_digest TEXT NOT NULL,
     reason        TEXT,
     pinned_at     BIGINT NOT NULL,
-    agent_id      TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'
+    agent_id      TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+    container_name TEXT NOT NULL DEFAULT ''
 );
 CREATE UNIQUE INDEX uq_version_pins_agent_container ON version_pins(agent_id, container_id);
 
@@ -990,6 +991,11 @@ CREATE TABLE mcp_oauth_tokens (
 );
 CREATE INDEX idx_mcp_oauth_tokens_family_id ON mcp_oauth_tokens(family_id);
 CREATE INDEX idx_mcp_oauth_tokens_expires_at ON mcp_oauth_tokens(expires_at);
+
+CREATE TABLE IF NOT EXISTS mcp_oauth_client (
+    id            INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+    secret_fingerprint TEXT NOT NULL
+);
 
 -- ============================================================== webhooks =====
 CREATE TABLE webhook_subscriptions (

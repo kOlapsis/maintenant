@@ -331,6 +331,10 @@ func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *
 		if _, ok := live[sc.ExternalID]; ok {
 			continue
 		}
+		// An inventory built before the container last changed says nothing about it.
+		if sc.LastStateChangeAt.After(meta.ObservedAt) {
+			continue
+		}
 		if err := s.store.ArchiveContainer(ctx, sc.ID, now); err != nil {
 			s.logger.Error("agent inventory: archive", "external_id", shortID(sc.ExternalID), "error", err)
 			continue

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -38,11 +39,39 @@ func splitVariant(tag string) (version, variant string) {
 // ParseTag attempts to parse a Docker tag as a semver version.
 // Returns nil, error for non-semver tags like "latest", "alpine".
 func ParseTag(tag string) (*semver.Version, error) {
-	v, err := semver.NewVersion(tag)
+	v, err := semver.NewVersion(foldBuildPart(tag))
 	if err != nil {
 		return nil, err
 	}
 	return v, nil
+}
+
+// shortcut: the fourth numeric part ("4.0.8.1874") is packed into the patch, so Patch() is an ordering key and a part of 2^32 or more stays unparsed.
+func foldBuildPart(tag string) string {
+	core, rest := tag, ""
+	if i := strings.IndexAny(tag, "-+"); i >= 0 {
+		core, rest = tag[:i], tag[i:]
+	}
+	parts := strings.Split(core, ".")
+	if len(parts) != 3 && len(parts) != 4 {
+		return tag
+	}
+	patch, err := strconv.ParseUint(parts[2], 10, 32)
+	var build uint64
+	if err == nil && len(parts) == 4 {
+		build, err = strconv.ParseUint(parts[3], 10, 32)
+	}
+	if err != nil {
+		return tag
+	}
+	return parts[0] + "." + parts[1] + "." + strconv.FormatUint(patch<<32|build, 10) + rest
+}
+
+// ReleaseVersion returns the major.minor.patch release a tag names, without its "v" prefix and its variant suffix.
+func ReleaseVersion(tag string) (string, bool) {
+	versionPart, _ := splitVariant(tag)
+	version := strings.TrimPrefix(versionPart, "v")
+	return version, plainRelease.MatchString(version) && strings.Count(version, ".") == 2
 }
 
 // semverPrecision counts the numeric components a version part is written with:
@@ -115,7 +144,7 @@ func sortTagVersions(tags []string, variant string, requireDots bool, precision 
 		if precision > 0 && semverPrecision(versionPart) != precision {
 			continue
 		}
-		v, err := semver.NewVersion(versionPart)
+		v, err := ParseTag(versionPart)
 		if err != nil {
 			continue
 		}
@@ -133,7 +162,7 @@ func sortTagVersions(tags []string, variant string, requireDots bool, precision 
 // isFixedVersionTag reports whether a tag names a single release (major.minor.patch) rather than a line the registry moves.
 func isFixedVersionTag(tag string) bool {
 	versionPart, _ := splitVariant(tag)
-	if _, err := semver.NewVersion(versionPart); err != nil {
+	if _, err := ParseTag(versionPart); err != nil {
 		return false
 	}
 	return semverPrecision(versionPart) >= 3
@@ -196,7 +225,7 @@ func withinTrack(current, candidate *semver.Version, level string) bool {
 func findBestUpdate(currentTag string, allTags []string, level string) (bestTag string, updateType UpdateType) {
 	versionPart, variant := splitVariant(currentTag)
 
-	currentVer, err := semver.NewVersion(versionPart)
+	currentVer, err := ParseTag(versionPart)
 	if err != nil {
 		// Non-semver tag (e.g. "lts", "alpine", "stable", "latest").
 		return digestOnly(currentTag, allTags)

@@ -34,6 +34,8 @@ spec:
         runAsUser: 65534
         runAsGroup: 65534
         fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: maintenant
           image: {{ include "maintenant.image" . }}
@@ -68,6 +70,14 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.database.existingSecret }}
                   key: {{ .Values.database.urlKey }}
+            {{- end }}
+            {{- $baseURLSet := false }}
+            {{- range .Values.extraEnv }}
+            {{- if eq .name "MAINTENANT_BASE_URL" }}{{ $baseURLSet = true }}{{ end }}
+            {{- end }}
+            {{- if and .Values.ingress.enabled (not $baseURLSet) }}
+            - name: MAINTENANT_BASE_URL
+              value: {{ printf "%s://%s" (ternary "https" "http" (not (empty .Values.ingress.tls))) .Values.ingress.host | quote }}
             {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}

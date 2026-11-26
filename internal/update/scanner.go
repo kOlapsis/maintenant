@@ -36,6 +36,17 @@ type ContainerInfo struct {
 	Platform           string   // "os/arch" of the host running the container, empty when unknown
 }
 
+// PinName returns the name a pin follows when the container is recreated: the Swarm service of a task, else the container name, and none for a Kubernetes workload, whose ID is stable.
+func (c ContainerInfo) PinName() string {
+	if c.RuntimeType == "kubernetes" {
+		return ""
+	}
+	if c.SwarmService != "" {
+		return c.SwarmService
+	}
+	return c.Name
+}
+
 const scanImageTimeout = 2 * time.Minute
 
 var errUnreadableImage = errors.New("image not readable from its registry")
@@ -73,11 +84,11 @@ func (sc *Scanner) Scan(ctx context.Context, containers []ContainerInfo) ([]Upda
 	return results, scanErrors
 }
 
-// scan is Scan, plus the names of the containers whose image the registry would not show.
-func (sc *Scanner) scan(ctx context.Context, containers []ContainerInfo) ([]UpdateResult, []ScanError, []string) {
+// scan is Scan, plus the containers whose image the registry would not show.
+func (sc *Scanner) scan(ctx context.Context, containers []ContainerInfo) ([]UpdateResult, []ScanError, []ContainerInfo) {
 	var results []UpdateResult
 	var scanErrors []ScanError
-	var unreadable []string
+	var unreadable []ContainerInfo
 
 	// Load exclusions
 	exclusions, err := sc.store.ListExclusions(ctx)
@@ -107,7 +118,7 @@ func (sc *Scanner) scan(ctx context.Context, containers []ContainerInfo) ([]Upda
 
 		result, err := sc.scanContainerWithin(ctx, c, exclusions)
 		if errors.Is(err, errUnreadableImage) {
-			unreadable = append(unreadable, c.Name)
+			unreadable = append(unreadable, c)
 			continue
 		}
 		if err != nil {
@@ -173,7 +184,10 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 	}
 
 	// Check version pins in store
-	pin, _ := sc.store.GetVersionPin(ctx, c.AgentID, c.ExternalID)
+	pin, err := sc.store.AdoptVersionPin(ctx, c.AgentID, c.ExternalID, c.PinName(), c.Image)
+	if err != nil {
+		return nil, fmt.Errorf("read version pin: %w", err)
+	}
 	if pin != nil {
 		sc.logger.Debug("scanner: pinned via store", "container", c.Name, "pin", pin.PinnedTag)
 		return nil, nil

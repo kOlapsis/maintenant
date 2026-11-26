@@ -168,6 +168,49 @@ func TestService_PortChangeWithinOneType_TriggersUpdate(t *testing.T) {
 	}
 }
 
+func TestService_SecondExposureOfTheSamePort_TriggersUpdate(t *testing.T) {
+	lb := ServicePort{Service: "shop/web", Type: ServiceTypeLoadBalancer, Port: 443, TargetPort: 8443, Protocol: "tcp"}
+	otherLB := ServicePort{Service: "shop/web-public", Type: ServiceTypeLoadBalancer, Port: 443, TargetPort: 8443, Protocol: "tcp"}
+	nodePort := ServicePort{Service: "shop/web", Type: ServiceTypeNodePort, Port: 80, TargetPort: 8080, NodePort: 30080, Protocol: "tcp"}
+	otherNodePort := nodePort
+	otherNodePort.NodePort = 30081
+	docker := func(hostPorts ...string) []Insight {
+		var bindings []PortBinding
+		for _, hp := range hostPorts {
+			bindings = append(bindings, PortBinding{HostIP: "0.0.0.0", HostPort: hp, Port: 80, Protocol: "tcp"})
+		}
+		return AnalyzeDocker("c1", "web", DockerSecurityConfig{Bindings: bindings}, testNow)
+	}
+	k8s := func(ports ...ServicePort) []Insight { return AnalyzeKubernetes("c1", "web", ports, testNow) }
+
+	tests := []struct {
+		name          string
+		before, after []Insight
+		want          int
+	}{
+		{"second service on the same target port", k8s(lb), k8s(lb, otherLB), 2},
+		{"service replaced by another on the same target port", k8s(lb), k8s(otherLB), 2},
+		{"another node port for the same target port", k8s(nodePort), k8s(otherNodePort), 2},
+		{"second host port for the same container port", docker("8080"), docker("8080", "9090"), 2},
+		{"same service", k8s(lb), k8s(lb), 1},
+		{"same binding", docker("8080"), docker("8080"), 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := NewService(Deps{Logger: testLogger()})
+			alerts, events := 0, 0
+			svc.SetAlertCallback(func(string, string, []Insight, bool) { alerts++ })
+			svc.SetEventCallback(func(string, any) { events++ })
+
+			svc.UpdateContainer("c1", "web", tt.before)
+			svc.UpdateContainer("c1", "web", tt.after)
+
+			assert.Equal(t, tt.want, alerts)
+			assert.Equal(t, tt.want, events)
+		})
+	}
+}
+
 func TestService_SSEEvents(t *testing.T) {
 	svc := NewService(Deps{Logger: testLogger()})
 

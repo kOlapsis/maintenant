@@ -6,6 +6,8 @@ import { setActivePinia, createPinia } from 'pinia'
 
 const handlers = vi.hoisted(() => new Map<string, Array<() => void>>())
 const listComponents = vi.hoisted(() => vi.fn())
+const listIncidents = vi.hoisted(() => vi.fn())
+const edition = vi.hoisted(() => ({ loaded: () => {}, features: false }))
 
 vi.mock('@/services/sseBus', () => ({
   sseBus: {
@@ -17,11 +19,14 @@ vi.mock('@/services/sseBus', () => ({
 }))
 vi.mock('@/services/statusApi', () => ({
   listComponents,
-  listIncidents: vi.fn(),
+  listIncidents,
   listMaintenance: vi.fn(),
   listSubscribers: vi.fn(),
 }))
-vi.mock('@/composables/useEdition', () => ({ useEdition: () => ({ hasFeature: () => false }) }))
+vi.mock('@/composables/useEdition', () => {
+  const whenLoaded = new Promise<void>((resolve) => (edition.loaded = resolve))
+  return { useEdition: () => ({ hasFeature: () => edition.features, whenLoaded: () => whenLoaded }) }
+})
 
 import { useStatusAdminStore } from '../statusAdmin'
 
@@ -40,4 +45,19 @@ describe('status admin store', () => {
       expect(listComponents).toHaveBeenCalledTimes(1)
     },
   )
+
+  it('loads the incidents once a late edition is known', async () => {
+    listIncidents.mockResolvedValue({ incidents: [{ id: 'i1' }], total: 1 })
+    const store = useStatusAdminStore()
+
+    const pending = store.fetchIncidents()
+    await Promise.resolve()
+    expect(listIncidents).not.toHaveBeenCalled()
+
+    edition.features = true
+    edition.loaded()
+    await pending
+
+    expect(store.incidents).toHaveLength(1)
+  })
 })

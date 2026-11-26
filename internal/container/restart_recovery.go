@@ -73,16 +73,18 @@ func (s *Service) recheckRestartRecovery(ctx context.Context, id string) {
 		s.untrackRestartAlert(id)
 		return
 	}
-	if c.State != StateRunning {
-		return
-	}
-
-	result, err := s.restartChecker.Check(ctx, c)
-	if err != nil {
-		s.logger.Error("restart recovery recheck: check", "container_id", id, "error", err)
-		return
-	}
-	if result != nil {
+	switch c.State {
+	case StateCompleted:
+	case StateRunning:
+		result, err := s.restartChecker.Check(ctx, c)
+		if err != nil {
+			s.logger.Error("restart recovery recheck: check", "container_id", id, "error", err)
+			return
+		}
+		if result != nil {
+			return
+		}
+	default:
 		return
 	}
 
@@ -92,5 +94,6 @@ func (s *Service) recheckRestartRecovery(ctx context.Context, id string) {
 		"container_name": c.Name,
 		"timestamp":      time.Now(),
 		"agent_id":       c.AgentID,
+		"state":          c.State,
 	})
 }

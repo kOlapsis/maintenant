@@ -267,6 +267,8 @@ func (a *recordingAnnouncer) AnnounceIncident(_ context.Context, inc *status.Inc
 	a.opened = append(a.opened, inc.Title+"|"+message)
 }
 
+func (a *recordingAnnouncer) InvalidatePublicSnapshot() {}
+
 func (a *recordingAnnouncer) AnnounceIncidentUpdate(_ context.Context, inc *status.Incident, upd *status.IncidentUpdate) {
 	a.updates = append(a.updates, inc.Status+">"+upd.Status+"|"+upd.Message)
 }

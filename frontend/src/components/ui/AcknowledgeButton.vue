@@ -6,6 +6,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useAlertsStore } from '@/stores/alerts'
+import { showToast } from '@/composables/useToast'
 import type { Alert } from '@/services/alertApi'
 
 const props = defineProps<{
@@ -22,6 +23,7 @@ async function acknowledge() {
     await store.acknowledgeAlert(props.alert.id)
   } catch (e) {
     console.error('Failed to acknowledge alert:', e)
+    showToast(`Could not acknowledge the alert: ${e instanceof Error ? e.message : 'request failed'}`, 'warning')
   } finally {
     pending.value = false
   }

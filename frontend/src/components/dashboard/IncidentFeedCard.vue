@@ -12,6 +12,7 @@ import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlid
 import { useEdition } from '@/composables/useEdition'
 import type { Alert } from '@/services/alertApi'
 import { timeAgo } from '@/utils/time'
+import ErrorState from '@/components/ui/ErrorState.vue'
 import { Activity, ChevronRight } from 'lucide-vue-next'
 
 const { hasFeature } = useEdition()
@@ -22,8 +23,7 @@ const statusAdmin = useStatusAdminStore()
 
 onMounted(() => {
   alertsStore.fetchAlerts()
-  alertsStore.fetchActiveAlerts()
-  if (hasFeature('incidents')) statusAdmin.fetchIncidents()
+  statusAdmin.fetchIncidents()
 })
 
 // Unified incident feed: active alerts + status page incidents
@@ -154,6 +154,14 @@ const formatRelativeTime = timeAgo
       </RouterLink>
     </div>
 
+    <ErrorState
+      v-if="alertsStore.activeAlertsError"
+      title="Active alerts unavailable"
+      :message="alertsStore.activeAlertsError"
+      retryable
+      @retry="alertsStore.retryActiveAlerts()"
+    />
+
     <div v-if="incidentFeed.length > 0" class="space-y-1">
       <div
         v-for="(inc, idx) in incidentFeed"
@@ -176,7 +184,7 @@ const formatRelativeTime = timeAgo
       </div>
     </div>
 
-    <div v-else class="flex flex-col items-center justify-center py-10 gap-3">
+    <div v-else-if="!alertsStore.activeAlertsError" class="flex flex-col items-center justify-center py-10 gap-3">
       <div class="w-10 h-10 rounded-full bg-mnt-status-ok flex items-center justify-center">
         <Activity :size="18" class="text-mnt-status-ok" />
       </div>

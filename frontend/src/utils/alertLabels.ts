@@ -13,6 +13,10 @@ const HOST_LABELS: Record<string, string> = {
   os_eol: 'OS end of support',
 }
 
+const AGENT_LABELS: Record<string, string> = {
+  runtime_unreachable: 'Runtime unreachable',
+}
+
 export function humanizeAlertType(source: string, alertType: string): string {
   if (source === 'certificate') {
     const label = CERTIFICATE_LABELS[alertType]
@@ -20,6 +24,10 @@ export function humanizeAlertType(source: string, alertType: string): string {
   }
   if (source === 'host') {
     const label = HOST_LABELS[alertType]
+    if (label) return label
+  }
+  if (source === 'agent') {
+    const label = AGENT_LABELS[alertType]
     if (label) return label
   }
   return alertType

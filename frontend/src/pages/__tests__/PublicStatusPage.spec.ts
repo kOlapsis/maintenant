@@ -2,9 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import PublicStatusPage from '@/pages/PublicStatusPage.vue'
 
-const { guardedFetch } = vi.hoisted(() => ({ guardedFetch: vi.fn() }))
-
-vi.mock('@/services/apiFetch', () => ({ guardedFetch }))
+const fetchMock = vi.fn()
+vi.stubGlobal('fetch', fetchMock)
 
 const listeners = new Map<string, (e: Event) => void>()
 
@@ -37,7 +36,7 @@ function statusSnapshot(subscriptionsEnabled: boolean) {
 }
 
 function serveStatus(subscriptionsEnabled: boolean, subscribe = jsonResponse(200, { status: 'confirmation_sent' })) {
-  guardedFetch.mockImplementation(async (url: string) => {
+  fetchMock.mockImplementation(async (url: string) => {
     if (url === '/status/api') return jsonResponse(200, statusSnapshot(subscriptionsEnabled))
     if (url === '/status/subscribe') return subscribe
     return jsonResponse(404, {})
@@ -52,7 +51,7 @@ async function mountPage() {
 
 describe('PublicStatusPage subscription form', () => {
   beforeEach(() => {
-    guardedFetch.mockReset()
+    fetchMock.mockReset()
   })
 
   it('offers no subscription while the server cannot send the emails', async () => {
@@ -71,7 +70,7 @@ describe('PublicStatusPage subscription form', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    const call = guardedFetch.mock.calls.find(([url]) => url === '/status/subscribe')
+    const call = fetchMock.mock.calls.find(([url]) => url === '/status/subscribe')
     expect(call).toBeDefined()
     expect(call?.[1]).toMatchObject({ method: 'POST', body: JSON.stringify({ email: 'visitor@example.com' }) })
     expect(wrapper.text()).toContain('Check your inbox')
@@ -90,10 +89,25 @@ describe('PublicStatusPage subscription form', () => {
   })
 })
 
+describe('PublicStatusPage global banner', () => {
+  it('announces a maintenance without the operational colour', async () => {
+    fetchMock.mockReset()
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url !== '/status/api') return jsonResponse(404, {})
+      return jsonResponse(200, { ...statusSnapshot(false), global_status: 'under_maintenance', global_message: '' })
+    })
+    const wrapper = await mountPage()
+
+    const banner = wrapper.find('[data-testid="global-banner"]')
+    expect(banner.text()).toContain('Under maintenance')
+    expect(banner.attributes('style')).toContain('--mnt-status-degraded')
+  })
+})
+
 describe('PublicStatusPage live updates', () => {
   beforeEach(() => {
-    guardedFetch.mockReset()
-    guardedFetch.mockImplementation(async (url: string) => {
+    fetchMock.mockReset()
+    fetchMock.mockImplementation(async (url: string) => {
       if (url !== '/status/api') return jsonResponse(404, {})
       return jsonResponse(200, {
         ...statusSnapshot(false),
@@ -102,7 +116,7 @@ describe('PublicStatusPage live updates', () => {
     })
   })
 
-  const statusCalls = () => guardedFetch.mock.calls.filter(([url]) => url === '/status/api').length
+  const statusCalls = () => fetchMock.mock.calls.filter(([url]) => url === '/status/api').length
 
   it('updates a component and the banner in place', async () => {
     const wrapper = await mountPage()
@@ -124,7 +138,7 @@ describe('PublicStatusPage live updates', () => {
   })
 
   it('offers the monitor breakdown from the first load', async () => {
-    guardedFetch.mockImplementation(async (url: string) => {
+    fetchMock.mockImplementation(async (url: string) => {
       if (url !== '/status/api') return jsonResponse(404, {})
       return jsonResponse(200, {
         ...statusSnapshot(false),

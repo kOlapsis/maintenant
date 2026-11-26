@@ -123,8 +123,11 @@ func (cld *CrashLoopDetector) ObserveTasks(snap TopologySnapshot) {
 	cld.failedTasks = failed
 }
 
-// taskFailed reports a task that stopped while Swarm wanted it running: a rolling update or a scale-down shuts tasks down instead of failing them.
+// taskFailed reports a task that stopped while Swarm wanted it running, or that its node refused to run: a rolling update or a scale-down shuts tasks down instead of failing them.
 func taskFailed(t SwarmTask) bool {
+	if t.State == string(dockerswarm.TaskStateRejected) {
+		return true
+	}
 	if t.State != string(dockerswarm.TaskStateFailed) {
 		return false
 	}

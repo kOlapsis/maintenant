@@ -9,6 +9,7 @@ import type { CertMonitor } from '@/services/certificateApi'
 import { deleteCertificate } from '@/services/certificateApi'
 import { useConfirm } from '@/composables/useConfirm'
 import { timeAgo } from '@/utils/time'
+import { certDaysRemaining, countdownColor, formatDaysRemaining } from '@/utils/certFormat'
 import CertificateStatusBadge from './CertificateStatusBadge.vue'
 import AgentBadge from './AgentBadge.vue'
 import OCSPStatusBadge from './OCSPStatusBadge.vue'
@@ -24,23 +25,7 @@ const emit = defineEmits<{
   select: [id: string]
 }>()
 
-function formatDaysRemaining(cert: CertMonitor): string {
-  const days = cert.latest_check?.days_remaining
-  if (days === undefined || days === null) return '-'
-  if (days < 0) return 'Expired'
-  if (days === 0) return 'Today'
-  return `${days}d`
-}
-
 const formatTime = (iso: string | undefined) => timeAgo(iso, 'never')
-
-function countdownColor(days: number | undefined | null): string {
-  if (days === undefined || days === null) return 'var(--mnt-text-muted)'
-  if (days > 30) return 'var(--mnt-status-ok)'
-  if (days > 7) return 'var(--mnt-status-warn)'
-  if (days > 3) return 'var(--mnt-status-critical)'
-  return 'var(--mnt-status-down)'
-}
 
 // Expiry progress bar: percentage of lifetime elapsed
 const expiryProgress = computed(() => {
@@ -147,7 +132,7 @@ async function handleDelete() {
           class="h-1.5 rounded-full transition-all"
           :style="{
             width: expiryProgress + '%',
-            backgroundColor: countdownColor(certificate.latest_check?.days_remaining),
+            backgroundColor: countdownColor(certDaysRemaining(certificate)),
           }"
         />
       </div>
@@ -162,10 +147,10 @@ async function handleDelete() {
         <span
           class="rounded-full px-2 py-0.5 font-medium"
           :style="{
-            color: countdownColor(certificate.latest_check?.days_remaining),
+            color: countdownColor(certDaysRemaining(certificate)),
           }"
         >
-          {{ formatDaysRemaining(certificate) }}
+          {{ formatDaysRemaining(certDaysRemaining(certificate)) }}
         </span>
       </div>
       <span>{{ formatTime(certificate.last_check_at) }}</span>

@@ -4,7 +4,7 @@
 -->
 
 <script setup lang="ts">
-import { computed, inject, ref, onMounted } from 'vue'
+import { computed, inject, onUnmounted, ref, watch } from 'vue'
 import { useAlertsStore } from '@/stores/alerts'
 import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlideOver'
 import { timeAgo } from '@/utils/time'
@@ -12,23 +12,42 @@ import type { Alert } from '@/services/alertApi'
 import { humanizeAlertType } from '@/utils/alertLabels'
 import EscalationStatusBadge from '@/commercial/components/escalation/EscalationStatusBadge.vue'
 import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
+import ErrorState from '@/components/ui/ErrorState.vue'
 import { useEscalationApi } from '@/commercial/composables/useEscalationApi'
+import { useEdition } from '@/composables/useEdition'
 import type { EscalationRun } from '@/commercial/types/escalation'
 
 const detailSlideOver = inject(detailSlideOverKey)!
 const store = useAlertsStore()
 
 const escalationApi = useEscalationApi()
+const { hasFeature } = useEdition()
 const escalationRuns = ref<Record<string, EscalationRun[]>>({})
+
+const retries = new Map<string, { delay: number; timer: ReturnType<typeof setTimeout> }>()
 
 async function loadEscalationRuns(alertId: string) {
   try {
-    const res = await escalationApi.listRunsForAlert(alertId)
-    escalationRuns.value = { ...escalationRuns.value, [alertId]: res.runs }
+    const { runs } = await escalationApi.listRunsForAlert(alertId)
+    escalationRuns.value = { ...escalationRuns.value, [alertId]: runs }
+    const shown = runs.find((r) => r.status === 'active') ?? runs[0]
+    if (shown) {
+      const detail = await escalationApi.getEscalationRun(shown.id)
+      escalationRuns.value = { ...escalationRuns.value, [alertId]: runs.map((r) => (r.id === shown.id ? detail : r)) }
+    }
+    retries.delete(alertId)
   } catch {
-    // 403 in CE or other errors — ignore silently
+    const delay = retries.get(alertId)?.delay ?? 30_000
+    const timer = setTimeout(() => {
+      if (loadedAck.has(alertId)) void loadEscalationRuns(alertId)
+    }, delay)
+    retries.set(alertId, { delay: Math.min(delay * 2, 300_000), timer })
   }
 }
+
+onUnmounted(() => {
+  for (const { timer } of retries.values()) clearTimeout(timer)
+})
 
 const ENTITY_TYPES: ReadonlySet<string> = new Set(['container', 'heartbeat', 'certificate'])
 
@@ -82,16 +101,39 @@ const sections = computed(() =>
     .filter((s) => s.alerts.length > 0),
 )
 
-onMounted(() => {
-  const allAlerts = Object.values(store.activeAlerts).flat() as Alert[]
-  allAlerts.forEach((alert) => loadEscalationRuns(alert.id))
-})
+const loadedAck = new Map<string, string>()
+
+watch(
+  () =>
+    hasFeature('alert_escalation')
+      ? (Object.values(store.activeAlerts).flat() as Alert[]).map((a) => [a.id, a.acknowledged_at ?? ''] as const)
+      : [],
+  (alerts) => {
+    for (const id of [...loadedAck.keys()]) {
+      if (!alerts.some(([active]) => active === id)) loadedAck.delete(id)
+    }
+    for (const [id, ack] of alerts) {
+      if (loadedAck.get(id) === ack) continue
+      loadedAck.set(id, ack)
+      loadEscalationRuns(id)
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
   <div>
+    <ErrorState
+      v-if="store.activeAlertsError"
+      title="Active alerts unavailable"
+      :message="store.activeAlertsError"
+      retryable
+      @retry="store.retryActiveAlerts()"
+    />
+
     <div
-      v-if="store.totalActiveCount === 0"
+      v-if="store.totalActiveCount === 0 && !store.activeAlertsError"
       class="rounded-lg border p-6 text-center"
       style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
     >

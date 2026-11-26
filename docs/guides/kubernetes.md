@@ -107,6 +107,8 @@ securityContext:
   runAsUser: 65534       # nobody
   runAsGroup: 65534
   fsGroup: 65534
+  seccompProfile:
+    type: RuntimeDefault
 containers:
   - securityContext:
       allowPrivilegeEscalation: false
@@ -115,7 +117,7 @@ containers:
         drop: ["ALL"]
 ```
 
-The container runs as `nobody` (uid 65534) with an immutable root filesystem and all Linux capabilities dropped. `fsGroup` makes the data volume writable for that user. Because the pod already starts as a non-root user, the image entrypoint runs the binary as it is: it does not change ownership of the volume nor look for a Docker socket. A `/tmp` emptyDir is mounted because the root filesystem is read-only. The database and SQLite's temporary files live on the `/data` volume.
+The container runs as `nobody` (uid 65534) with an immutable root filesystem and all Linux capabilities dropped. `fsGroup` makes the data volume writable for that user. With the runtime's default seccomp profile, the pod is accepted in a namespace that enforces the `restricted` Pod Security level. Because the pod already starts as a non-root user, the image entrypoint runs the binary as it is: it does not change ownership of the volume nor look for a Docker socket. A `/tmp` emptyDir is mounted because the root filesystem is read-only. The database and SQLite's temporary files live on the `/data` volume.
 
 This mirrors the Docker Compose hardening (`read_only: true`, `no-new-privileges`, non-root user). See [Security](../security.md) for the full container security reference.
 
@@ -165,7 +167,7 @@ maintenant groups pods by their owning workload:
 | **Job** | Active, succeeded and failed pods against the desired completions |
 | **Bare pod** | A pod with no controller is tracked on its own, with its phase and restart count |
 
-Each workload appears as a single entry with an aggregated health status: `healthy`, `degraded` (some replicas are ready), `failed` (none is ready), or `progressing` during a rollout. A workload scaled to zero is healthy. Individual pods are accessible in the detail view. ReplicaSets have no entry of their own: the pods of a Deployment's ReplicaSet are attached to the Deployment.
+Each workload appears as a single entry with an aggregated health status: `healthy`, `degraded` (some replicas are ready, or a Deployment's rollout is past its progress deadline while the old replicas still serve), `failed` (none is ready), or `progressing` during a rollout. A workload scaled to zero is healthy. Individual pods are accessible in the detail view. ReplicaSets have no entry of their own: the pods of a Deployment's ReplicaSet are attached to the Deployment.
 
 PersistentVolumeClaims are not tracked, and volumes are not part of a StatefulSet's health.
 
@@ -197,19 +199,22 @@ The update command shown for a workload is `kubectl set image <kind>/<name> <con
 
 ## Alerts
 
-The server raises three Kubernetes alerts for the cluster it runs in or is pointed at. The cluster is evaluated every 30 seconds.
+The server raises four Kubernetes alerts for the cluster it runs in or is pointed at. The cluster is evaluated every 30 seconds.
 
 | Alert | Severity | Raised when | Resolved when |
 |-------|----------|-------------|---------------|
-| `replica_health` | Warning, Critical when no replica is ready | A Deployment, StatefulSet or DaemonSet has fewer ready replicas than desired for 5 minutes | All desired replicas are ready, the workload is scaled to zero, ignored or deleted |
-| `crash_loop` | Critical | A pod is in `CrashLoopBackOff`, or has restarted 3 times within 10 minutes | The pod stops crash-looping, is ignored or deleted |
+| `replica_health` | Warning, Critical when no replica is ready | A Deployment, StatefulSet or DaemonSet has fewer ready replicas than desired for 5 minutes, or a Deployment's rollout has been past its progress deadline (`ProgressDeadlineExceeded`) for 5 minutes | All desired replicas are ready and no rollout is stuck, the workload is scaled to zero, ignored or deleted |
+| `crash_loop` | Critical | A pod is in `CrashLoopBackOff`, or has restarted 3 times within 10 minutes | The pod has not been in `CrashLoopBackOff` for 10 minutes and has restarted fewer than 3 times in the last 10 minutes, or it is ignored or deleted |
+| `pod_pending` | Warning | A pod that no Deployment, StatefulSet or DaemonSet owns (a bare pod, the pod of a Job) has been unable to start for 5 minutes: the scheduler finds no node for it (`Unschedulable`), or a container waits on `ImagePullBackOff`, `ErrImagePull`, `CreateContainerConfigError` or `InvalidImageName`. A pod that runs its init containers, pulls its image or waits for a scheduling gate raises nothing. | The pod can start, is ignored or deleted |
 | `node_condition` | Critical when the node is not Ready, Warning under memory, disk or PID pressure | A node reports one of those conditions | The conditions clear, or the node leaves the cluster |
 
+- The restarts and the `CrashLoopBackOff` of init containers count for `crash_loop` like those of the other containers; a pod whose init container crash-loops raises `crash_loop`, not `pod_pending`.
 - `replica_health` is per workload and escalates in place from Warning to Critical when the last ready replica is lost. A Job never raises it.
+- While a Deployment rollout is progressing, `replica_health` is neither raised nor resolved: the Deployment's own progress deadline (`progressDeadlineSeconds`, 10 minutes by default) decides when the rollout is stuck.
 - `crash_loop` is per pod.
 - `node_condition` is one alert per node, however many conditions it reports. A node whose Ready condition is `Unknown` counts as not Ready.
 - If the nodes cannot be listed (for instance an RBAC denial), no `node_condition` alert is raised or resolved.
-- After a restart, maintenant takes over the open Kubernetes alerts and resolves those whose condition is gone.
+- After a restart, maintenant takes over the open Kubernetes alerts and resolves those whose condition is gone. The `crash_loop` alert of a pod that still exists counts as seen in `CrashLoopBackOff` at the restart, so it resolves after 10 minutes without a backoff and is never resolved then raised again by a check that falls between two backoffs.
 - A Kubernetes agent reports its cluster for display only: these alerts exist for the server's own cluster.
 
 ---
@@ -375,6 +380,8 @@ helm install maintenant ./deploy/helm/maintenant \
   --set ingress.className=nginx
 ```
 
+With the Ingress enabled, the chart sets `MAINTENANT_BASE_URL` to `https://<ingress.host>` when `ingress.tls` has an entry and to `http://<ingress.host>` otherwise. The dashboard answers on that host, and the heartbeat URLs and the links in mails are built from it. If TLS ends before the Ingress, or the public URL differs, set `MAINTENANT_BASE_URL` yourself in `extraEnv`: the chart then leaves it alone.
+
 ### With TLS
 
 ```yaml
@@ -474,7 +481,7 @@ The chart opens only the HTTP port. To enrol agents from other hosts with a serv
 | `extraEnv` | `[]` | Extra environment variables for the container |
 | `resources` | see values.yaml | CPU/memory requests and limits |
 | `serviceAccount.create`, `serviceAccount.name` | `true`, `""` | Create the ServiceAccount, or use your own |
-| `rbac.create` | `true` | Create the ClusterRole and ClusterRoleBinding (with `serviceAccount.create`) |
+| `rbac.create` | `true` | Create the ClusterRole and bind it to the ServiceAccount the pod runs as, whether the chart created it or you named your own. Set `false` to manage the permissions yourself. With `serviceAccount.create=false`, either name your ServiceAccount or set `rbac.create=false`: the chart refuses to render otherwise, because the role would go to the namespace's `default` ServiceAccount. If you already created a ClusterRole named like the release, set `rbac.create=false` |
 | `imagePullSecrets`, `podAnnotations`, `podLabels`, `nodeSelector`, `tolerations`, `affinity` | empty | Standard pod settings |
 
 ### Upgrade
@@ -489,8 +496,11 @@ helm upgrade maintenant ./deploy/helm/maintenant -n maintenant
 helm uninstall maintenant -n maintenant
 ```
 
-!!! warning "The chart's PVC is deleted on uninstall"
-    The chart creates the claim (`<release fullname>-data`) as one of its own resources, so `helm uninstall` deletes it, and the data with it unless the storage class keeps volumes after their claim is gone. Back up the database first. To keep the data outside the release, create the claim yourself and set `persistence.existingClaim`.
+`helm uninstall` keeps the claim the chart created (`<release fullname>-data`), and the database with it. Installing the release again under the same name and namespace reuses it. To delete the data too:
+
+```bash
+kubectl delete pvc maintenant-data -n maintenant
+```
 
 ---
 

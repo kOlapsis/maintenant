@@ -25,6 +25,7 @@ type ChangelogResolver struct {
 	client   *http.Client
 	logger   *slog.Logger
 	token    string
+	apiURL   string
 }
 
 // NewChangelogResolver creates a changelog resolver.
@@ -34,6 +35,7 @@ func NewChangelogResolver(registry *update.RegistryClient, logger *slog.Logger) 
 		client:   &http.Client{Timeout: 15 * time.Second, Transport: trust.HTTPTransport()},
 		logger:   logger,
 		token:    os.Getenv("GITHUB_TOKEN"),
+		apiURL:   "https://api.github.com",
 	}
 }
 
@@ -68,7 +70,7 @@ func (cr *ChangelogResolver) ResolveSourceURL(ctx context.Context, imageRef stri
 
 // FetchLatestReleases fetches the latest releases from a GitHub repository.
 func (cr *ChangelogResolver) FetchLatestReleases(ctx context.Context, owner, repo string, count int) ([]update.ReleaseInfo, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases?per_page=%d", owner, repo, count)
+	url := fmt.Sprintf("%s/repos/%s/%s/releases?per_page=%d", cr.apiURL, owner, repo, count)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -151,16 +153,6 @@ func (cr *ChangelogResolver) ResolveChangelog(ctx context.Context, imageRef, lat
 		}
 	}
 
-	// If no exact match, use the most recent release
-	if len(releases) > 0 {
-		rel := releases[0]
-		summary := rel.Body
-		if len(summary) > 500 {
-			summary = summary[:497] + "..."
-		}
-		return rel.HTMLURL, summary, rel.HasBreakingChanges, sourceURL
-	}
-
 	return "", "", false, sourceURL
 }
 
@@ -171,8 +163,6 @@ func DetectBreakingChanges(body string) bool {
 		"breaking change",
 		"breaking:",
 		"migration required",
-		"deprecated",
-		"removed",
 		"incompatible",
 	}
 	for _, p := range patterns {

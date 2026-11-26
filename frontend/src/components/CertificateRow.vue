@@ -9,6 +9,7 @@ import type { CertMonitor } from '@/services/certificateApi'
 import {
   certificateTone,
   countdownColor,
+  certDaysRemaining,
   formatDaysRemaining,
   formatExpiryDate,
 } from '@/utils/certFormat'
@@ -20,7 +21,7 @@ const props = defineProps<{ certificate: CertMonitor }>()
 
 const emit = defineEmits<{ select: [id: string] }>()
 
-const days = computed(() => props.certificate.latest_check?.days_remaining)
+const days = computed(() => certDaysRemaining(props.certificate))
 const issuer = computed(() => props.certificate.latest_check?.issuer_cn || 'Unknown issuer')
 </script>
 

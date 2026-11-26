@@ -8,6 +8,7 @@ import { ref } from 'vue'
 import { Check, Copy } from 'lucide-vue-next'
 import TabNav, { type TabNavItem } from './ui/TabNav.vue'
 import UiButton from './ui/UiButton.vue'
+import { copyText } from '@/utils/copyText'
 
 defineProps<{
   snippets: Record<string, string>
@@ -26,7 +27,7 @@ const tabs: TabNavItem[] = [
 ]
 
 async function copySnippet(code: string) {
-  await navigator.clipboard.writeText(code)
+  if (!(await copyText(code))) return
   copied.value = true
   setTimeout(() => (copied.value = false), 2000)
 }

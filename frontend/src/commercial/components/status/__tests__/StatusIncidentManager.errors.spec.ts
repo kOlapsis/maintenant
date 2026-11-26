@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import StatusIncidentManager from '@/commercial/components/status/StatusIncidentManager.vue'
 
-const { createIncident, postIncidentUpdate, deleteIncident, fetchIncidents, confirm } = vi.hoisted(() => ({
+const { createIncident, postIncidentUpdate, deleteIncident, listIncidents, fetchIncidents, confirm } = vi.hoisted(() => ({
+  listIncidents: vi.fn(),
   createIncident: vi.fn(),
   postIncidentUpdate: vi.fn(),
   deleteIncident: vi.fn(),
@@ -10,7 +11,7 @@ const { createIncident, postIncidentUpdate, deleteIncident, fetchIncidents, conf
   confirm: vi.fn(),
 }))
 
-vi.mock('@/services/statusApi', () => ({ createIncident, postIncidentUpdate, deleteIncident }))
+vi.mock('@/services/statusApi', () => ({ createIncident, postIncidentUpdate, deleteIncident, listIncidents }))
 
 vi.mock('@/stores/statusAdmin', () => ({
   useStatusAdminStore: () => ({
@@ -40,7 +41,7 @@ async function openCreate() {
 
 describe('StatusIncidentManager failures', () => {
   beforeEach(() => {
-    for (const fn of [createIncident, postIncidentUpdate, deleteIncident, fetchIncidents, confirm]) fn.mockReset()
+    for (const fn of [createIncident, postIncidentUpdate, deleteIncident, listIncidents, fetchIncidents, confirm]) fn.mockReset()
     confirm.mockResolvedValue(true)
   })
 
@@ -99,5 +100,37 @@ describe('StatusIncidentManager failures', () => {
     void del.trigger('click')
     await flushPromises()
     expect(deleteIncident).toHaveBeenCalledOnce()
+  })
+
+  it('asks the server for the filtered incidents and leaves the shared list alone', async () => {
+    listIncidents.mockResolvedValue({
+      incidents: [
+        { id: 'inc-9', title: 'Old outage', severity: 'major', status: 'resolved', components: [], updates: [], created_at: '2026-10-01T09:00:00Z' },
+      ],
+      total: 1,
+    })
+    const wrapper = mount(StatusIncidentManager)
+    expect(wrapper.text()).toContain('DB down')
+
+    await wrapper.find('select').setValue('resolved')
+    expect(wrapper.text()).not.toContain('DB down')
+    expect(wrapper.text()).not.toContain('No incidents')
+    await flushPromises()
+
+    expect(listIncidents).toHaveBeenCalledWith({ status: 'resolved' })
+    expect(wrapper.text()).toContain('Old outage')
+    expect(wrapper.text()).not.toContain('DB down')
+    expect(fetchIncidents).not.toHaveBeenCalled()
+  })
+
+  it('says when the filtered incidents could not be loaded', async () => {
+    listIncidents.mockRejectedValue(new Error('HTTP 503'))
+    const wrapper = mount(StatusIncidentManager)
+
+    await wrapper.find('select').setValue('resolved')
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('HTTP 503')
+    expect(wrapper.text()).not.toContain('No incidents')
   })
 })

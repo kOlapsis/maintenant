@@ -192,3 +192,93 @@ func TestRetry_ARestartResumesThePendingRetryOnce(t *testing.T) {
 	}
 	assert.Equal(t, 1, count(sender.delivered(ch), a.Message), "the restarted runner sends the page once")
 }
+
+func (h *dbHarness) pass(step time.Duration, n int) {
+	h.t.Helper()
+	for range n {
+		h.advance(step)
+		h.cycle()
+		h.settle()
+	}
+}
+
+func pageAttempts(sender *fakeSender, a *alert.Alert) int {
+	n := 0
+	for _, c := range sender.snapshot() {
+		if c.Message == a.Message {
+			n++
+		}
+	}
+	return n
+}
+
+func TestRetry_AnAttemptCutShortIsTakenAgainOnceItsClaimEnds(t *testing.T) {
+	sender := newFakeSender()
+	h := newDBHarness(t, sender)
+	ch := h.addChannel("ops", "https://example.test/ops", true)
+	a := h.addAlert()
+	h.addPolicy(esc.Level{Order: 0, DelaySeconds: 60, ChannelIDs: []string{ch}})
+	require.NoError(t, h.runner.OnAlertCreated(h.ctx, a))
+	h.advance(61 * time.Second)
+	_, err := h.store.Store.InsertDelivery(h.ctx, &esc.Delivery{
+		RunID: h.onlyRun(a).ID, LevelIndex: 0, ChannelID: &ch, Status: esc.DeliveryStatusPending,
+		AttemptStartedAt: h.clock(), Attempts: 1, NextAttemptAt: h.clock().Add(time.Hour),
+	})
+	require.NoError(t, err, "the page as a server stopped in the middle of its first attempt leaves it")
+
+	h.restart(sender)
+	h.pass(59*time.Minute, 1)
+	assert.Zero(t, pageAttempts(sender, a), "an attempt is not taken again while its claim holds")
+
+	h.pass(2*time.Minute, 3)
+	assert.Equal(t, 1, pageAttempts(sender, a), "it is taken again once, after its claim")
+	assert.Equal(t, 1, count(sender.delivered(ch), a.Message))
+}
+
+func TestRetry_APageNotDeliveredWithinADayFails(t *testing.T) {
+	sender := newFakeSender()
+	h := newDBHarness(t, sender)
+	ch := h.addChannel("ops", "https://example.test/ops", true)
+	a := h.addAlert()
+	h.addPolicy(esc.Level{Order: 0, DelaySeconds: 60, ChannelIDs: []string{ch}})
+	require.NoError(t, h.runner.OnAlertCreated(h.ctx, a))
+
+	sender.down(ch, true)
+	h.pass(61*time.Second, 1)
+	h.pass(time.Hour, 25)
+	var page *esc.Delivery
+	for _, d := range h.deliveries(h.onlyRun(a).ID) {
+		if d.LevelIndex == 0 {
+			page = d
+		}
+	}
+	require.NotNil(t, page)
+	assert.Equal(t, esc.DeliveryStatusFailed, page.Status, "a page not delivered within 24 hours is given up")
+
+	attempts := pageAttempts(sender, a)
+	h.pass(time.Hour, 3)
+	assert.Equal(t, attempts, pageAttempts(sender, a), "a page given up is not tried again")
+}
+
+func TestRetry_AMaintenanceWindowHoldsTheRetries(t *testing.T) {
+	sender := newFakeSender()
+	h := newDBHarness(t, sender)
+	ch := h.addChannel("ops", "https://example.test/ops", true)
+	a := h.addAlert()
+	h.addPolicy(
+		esc.Level{Order: 0, DelaySeconds: 60, ChannelIDs: []string{ch}},
+		esc.Level{Order: 1, DelaySeconds: 3600, ChannelIDs: []string{ch}},
+	)
+	require.NoError(t, h.runner.OnAlertCreated(h.ctx, a))
+
+	sender.down(ch, true)
+	h.pass(61*time.Second, 1)
+	h.supp.set(true)
+	sender.down(ch, false)
+	h.pass(time.Minute, 10)
+	assert.Empty(t, sender.delivered(ch), "no retry goes out while a maintenance window covers the alert")
+
+	h.supp.set(false)
+	h.pass(time.Minute, 5)
+	assert.Equal(t, 1, count(sender.delivered(ch), a.Message), "the page goes out once the window is over")
+}

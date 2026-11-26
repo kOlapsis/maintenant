@@ -16,16 +16,20 @@ const hook = (over: Partial<WebhookSubscription>): WebhookSubscription => ({
 
 const listWebhooks = vi.fn()
 const testWebhook = vi.fn()
+const deleteWebhook = vi.fn()
+const showToast = vi.hoisted(() => vi.fn())
 
 vi.mock('@/services/webhookApi', () => ({
   listWebhooks: () => listWebhooks(),
   testWebhook: (id: string) => testWebhook(id),
-  deleteWebhook: vi.fn(),
+  deleteWebhook: (id: string) => deleteWebhook(id),
 }))
 
 vi.mock('@/composables/useConfirm', () => ({
-  useConfirm: () => vi.fn(),
+  useConfirm: () => vi.fn().mockResolvedValue(true),
 }))
+
+vi.mock('@/composables/useToast', () => ({ showToast }))
 
 describe('WebhooksPage', () => {
   it('shows the delivery state the test left behind', async () => {
@@ -50,5 +54,19 @@ describe('WebhooksPage', () => {
     expect(listWebhooks).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('Active')
     expect(wrapper.text()).not.toContain('failures)')
+  })
+
+  it('says when a webhook could not be deleted', async () => {
+    listWebhooks.mockReset().mockResolvedValue({ webhooks: [hook({})] })
+    deleteWebhook.mockRejectedValue(new Error('HTTP 403'))
+
+    const wrapper = mount(WebhooksPage, {
+      global: { stubs: { FeatureHint: true, WebhookForm: true, 'router-link': true } },
+    })
+    await flushPromises()
+    await wrapper.findAll('button').find((b) => b.text() === 'Delete')!.trigger('click')
+    await flushPromises()
+
+    expect(showToast).toHaveBeenCalledWith('Could not delete the webhook: HTTP 403', 'warning')
   })
 })

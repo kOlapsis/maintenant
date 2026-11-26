@@ -33,6 +33,17 @@ func (r runtimeRecorder) HandleAgentRuntime(ctx context.Context, agentID string,
 			"runtime_unreachable": ev.GetUnreachable(),
 		})
 	}
+	if hook := r.sessions.alertHook; hook != nil {
+		reason := "runtime_reachable"
+		if ev.GetUnreachable() {
+			reason = "runtime_unreachable"
+		}
+		// Told on every report, not only on a change: after a server restart the first report resolves an alert kept from before.
+		hook(agentID, reason, true)
+	}
+	if ev.GetUnreachable() {
+		return nil
+	}
 	runtime := protoRuntimeToString(ev.GetKind())
 	changed, err := r.store.UpdateDetectedRuntime(ctx, agentID, runtime)
 	if err != nil {

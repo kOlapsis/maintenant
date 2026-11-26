@@ -137,10 +137,14 @@ export function listChecks(id: string, params?: ListChecksParams): Promise<Check
   return fetchJSON<ChecksResponse>(url.toString())
 }
 
+export interface CheckNowResponse extends EndpointDetailResponse {
+  pending?: boolean // the check outlasted the request: endpoint is the state before its result
+}
+
 // checkEndpointNow probes the target immediately and resolves with the refreshed
 // endpoint. Rejects with a 409 when an agent owns the probe or a check is running.
-export function checkEndpointNow(id: string): Promise<EndpointDetailResponse> {
-  return apiFetch<EndpointDetailResponse>(`${API_BASE}/endpoints/${id}/check`, {
+export function checkEndpointNow(id: string): Promise<CheckNowResponse> {
+  return apiFetch<CheckNowResponse>(`${API_BASE}/endpoints/${id}/check`, {
     method: 'POST',
   })
 }

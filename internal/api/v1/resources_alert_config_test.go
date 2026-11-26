@@ -69,10 +69,11 @@ func newResourceAlertBench(t *testing.T) *resourceAlertBench {
 
 	b := &resourceAlertBench{rs: store.NewResourceStore(db), containerID: id}
 	b.reads = &failingConfigRead{ResourceStore: b.rs}
+	containers := container.NewService(container.Deps{Store: cs, Logger: logger})
 	b.svc = resource.NewService(resource.Deps{
 		Store:        b.reads,
 		Runtime:      unusedRuntime{},
-		ContainerSvc: container.NewService(container.Deps{Store: cs, Logger: logger}),
+		ContainerSvc: containers,
 		Logger:       logger,
 		EventCallback: func(eventType string, data interface{}) {
 			m, _ := data.(map[string]interface{})
@@ -85,7 +86,7 @@ func newResourceAlertBench(t *testing.T) *resourceAlertBench {
 			}
 		},
 	})
-	b.h = NewResourceHandler(b.svc)
+	b.h = NewResourceHandler(b.svc, containers)
 	return b
 }
 
@@ -182,4 +183,20 @@ func TestResourceAlertConfig_ReadErrorFailsTheRequestAndWritesNothing(t *testing
 	assert.True(t, after.Enabled)
 	assert.Equal(t, resource.AlertStateCPU, after.AlertState)
 	assert.Empty(t, b.takeEvents())
+}
+
+func TestResourceAlertConfig_UnknownContainerIsNotFound(t *testing.T) {
+	b := newResourceAlertBench(t)
+
+	put := httptest.NewRequest(http.MethodPut, "/api/v1/containers/gone/resources/alerts", strings.NewReader(`{"cpu_threshold":50,"mem_threshold":90,"enabled":true}`))
+	put.SetPathValue("id", "gone")
+	rec := httptest.NewRecorder()
+	b.h.HandleUpsertAlertConfig(rec, put)
+	assert.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
+
+	get := httptest.NewRequest(http.MethodGet, "/api/v1/containers/gone/resources/alerts", nil)
+	get.SetPathValue("id", "gone")
+	rec = httptest.NewRecorder()
+	b.h.HandleGetAlertConfig(rec, get)
+	assert.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
 }

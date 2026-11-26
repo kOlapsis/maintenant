@@ -42,6 +42,8 @@ func NewMultiHost(d extpoint.MultiHostDeps) extpoint.MultiHost {
 				HostOS:      d.HostOS,
 				Runtime:     runtimeRecorder{store: d.AgentStore, broadcaster: d.Broadcaster, sessions: sessions},
 				LabelSync:   d.LabelSync,
+
+				ContainerFollower: d.Endpoint,
 			}),
 			Logger: d.Logger.With("component", "agentserver"),
 		}),

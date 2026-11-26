@@ -55,6 +55,7 @@ type SessionChecker interface {
 type IncidentAnnouncer interface {
 	AnnounceIncident(ctx context.Context, inc *status.Incident, message string)
 	AnnounceIncidentUpdate(ctx context.Context, inc *status.Incident, upd *status.IncidentUpdate)
+	InvalidatePublicSnapshot()
 }
 
 // AgentLogFetcher reads logs of a container living on a remote agent's host,

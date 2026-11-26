@@ -193,6 +193,10 @@ func (c *Client) inspectAndMap(ctx context.Context, dc container.Summary, labels
 		cm.HealthStatus = &hs
 	}
 
+	if info.HostConfig != nil {
+		cm.RestartsOnCleanExit = info.HostConfig.RestartPolicy.IsAlways() || info.HostConfig.RestartPolicy.IsUnlessStopped()
+	}
+
 	var exit *ExitInfo
 	if info.State != nil && info.State.Status == "exited" {
 		exit = &ExitInfo{Code: info.State.ExitCode, OOMKilled: info.State.OOMKilled}

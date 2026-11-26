@@ -8,6 +8,7 @@ import { ref, watch, onMounted, computed } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import { getCertificate, checkCertificateNow, type CertificateDetailResponse, type CertChainEntry } from '@/services/certificateApi'
 import { isLocalAgent } from '@/services/apiFetch'
+import { checkDaysRemaining, countdownColor } from '@/utils/certFormat'
 import CertificateStatusBadge from './CertificateStatusBadge.vue'
 import OCSPStatusBadge from './OCSPStatusBadge.vue'
 import CertificateChecksHistory from './CertificateChecksHistory.vue'
@@ -106,15 +107,9 @@ const expiryProgress = computed(() => {
   return Math.max(0, Math.min(100, (elapsed / total) * 100))
 })
 
-function countdownColor(days: number | undefined): string {
-  if (days === undefined || days === null) return 'var(--mnt-text-muted)'
-  if (days > 30) return 'var(--mnt-status-ok)'
-  if (days > 7) return 'var(--mnt-status-warn)'
-  if (days > 3) return 'var(--mnt-status-critical)'
-  return 'var(--mnt-status-down)'
-}
+const days = computed(() => checkDaysRemaining(detail.value?.latest_check))
 
-function countdownBgColor(days: number | undefined): string {
+function countdownBgColor(days: number | null): string {
   if (days === undefined || days === null) return 'var(--mnt-bg-elevated)'
   if (days > 30) return 'var(--mnt-status-ok-bg)'
   if (days > 7) return 'var(--mnt-status-warn-bg)'
@@ -203,14 +198,14 @@ function countdownBgColor(days: number | undefined): string {
         v-if="detail.latest_check"
         class="mb-4 inline-flex items-center gap-2 rounded-full px-3 py-1.5"
         :style="{
-          backgroundColor: countdownBgColor(detail.latest_check.days_remaining),
-          color: countdownColor(detail.latest_check.days_remaining),
+          backgroundColor: countdownBgColor(days),
+          color: countdownColor(days),
           fontWeight: '600',
           fontSize: '0.875rem',
         }"
       >
-        <span v-if="detail.latest_check.days_remaining !== undefined && detail.latest_check.days_remaining !== null">
-          {{ detail.latest_check.days_remaining }} days remaining
+        <span v-if="days !== null">
+          {{ days }} days remaining
         </span>
         <span v-else>Unknown</span>
       </div>
@@ -229,7 +224,7 @@ function countdownBgColor(days: number | undefined): string {
             class="h-2 rounded-full transition-all"
             :style="{
               width: expiryProgress + '%',
-              backgroundColor: countdownColor(detail.latest_check?.days_remaining),
+              backgroundColor: countdownColor(days),
             }"
           />
         </div>

@@ -98,10 +98,7 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 
 	ttl := 24 * time.Hour
 	if body.TTLHours > 0 {
-		ttl = time.Duration(body.TTLHours) * time.Hour
-	}
-	if ttl > 168*time.Hour { // max 7 days
-		ttl = 168 * time.Hour
+		ttl = time.Duration(min(body.TTLHours, 168)) * time.Hour // max 7 days
 	}
 
 	// This response is the only place the cleartext ever exists: what gets
@@ -503,6 +500,13 @@ func (h *AgentHandler) HandleRevokeAgent(w http.ResponseWriter, r *http.Request)
 	agentID := r.PathValue("id")
 	if err := h.store.Revoke(r.Context(), agentID, "admin"); err != nil {
 		if errors.Is(err, agent.ErrAgentNotFound) {
+			if a, getErr := h.store.Get(r.Context(), agentID); getErr == nil && a.Status == "revoked" {
+				if h.sessions != nil {
+					h.sessions.Close(agentID, "revoked")
+				}
+				WriteJSON(w, http.StatusOK, h.revokedView(a))
+				return
+			}
 			WriteError(w, http.StatusNotFound, "NOT_FOUND", "Agent not found")
 			return
 		}
@@ -524,7 +528,7 @@ func (h *AgentHandler) HandleRevokeAgent(w http.ResponseWriter, r *http.Request)
 		WriteStoreError(w, err, "Failed to retrieve revoked agent")
 		return
 	}
-	WriteJSON(w, http.StatusOK, AgentPayload(a, "disconnected", nil, h.eolTable()))
+	WriteJSON(w, http.StatusOK, h.revokedView(a))
 }
 
 func (h *AgentHandler) HandleDeleteAgent(w http.ResponseWriter, r *http.Request) {
@@ -644,9 +648,17 @@ type rejectionReporter interface {
 // agentView renders a for the API with what the session registry knows of it.
 func (h *AgentHandler) agentView(a *agent.Agent, connectionState string, table eol.Table) map[string]any {
 	p := AgentPayload(a, connectionState, h.spoolForAgent(a.AgentID), table)
+	p["runtime_unreachable"] = h.sessions != nil && h.sessions.IsConnected(a.AgentID) && h.sessions.RuntimeUnreachable(a.AgentID)
 	if r, ok := h.sessions.(rejectionReporter); ok {
 		p["rejected_events"] = r.RejectedEvents(a.AgentID)
 	}
+	return p
+}
+
+// revokedView renders a revoked agent, which holds no session.
+func (h *AgentHandler) revokedView(a *agent.Agent) map[string]any {
+	p := AgentPayload(a, "disconnected", nil, h.eolTable())
+	p["runtime_unreachable"] = false
 	return p
 }
 

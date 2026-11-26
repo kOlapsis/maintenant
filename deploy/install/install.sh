@@ -17,6 +17,8 @@ SERVICE_FILE="${SERVICE_FILE:-/etc/systemd/system/maintenant.service}"
 # only fails at verification.
 GITHUB_REPO="kOlapsis/maintenant"
 GITHUB_API="https://api.github.com"
+COSIGN_IDENTITY="^https://github\\.com/$GITHUB_REPO/\\.github/workflows/release\\.yml@refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+\$"
+SIGNATURE_UNVERIFIED=""
 SCRIPT_VERSION="__GIT_SHA__"
 NL='
 '
@@ -62,6 +64,7 @@ _fs() {
 
 TMPDIR_INSTALL="${TMPDIR_INSTALL:-}"
 BINARY_TMP=""
+BINARY_PREVIOUS=""
 cleanup() {
     if [ -n "${TMPDIR_INSTALL:-}" ]; then rm -rf "$TMPDIR_INSTALL"; fi
     if [ -n "${BINARY_TMP:-}" ]; then rm -f "$BINARY_TMP"; fi
@@ -79,6 +82,8 @@ Script flags:
   --uninstall           Remove Maintenant (keeps data and user by default)
   --purge               With --uninstall: also remove data dir, config, user
   --skip-cosign         Skip cosign signature check (SHA256 still required)
+  --require-cosign      Stop when the cosign signature cannot be checked
+                        (cosign missing or older than 3, or offline install)
   --binary <path>       Install this local binary instead of downloading one
                         (offline install: no network access at all)
   --sha256sums <path>   With --binary: check it against this SHA256SUMS file
@@ -163,6 +168,7 @@ Environment variables:
   MAINTENANT_INSTALL_DIR   Binary install path (default: /usr/local/bin)
   MAINTENANT_DATA_DIR      Data directory (default: /var/lib/maintenant)
   MAINTENANT_CONFIG_DIR    Config directory (default: /etc/maintenant)
+  MAINTENANT_REQUIRE_COSIGN  Any non-empty value behaves like --require-cosign
   NO_COLOR                 Disable ANSI colors
 
 EOF
@@ -287,6 +293,16 @@ _cosign_major() {
         | head -n 1
 }
 
+_signature_unverified() {
+    [ -z "${REQUIRE_COSIGN:-}" ] || abort "$1: the release signature cannot be checked (--require-cosign)" 22
+    if [ -n "${SKIP_COSIGN:-}" ]; then
+        log_warn "cosign verification skipped (--skip-cosign)"
+        return
+    fi
+    SIGNATURE_UNVERIFIED="$1"
+    log_warn "$1: the release signature is NOT verified, installing on the SHA256 check alone"
+}
+
 download_and_verify() {
     TMPDIR_INSTALL=$(mktemp -d)
     ASSET_NAME="maintenant-${VERSION}-linux-${ARCH}"
@@ -305,19 +321,16 @@ download_and_verify() {
     if [ -n "${SKIP_COSIGN:-}" ]; then
         log_warn "cosign verification skipped (--skip-cosign)"
     elif ! command -v cosign >/dev/null 2>&1; then
-        log_warn "cosign not found — skipping signature verification (install cosign 3 for supply-chain protection)"
+        _signature_unverified "cosign is not installed, or not on root's PATH"
     elif COSIGN_MAJOR=$(_cosign_major); [ -z "$COSIGN_MAJOR" ] || [ "$COSIGN_MAJOR" -lt 3 ]; then
-        # Not treated as a verification failure: a 2.x binary cannot read the
-        # bundle at all, and an unreadable version string says nothing about
-        # the signature either.
-        log_warn "cosign 3 or later is required to read the release bundle — skipping signature verification"
+        _signature_unverified "cosign 3 or later is required to read the release bundle"
     else
         fetch_url_to "$BASE_URL/SHA256SUMS.bundle" "$TMPDIR_INSTALL/SHA256SUMS.bundle" \
             || abort "Failed to download SHA256SUMS.bundle" 20
         log_step "Verifying cosign signature..."
         if ! cosign verify-blob \
             --bundle "$TMPDIR_INSTALL/SHA256SUMS.bundle" \
-            --certificate-identity-regexp "^https://github\\.com/$GITHUB_REPO/\\.github/workflows/release\\.yml@refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+\$" \
+            --certificate-identity-regexp "$COSIGN_IDENTITY" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             "$TMPDIR_INSTALL/SHA256SUMS"; then
             abort "cosign signature verification failed" 22
@@ -338,6 +351,7 @@ use_local_binary() {
 
     if [ -z "${LOCAL_SUMS:-}" ]; then
         log_warn "No --sha256sums given: the integrity of $LOCAL_BINARY is not checked"
+        _signature_unverified "offline install without --sha256sums"
         return
     fi
     [ -f "$LOCAL_SUMS" ] || abort "SHA256SUMS file not found: $LOCAL_SUMS" 2
@@ -359,7 +373,7 @@ use_local_binary() {
     VERSION="${MATCHED_ASSET#maintenant-}"
     VERSION="${VERSION%-linux-"$ARCH"}"
     log_info "Checksum matches $MATCHED_ASSET"
-    log_warn "Offline install: the cosign signature of $LOCAL_SUMS is not verified"
+    _signature_unverified "offline install, the signature of $LOCAL_SUMS is not checked"
 }
 
 # ── ensure_user ───────────────────────────────────────────────────────────────
@@ -462,10 +476,14 @@ resolve_paths() {
 
 # ── prepare_dirs ──────────────────────────────────────────────────────────────
 
+_foreign_dir() {
+    [ -d "$1" ] || return 1
+    [ -z "$(find "$1" -prune -user "$SERVICE_USER" 2>/dev/null)" ] || return 1
+    [ -n "$(ls -A "$1")" ]
+}
+
 _refuse_foreign_dir() {
-    [ -d "$1" ] || return 0
-    [ -z "$(find "$1" -prune -user "$SERVICE_USER" 2>/dev/null)" ] || return 0
-    [ -z "$(ls -A "$1")" ] && return 0
+    _foreign_dir "$1" || return 0
     abort "$1 already exists, is not empty and does not belong to $SERVICE_USER: use a dedicated directory, or chown it to $SERVICE_USER first" 30
 }
 
@@ -494,6 +512,11 @@ install_binary() {
     BINARY_TMP=$(mktemp "$INSTALL_DIR/.maintenant.XXXXXX") \
         || abort "Cannot create a temporary file in $INSTALL_DIR" 30
     _fs install -m 0755 -o root -g root "$BINARY_SRC" "$BINARY_TMP"
+    BINARY_PREVIOUS=""
+    if [ -f "$INSTALL_DIR/maintenant" ]; then
+        _fs cp -pf "$INSTALL_DIR/maintenant" "$INSTALL_DIR/.maintenant.previous"
+        BINARY_PREVIOUS="$INSTALL_DIR/.maintenant.previous"
+    fi
     _fs mv -f "$BINARY_TMP" "$INSTALL_DIR/maintenant"
     BINARY_TMP=""
     log_info "Binary installed to $INSTALL_DIR/maintenant"
@@ -516,6 +539,7 @@ Type=simple
 User=$SERVICE_USER
 Group=$SERVICE_USER
 Environment=MAINTENANT_DATA_DIR=$DATA_DIR
+Environment=SQLITE_TMPDIR=$DATA_DIR
 EnvironmentFile=-$CONFIG_DIR/maintenant.env
 ExecStart=$INSTALL_DIR/maintenant
 WorkingDirectory=$DATA_DIR
@@ -539,8 +563,22 @@ WantedBy=multi-user.target
 UNIT
 }
 
+_service_failed() {
+    [ -n "$BINARY_PREVIOUS" ] || abort "$1" 31
+    _fs mv -f "$BINARY_PREVIOUS" "$INSTALL_DIR/maintenant"
+    BINARY_PREVIOUS=""
+    if [ -z "$WAS_ACTIVE" ]; then
+        abort "$1. The previous binary was put back; the service was not running before and is left stopped" 31
+    fi
+    if systemctl restart maintenant; then
+        abort "$1. The previous binary was put back and the service restarted on it. The flags given to this run stay in $CONFIG_DIR/maintenant.env" 31
+    fi
+    abort "$1. The previous binary was put back but the service could not be restarted: journalctl -u maintenant" 31
+}
+
 install_service() {
     if [ -n "${NO_SERVICE:-}" ]; then
+        [ -z "$BINARY_PREVIOUS" ] || rm -f "$BINARY_PREVIOUS"
         log_info "Skipping service installation (--no-service)"
         if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet maintenant 2>/dev/null; then
             log_warn "maintenant.service still runs the previous binary: systemctl restart maintenant"
@@ -551,30 +589,32 @@ install_service() {
     log_step "Installing systemd service..."
     render_unit > "$SERVICE_FILE" || abort "Failed to write $SERVICE_FILE" 30
 
-    systemctl daemon-reload || abort "systemctl daemon-reload failed" 31
-    systemctl enable maintenant || abort "systemctl enable maintenant failed" 31
-    if systemctl is-active --quiet maintenant; then
+    WAS_ACTIVE=""
+    if systemctl is-active --quiet maintenant; then WAS_ACTIVE=1; fi
+    systemctl daemon-reload || _service_failed "systemctl daemon-reload failed"
+    systemctl enable maintenant || _service_failed "systemctl enable maintenant failed"
+    systemctl reset-failed maintenant 2>/dev/null || true
+    if [ -n "$WAS_ACTIVE" ]; then
         log_step "Restarting the service on the new binary..."
-        systemctl restart maintenant || abort "systemctl restart maintenant failed" 31
+        systemctl restart maintenant || _service_failed "systemctl restart maintenant failed"
     else
         log_step "Starting the service..."
-        systemctl start maintenant || abort "systemctl start maintenant failed" 31
+        systemctl start maintenant || _service_failed "systemctl start maintenant failed"
     fi
 
-    log_step "Waiting for service to become active..."
-    i=0
-    while [ $i -lt 10 ]; do
-        if systemctl is-active --quiet maintenant; then
-            log_info "Service is active"
-            return
-        fi
-        sleep 1
-        i=$((i + 1))
-    done
+    # Type=simple is active as soon as the process exists: only a later look tells a crash from a start.
+    log_step "Checking that the service stays up..."
+    sleep 5
+    restarts=$(systemctl show -p NRestarts --value maintenant 2>/dev/null || true)
+    if systemctl is-active --quiet maintenant && [ "${restarts:-0}" = 0 ]; then
+        [ -z "$BINARY_PREVIOUS" ] || rm -f "$BINARY_PREVIOUS"
+        log_info "Service is running"
+        return
+    fi
 
-    log_error "Service failed to start. Last 50 log lines:"
+    log_error "Service did not stay up. Last 50 log lines:"
     journalctl -u maintenant -n 50 --no-pager >&2 || true
-    abort "Maintenant service did not become active within 10 seconds" 31
+    _service_failed "The new Maintenant binary does not stay up as a service, for the cause shown above"
 }
 
 # ── print_summary ─────────────────────────────────────────────────────────────
@@ -601,11 +641,32 @@ print_summary() {
   ╚══════════════════════════════════════════════════════╝
 
 EOF
+    [ -n "$SIGNATURE_UNVERIFIED" ] || return 0
+    log_warn "SIGNATURE NOT VERIFIED: $SIGNATURE_UNVERIFIED."
+    log_warn "The checksum only proves the binary matches the file published next to it."
+    if [ "$VERSION" = local ]; then
+        log_warn "To verify a binary by hand: https://docs.maintenant.dev/install/#manual-verification"
+    else
+        release_url="https://github.com/$GITHUB_REPO/releases/download/$VERSION"
+        cat >&2 <<EOF
+  To verify the installed binary, with cosign 3 or later:
+
+    cd "\$(mktemp -d)"
+    curl -fsSLO $release_url/SHA256SUMS -O $release_url/SHA256SUMS.bundle
+    cosign verify-blob --bundle SHA256SUMS.bundle \\
+      --certificate-identity-regexp '$COSIGN_IDENTITY' \\
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+    grep "\$(sha256sum $INSTALL_DIR/maintenant | cut -d ' ' -f 1)  maintenant-$VERSION-linux-$ARCH" SHA256SUMS
+
+  The binary is the signed one when cosign prints "Verified OK" and grep prints a line.
+EOF
+    fi
+    log_warn "To make the installer stop instead of warning: --require-cosign"
 }
 
 # ── parse_maintenant_flags ────────────────────────────────────────────────────
 # Separates script-own flags from binary configuration flags.
-# Sets: NO_SERVICE, DO_UNINSTALL, DO_PURGE, SKIP_COSIGN, LOCAL_BINARY, LOCAL_SUMS
+# Sets: NO_SERVICE, DO_UNINSTALL, DO_PURGE, SKIP_COSIGN, REQUIRE_COSIGN, LOCAL_BINARY, LOCAL_SUMS
 # Populates: BINARY_FLAG_KEYS / BINARY_FLAG_VALS, two parallel line lists
 
 BINARY_FLAG_KEYS=""
@@ -656,6 +717,7 @@ parse_maintenant_flags() {
     # Kept from the environment when already set: MAINTENANT_SKIP_COSIGN and the
     # test harness both drive it that way.
     SKIP_COSIGN="${SKIP_COSIGN:-${MAINTENANT_SKIP_COSIGN:-}}"
+    REQUIRE_COSIGN="${REQUIRE_COSIGN:-${MAINTENANT_REQUIRE_COSIGN:-}}"
     LOCAL_BINARY=""
     LOCAL_SUMS=""
     BINARY_FLAG_KEYS=""
@@ -667,6 +729,7 @@ parse_maintenant_flags() {
             --uninstall)     DO_UNINSTALL=1; shift ;;
             --purge)         DO_PURGE=1; shift ;;
             --skip-cosign)   SKIP_COSIGN=1; shift ;;
+            --require-cosign) REQUIRE_COSIGN=1; shift ;;
             --help|-h)       usage; exit 0 ;;
             --*)
                 FLAG="${1#--}"
@@ -716,6 +779,7 @@ parse_maintenant_flags() {
     done
 
     [ -z "$LOCAL_SUMS" ] || [ -n "$LOCAL_BINARY" ] || abort "--sha256sums requires --binary" 2
+    [ -z "$SKIP_COSIGN" ] || [ -z "$REQUIRE_COSIGN" ] || abort "--skip-cosign and --require-cosign contradict each other" 2
 }
 
 # ── flag_to_env ───────────────────────────────────────────────────────────────
@@ -736,6 +800,14 @@ flag_to_env() {
 # Key-by-key merge into /etc/maintenant/maintenant.env: the keys passed as flags
 # are replaced or appended, every other line of the file is kept as it is.
 
+# systemd strips an unquoted value of its backslashes and outer whitespace.
+_env_quote() {
+    case "$1" in
+        *[!A-Za-z0-9._/:@%+,=-]*) printf '"%s"' "$(printf '%s' "$1" | sed 's/[\\"]/\\&/g')" ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
 merge_env_file() {
     ENV_FILE="$CONFIG_DIR/maintenant.env"
     NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -749,7 +821,7 @@ merge_env_file() {
         idx=$((idx + 1))
         [ -n "$flagname" ] || continue
         printf '%s=%s\n' "$(flag_to_env "$flagname")" \
-            "$(printf '%s\n' "$BINARY_FLAG_VALS" | sed -n "${idx}p")"
+            "$(_env_quote "$(printf '%s\n' "$BINARY_FLAG_VALS" | sed -n "${idx}p")")"
     done > "$TMPDIR_INSTALL/new_flags.env"
 
     if [ ! -f "$ENV_FILE" ]; then
@@ -821,6 +893,9 @@ _install_env_file() {
 uninstall() {
     log_step "Uninstalling Maintenant..."
     resolve_paths
+    if [ -n "${DO_PURGE:-}" ] && _foreign_dir "$DATA_DIR"; then
+        abort "$DATA_DIR is not empty and does not belong to $SERVICE_USER: nothing was removed. Pass the --data-dir of the install, or delete that directory yourself" 30
+    fi
 
     # Stop and disable service
     systemctl stop maintenant 2>/dev/null || true

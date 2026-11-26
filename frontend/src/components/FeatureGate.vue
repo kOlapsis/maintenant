@@ -16,7 +16,7 @@ const props = defineProps<{
   description?: string
 }>()
 
-const { hasFeature, requiredEditionFor } = useEdition()
+const { hasFeature, requiredEditionFor, isLoaded } = useEdition()
 const enabled = computed(() => hasFeature(props.feature))
 
 /**
@@ -29,7 +29,7 @@ const required = computed(() => requiredEditionFor(props.feature))
 
 <template>
   <slot v-if="enabled" />
-  <template v-else-if="!enabled">
+  <template v-else-if="isLoaded">
     <slot name="placeholder">
       <!-- Default placeholder when no custom one is provided -->
       <div

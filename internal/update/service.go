@@ -6,10 +6,12 @@ package update
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -149,20 +151,24 @@ func (s *Service) Start(ctx context.Context) {
 	}
 }
 
+// ErrScanInProgress is returned by TriggerScan while a scan runs.
+var ErrScanInProgress = errors.New("scan already in progress")
+
 // TriggerScan starts an immediate scan. Returns the scan ID.
 // The scan runs with the application-scoped context (not the HTTP request context),
 // so it survives after the triggering request completes.
 func (s *Service) TriggerScan(_ context.Context) (string, error) {
-	s.mu.RLock()
+	s.mu.Lock()
 	ctx, scanning := s.appCtx, s.scanning
-	s.mu.RUnlock()
+	s.scanning = true
+	s.mu.Unlock()
 	if scanning {
-		return "", fmt.Errorf("scan already in progress")
+		return "", ErrScanInProgress
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	s.triggered.Go(func() { s.runScan(ctx) })
+	s.triggered.Go(func() { s.scan(ctx) })
 	return "", nil
 }
 
@@ -209,7 +215,7 @@ func (s *Service) ListImageUpdates(ctx context.Context, opts ListImageUpdatesOpt
 
 // GenerateUpdateCommand produces a shell command to update a container to latestTag, whose manifest is latestDigest.
 func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag, latestDigest string) string {
-	if unsafeFields(c) {
+	if unsafeFields(c, latestTag, latestDigest) {
 		return ""
 	}
 	repo, currentTag, _ := ParseImageRef(c.Image)
@@ -228,25 +234,28 @@ func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag, latestDigest
 
 	// Docker Compose
 	if isCompose(c) {
-		svc := shellQuote(c.OrchestrationUnit)
+		svc, compose := shellQuote(c.OrchestrationUnit), composeCommand(c)
 		// Compose pulls the tag written in the compose file, so a new tag has to be written there first.
 		if latestTag != currentTag {
-			return fmt.Sprintf("cd %s\n# Set the image of service %s to %s in the compose file, then:\ndocker compose pull %s\ndocker compose up -d %s",
-				composeDir(c), svc, shellQuote(repo+":"+latestTag), svc, svc)
+			return fmt.Sprintf("cd %s\n# Set the image of service %s to %s in the compose file, then:\n%s pull %s\n%s up -d %s",
+				composeDir(c), svc, shellQuote(repo+":"+latestTag), compose, svc, compose, svc)
 		}
-		return fmt.Sprintf("cd %s\ndocker compose pull %s\ndocker compose up -d --force-recreate %s",
-			composeDir(c), svc, svc)
+		return fmt.Sprintf("cd %s\n%s pull %s\n%s up -d --force-recreate %s",
+			composeDir(c), compose, svc, compose, svc)
 	}
 
-	// Standalone Docker container
-	ref, name := shellQuote(repo+":"+latestTag), shellQuote(c.Name)
-	return fmt.Sprintf("docker pull %s\ndocker stop %s && docker rm %s\ndocker run -d --name %s %s",
-		ref, name, name, name, ref)
+	return standalonePull(c, repo+":"+latestTag)
+}
+
+// standalonePull pulls ref and leaves the recreation of a standalone container to the operator, who alone knows its options.
+func standalonePull(c ContainerInfo, ref string) string {
+	ref = shellQuote(ref)
+	return fmt.Sprintf("docker pull %s\n# Recreate %s with the options it was started with, using %s", ref, shellQuote(c.Name), ref)
 }
 
 // GenerateRollbackCommand produces a shell command that puts a container back on the image it ran before the update, or "" when that image cannot be named.
 func (s *Service) GenerateRollbackCommand(c ContainerInfo, u *ImageUpdate) string {
-	if unsafeFields(c) {
+	if unsafeFields(c, u.Image, u.CurrentTag, u.PreviousDigest) {
 		return ""
 	}
 	ref := previousImageRef(u.Image, u.CurrentTag, u.PreviousDigest)
@@ -263,20 +272,17 @@ func (s *Service) GenerateRollbackCommand(c ContainerInfo, u *ImageUpdate) strin
 
 	// Docker Compose
 	if isCompose(c) {
-		svc, qref := shellQuote(c.OrchestrationUnit), shellQuote(ref)
+		svc, qref, compose := shellQuote(c.OrchestrationUnit), shellQuote(ref), composeCommand(c)
 		if u.LatestTag == u.CurrentTag {
 			// The compose file keeps the same tag: point that tag back at the previous image locally.
-			return fmt.Sprintf("cd %s\ndocker pull %s\ndocker tag %s %s\ndocker compose up -d --pull never --force-recreate %s",
-				composeDir(c), qref, qref, shellQuote(imageWithoutDigest(u.Image)), svc)
+			return fmt.Sprintf("cd %s\ndocker pull %s\ndocker tag %s %s\n%s up -d --pull never --force-recreate %s",
+				composeDir(c), qref, qref, shellQuote(imageWithoutDigest(u.Image)), compose, svc)
 		}
-		return fmt.Sprintf("cd %s\n# Set the image of service %s back to %s in the compose file, then:\ndocker compose up -d %s",
-			composeDir(c), svc, qref, svc)
+		return fmt.Sprintf("cd %s\n# Set the image of service %s back to %s in the compose file, then:\n%s up -d %s",
+			composeDir(c), svc, qref, compose, svc)
 	}
 
-	// Standalone Docker container
-	ref, name := shellQuote(ref), shellQuote(c.Name)
-	return fmt.Sprintf("docker pull %s\ndocker stop %s && docker rm %s\ndocker run -d --name %s %s",
-		ref, name, name, name, ref)
+	return standalonePull(c, ref)
 }
 
 // previousImageRef names the image a container ran before an update: by digest when known,
@@ -326,9 +332,14 @@ func isCompose(c ContainerInfo) bool {
 	return c.RuntimeType != "kubernetes" && c.OrchestrationGroup != "" && c.OrchestrationUnit != ""
 }
 
+// composeCommand names the project, so that one started under another name than its directory is the one acted on.
+func composeCommand(c ContainerInfo) string {
+	return "docker compose -p " + shellQuote(c.OrchestrationGroup)
+}
+
 func composeDir(c ContainerInfo) string {
 	d := c.ComposeWorkingDir
-	if d == "" || !filepath.IsAbs(d) || filepath.Clean(d) != d || hasControl(d) {
+	if d == "" || !filepath.IsAbs(d) || filepath.Clean(d) != d || unquotable(d) {
 		return "<compose-project-dir>"
 	}
 	return shellQuote(d)
@@ -345,38 +356,36 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-func hasControl(s string) bool {
-	return strings.ContainsFunc(s, unicode.IsControl)
+func unquotable(s string) bool {
+	return strings.ContainsFunc(s, unicode.IsControl) || strings.Contains(s, "```")
 }
 
-// unsafeFields reports a control character in a value written into a command, which quoting cannot neutralise.
-func unsafeFields(c ContainerInfo) bool {
-	return slices.ContainsFunc([]string{c.Name, c.OrchestrationUnit, c.OrchestrationGroup, c.SwarmService, c.PodContainer, c.ControllerKind}, hasControl)
+// unsafeFields reports a control character or a code fence in a value written into a command, which quoting cannot neutralise.
+func unsafeFields(c ContainerInfo, others ...string) bool {
+	return slices.ContainsFunc(append(others, c.Name, c.Image, c.OrchestrationUnit, c.OrchestrationGroup, c.SwarmService, c.PodContainer, c.ControllerKind), unquotable)
 }
 
-// GenerateFixCommand produces a shell command to update a container to a specific CVE fix version.
-// Returns empty string if fixedInVersion is not a valid semver or is <= currentTag (prevents downgrades).
+var plainRelease = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*$`)
+
+// GenerateFixCommand produces a shell command to update a container to the release that fixes a CVE, or "" when fixedInVersion is not a plain release above currentTag.
 func (s *Service) GenerateFixCommand(c ContainerInfo, currentTag, fixedInVersion string) string {
-	if fixedInVersion == "" {
+	fixed := strings.TrimPrefix(fixedInVersion, "v")
+	if !plainRelease.MatchString(fixed) {
 		return ""
 	}
-
-	fixVer, err := ParseTag(fixedInVersion)
+	versionPart, variant := splitVariant(currentTag)
+	fixVer, err := ParseTag(fixed)
 	if err != nil {
 		return ""
 	}
-
-	currentVer, err := ParseTag(currentTag)
-	if err != nil {
+	currentVer, err := ParseTag(versionPart)
+	if err != nil || !fixVer.GreaterThan(currentVer) {
 		return ""
 	}
-
-	// Prevent downgrades: only generate a command if a fix version > current
-	if !fixVer.GreaterThan(currentVer) {
-		return ""
+	if hasVPrefix(versionPart) {
+		fixed = "v" + fixed
 	}
-
-	return s.GenerateUpdateCommand(c, fixedInVersion, "")
+	return s.GenerateUpdateCommand(c, fixed+variant, "")
 }
 
 // IsFixedByUpdate returns true when the latest available tag already covers the CVE fix version.
@@ -385,7 +394,8 @@ func IsFixedByUpdate(latestTag, fixedInVersion string) bool {
 		return false
 	}
 
-	latestVer, err := ParseTag(latestTag)
+	versionPart, _ := splitVariant(latestTag)
+	latestVer, err := ParseTag(versionPart)
 	if err != nil {
 		return false
 	}
@@ -411,6 +421,11 @@ func (s *Service) runScan(ctx context.Context) {
 	s.scanning = true
 	s.mu.Unlock()
 
+	s.scan(ctx)
+}
+
+// scan runs one scan for the caller that set s.scanning.
+func (s *Service) scan(ctx context.Context) {
 	defer func() {
 		s.mu.Lock()
 		s.scanning = false
@@ -457,20 +472,28 @@ func (s *Service) runScan(ctx context.Context) {
 	}
 
 	// A container whose scan failed or whose image the registry would not show keeps its pending update until a scan reads its registry.
-	failed := make(map[string]bool, len(scanErrors)+len(unreadable))
+	type hostName struct{ host, name string }
+	errored := make(map[string]bool, len(scanErrors))
 	for _, se := range scanErrors {
-		failed[se.ContainerName] = true
+		errored[se.ContainerID] = true
 	}
-	for _, name := range unreadable {
-		failed[name] = true
+	failed := make(map[hostName]bool, len(scanErrors)+len(unreadable))
+	for _, c := range unreadable {
+		failed[hostName{uid.Agent(c.AgentID), c.Name}] = true
+	}
+	for _, c := range containers {
+		if errored[c.ExternalID] {
+			failed[hostName{uid.Agent(c.AgentID), c.Name}] = true
+		}
 	}
 	scannedNames := make([]string, 0, len(containers))
 	var coveredHosts []string
 	for _, c := range containers {
-		if host := uid.Agent(c.AgentID); !slices.Contains(coveredHosts, host) {
+		host := uid.Agent(c.AgentID)
+		if !slices.Contains(coveredHosts, host) {
 			coveredHosts = append(coveredHosts, host)
 		}
-		if !failed[c.Name] {
+		if !failed[hostName{host, c.Name}] {
 			scannedNames = append(scannedNames, c.Name)
 		}
 	}
@@ -531,13 +554,21 @@ func (s *Service) runScan(ctx context.Context) {
 	// Emit a recovery event for each so listening consumers (alert engine) can
 	// resolve the matching active alert.
 	// Only the hosts this scan covered are cleaned, so an absent host keeps its entries.
-	staleUpdates, err := s.store.ListStaleImageUpdates(ctx, scanID, coveredHosts, scannedNames)
-	if err != nil {
-		s.logger.Warn("update scan: list stale updates", "error", err)
-	} else if deleted, err := s.store.DeleteStaleImageUpdates(ctx, scanID, coveredHosts, scannedNames); err != nil {
-		s.logger.Warn("update scan: cleanup stale updates", "error", err)
-	} else if deleted > 0 {
-		s.logger.Info("update scan: removed stale updates", "deleted", deleted)
+	var staleUpdates []StaleImageUpdate
+	for _, host := range coveredHosts {
+		// A name read on another host also cleans the entry of a container stopped on this one.
+		names := slices.DeleteFunc(slices.Clone(scannedNames), func(name string) bool { return failed[hostName{host, name}] })
+		stale, err := s.store.ListStaleImageUpdates(ctx, scanID, []string{host}, names)
+		if err != nil {
+			s.logger.Warn("update scan: list stale updates", "agent_id", host, "error", err)
+			continue
+		}
+		staleUpdates = append(staleUpdates, stale...)
+		if deleted, err := s.store.DeleteStaleImageUpdates(ctx, scanID, []string{host}, names); err != nil {
+			s.logger.Warn("update scan: cleanup stale updates", "agent_id", host, "error", err)
+		} else if deleted > 0 {
+			s.logger.Info("update scan: removed stale updates", "agent_id", host, "deleted", deleted)
+		}
 	}
 
 	// Same for the findings whose container is gone entirely: matching on the

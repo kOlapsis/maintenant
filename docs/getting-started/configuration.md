@@ -6,8 +6,7 @@ Three options exist only as flags: `--copy-store-to` and `--yes` (copy an instal
 
 Conventions used below:
 
-- A boolean is true for `1`, `t`, `true`, `y`, `yes` or `on` (case-insensitive). Any other value, including an empty one, is false.
-- Durations use Go syntax: `30s`, `5m`, `24h`.
+- A boolean is true for `1`, `t`, `true`, `y`, `yes` or `on` (case-insensitive). `0`, `f`, `false`, `n`, `no`, `off` and an empty value are false. Any other value is also read as false, and the startup logs a warning naming the variable and the value. Three booleans close something when they are true, so an unrecognised value stops the startup instead of leaving it open: `MAINTENANT_MCP_READ_ONLY`, `MAINTENANT_DISABLE_TELEMETRY` and `MAINTENANT_DISABLE_OS_EOL_REFRESH`. Two variables follow a shorter rule: `MAINTENANT_CONTAINER` and `MAINTENANT_LABEL_ENDPOINTS_ALLOW_LINK_LOCAL` are true only for `1`, `true`, `yes` or `on`, and any other value is read as false without a warning.- Durations use Go syntax: `30s`, `5m`, `24h`.
 - A value that cannot be parsed falls back to the default. The settings that stop the startup on an invalid value say so in their row.
 
 ---
@@ -25,7 +24,7 @@ Conventions used below:
 | `MAINTENANT_ORGANISATION_NAME` | `Maintenant` | Organisation name shown on the public status page. |
 | `MAINTENANT_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. Any other value means `info`. Logs are JSON lines on stdout. |
 | `MAINTENANT_MAX_BODY_SIZE` | `1048576` | Maximum request body size in bytes, for every HTTP method, on the API and ping routes. It must be a positive whole number: any other value stops the startup with an error that names the variable. |
-| `MAINTENANT_UPDATE_INTERVAL` | `24h` | Interval between [Update Intelligence](../features/updates.md) registry scans. An invalid or non-positive value falls back to `24h`. |
+| `MAINTENANT_UPDATE_INTERVAL` | `24h` | Interval between [Update Intelligence](../features/updates.md) registry scans, as a Go duration (`12h`, `30m`; there is no day unit). A value that does not parse, or that is not positive, is replaced by the default, and the startup logs a warning naming the variable, the value and the default. |
 | `MAINTENANT_DISABLE_OS_EOL_REFRESH` | `false` | Stop the daily refresh of the end-of-support dates of operating systems and official images from endoflife.date. The table embedded in the binary is then the only source. See [Host OS End-of-Support](../features/host-os.md). |
 | `MAINTENANT_SECURITY_SCORE_THRESHOLD` | — | Personal edition. Raises an alert when the security posture score (0 to 100) drops below this value, and resolves it when the score recovers. The score is evaluated every 5 minutes and each time the posture is computed. A whole number from 0 to 100: unset or `0` disables the alert, and any other value (negative, above 100, not a number) stops the startup. See [Network Security Insights](../features/security.md). |
 | `MAINTENANT_CONTAINER_DOWN_AFTER` | unset (off) | Raises a `container_down` alert for a container that has stayed stopped (`exited` or `dead`) for this long, for example `5m`, and resolves it when the container runs again. A container that ended with exit code 0 or 143, or with 137 when the out-of-memory killer was not the cause, counts as completed, not down. Unset or `0` disables the check. An invalid value stops the startup. |
@@ -93,9 +92,9 @@ One SMTP configuration serves the email alert channel (Personal) and the status 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MAINTENANT_RETENTION_SNAPSHOTS` | `48h` | How long raw resource samples are kept. The 24-hour chart reads them, so values below `24h` are raised to `24h` with a warning. Longer ranges come from the hourly rollup. |
-| `MAINTENANT_RETENTION_INTERVAL` | `1h` | Time between two cleanup passes. Values below `1m` are raised to `1m`. |
-| `MAINTENANT_RETENTION_BATCH_SIZE` | `1000` | Rows deleted per transaction. Clamped to the range 100 to 100000. |
+| `MAINTENANT_RETENTION_SNAPSHOTS` | `48h` | How long raw resource samples are kept. The 24-hour chart reads them, so values below `24h` are raised to `24h` with a warning. Longer ranges come from the hourly rollup. Go duration: write `168h`, not `7d`. A value that does not parse, or that is not positive, is replaced by the default, and the startup logs a warning naming the variable, the value and the default. |
+| `MAINTENANT_RETENTION_INTERVAL` | `1h` | Time between two cleanup passes. Values below `1m` are raised to `1m`. A value that does not parse, or that is not positive, is replaced by the default, and the startup logs a warning naming the variable, the value and the default. |
+| `MAINTENANT_RETENTION_BATCH_SIZE` | `1000` | Rows deleted per transaction. Clamped to the range 100 to 100000. A value that does not parse, or that is not positive, is replaced by the default, and the startup logs a warning naming the variable, the value and the default. |
 
 The other retention windows are fixed: hourly resource rollups 90 days, daily rollups one year, daily uptime 365 days, state transitions 90 days (the last transition of each container is always kept), and 30 days for check results, heartbeat pings and executions, certificate check results, archived containers and inactive endpoints. The resource history range a user can read depends on the edition (7, 30 or 90 days), see [Resource Metrics](../features/resources.md).
 
@@ -105,7 +104,7 @@ These variables drive [Multi-Host Monitoring](../features/multihost.md). The [Ag
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MAINTENANT_MODE` | `embedded` | `embedded`: the web server and the local runtime, which also accepts remote agents when the edition allows it. `server`: the same, but refuses to start below the Personal edition. `agent`: no web interface, reports to a server. |
+| `MAINTENANT_MODE` | `embedded` | `embedded`: the web server and the local runtime, which also accepts remote agents when the edition allows it. `server`: the same, but refuses to start below the Personal edition. `agent`: no web interface, reports to a server. Case and outer spaces are ignored. Any other value stops the startup. |
 | `MAINTENANT_SERVER` | — | Agent: gRPC URL of the server, for example `grpcs://maintenant.example.com:8443`. |
 | `MAINTENANT_ENROLLMENT_TOKEN` | — | Agent: enrollment token generated on the server's Agents page. It is used on the first start, and again to enroll under a new identity when the server refuses the stored one (agent revoked or deleted). Without a token, a refused agent stops with exit code 1. |
 | `MAINTENANT_LABEL` | — | Agent: display label shown in the UI. |
@@ -119,8 +118,8 @@ These variables drive [Multi-Host Monitoring](../features/multihost.md). The [Ag
 | `MAINTENANT_GRPC_SERVER_FINGERPRINT` | — | Agent: SHA-256 fingerprint of the server certificate to trust, logged by the server at startup and set by the generated install commands for a self-signed certificate. Needs a `grpcs://` server URL. |
 | `MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY` | `false` | Agent: skip the verification of the server's certificate, with a warning on every connection. A workaround: pin the certificate with `MAINTENANT_GRPC_SERVER_FINGERPRINT`, or trust a private PKI with `MAINTENANT_CA_CERT`. |
 | `MAINTENANT_EMBEDDED_AGENT` | `false` | Server mode: also run an agent for the machine that hosts the server. Personal edition or above. |
-| `MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND` | `1000` | Server: gRPC calls per second allowed for each agent. |
-| `MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS` | `60` | Server: seconds without a heartbeat before an agent is reported stale. |
+| `MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND` | `1000` | Server: gRPC calls per second allowed for each agent. A value that does not parse, or that is not positive, is replaced by the default, and the startup logs a warning naming the variable, the value and the default. |
+| `MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS` | `60` | Server: seconds without a heartbeat before an agent is reported stale. A value that does not parse, or that is not positive, is replaced by the default, and the startup logs a warning naming the variable, the value and the default. |
 | `MAINTENANT_AGENT_SPOOL_MAX_MEMORY_BYTES` | `16777216` | Agent: bytes of events held in memory before the spool writes them to disk. `0` writes every event to disk. |
 | `MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES` | `134217728` | Agent: maximum size of `spool.db`. The oldest events are dropped first. `0` means no size limit. |
 | `MAINTENANT_AGENT_SPOOL_MAX_AGE_SECONDS` | `86400` | Agent: age past which a spooled event is neither kept nor replayed. `0` turns the age limit off. |
@@ -284,14 +283,17 @@ services:
 
 ### Verification and offline behavior
 
-The key is verified against the license server at startup and then every 24 hours. The signed answer is cached in `.maintenant-license`, in the directory of `MAINTENANT_DB`. When the server cannot be reached, the edition stays active from that cache:
+The key is verified against the license server at startup and then every 24 hours. A check that gets no signed answer is retried after about a minute, then at doubling intervals up to one hour, until the server answers. The signed answer is cached in `.maintenant-license`, in the directory of `MAINTENANT_DB`. When the server cannot be reached, the edition stays active from that cache:
 
 - After 7 days without a successful check, the status message says the server is unreachable and the edition stays active.
 - After 30 days, the status message counts down the days left before the fallback.
 - After 60 days, the instance falls back to Community, and this applies to a Personal license too: a perpetual license has no end date, but it must reach the license server at least once every 60 days. The edition returns at the next successful check.
-- With no cache at all (first start offline), the status is `unreachable` and the instance runs as Community.
+- Once the cached license has passed its end date, the status is `expired` and the instance runs as Community until the server confirms a renewal.
+- With no cache at all (first start offline), the status is `unreachable` and the instance runs as Community until the first successful check.
 
 A key the server refuses is dropped at once: `expired`, `revoked` or `unknown` (key not recognized) leaves the instance on Community.
+
+Keep the host's clock synchronized. An answer dated more than a day away from the host's clock is not accepted, and the check counts as failed (the log says `license answer ignored, check this host's clock`). The cache file also records the latest time the instance has seen, every 10 minutes and at shutdown. If the clock reads earlier than that at startup, the offline periods and the end date are counted from that recorded time, and the log warns about it. Deleting the cache file removes the offline period entirely: the instance runs as Community until the next successful check.
 
 A Personal license also bounds the versions it covers. A build released after the update window closed keeps its edition for a 30-day grace period and then falls back to Community; the versions released inside the window stay licensed. `GET /api/v1/license/status` shows `status`, `edition`, `plan`, `verified_at`, `expires_at`, `updates_until` and `update_grace_until`. `status` is one of `active`, `grace` (still granted, renewal due), `expired`, `revoked`, `unknown`, `unreachable`, `update_window_grace`, `update_window_ended`, or `inactive` when no key is set.
 

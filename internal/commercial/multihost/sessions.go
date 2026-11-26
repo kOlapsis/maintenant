@@ -567,66 +567,64 @@ const OfflineReportGrace = 2 * time.Minute
 // suppressed on purpose) would otherwise stay silently disconnected forever.
 // grace holds that reporting back after startup, giving healthy agents time to
 // reconnect; each outage is announced once, until the agent is back.
-// Runs until ctx is done.
+// Blocks until ctx is done and the sweep in progress has returned.
 func (s *Sessions) StartStaleWatcher(ctx context.Context, interval, threshold, grace time.Duration, staleAgents StaleAgentsFn) {
 	if s.broadcaster == nil || staleAgents == nil {
 		return
 	}
-	go func() {
-		startedAt := time.Now()
-		t := time.NewTicker(interval)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				sweepStart := time.Now()
-				ids, err := staleAgents(ctx, threshold)
-				if err != nil {
-					s.logger.Error("stale watcher query failed", "err", err)
+	startedAt := time.Now()
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			sweepStart := time.Now()
+			ids, err := staleAgents(ctx, threshold)
+			if err != nil {
+				s.logger.Error("stale watcher query failed", "err", err)
+				continue
+			}
+			settled := time.Since(startedAt) >= grace
+			for _, agentID := range ids {
+				s.mu.Lock()
+				st, connected := s.active[agentID]
+				if connected && st.connectedAt.After(sweepStart) {
+					s.mu.Unlock()
 					continue
 				}
-				settled := time.Since(startedAt) >= grace
-				for _, agentID := range ids {
-					s.mu.Lock()
-					st, connected := s.active[agentID]
-					if connected && st.connectedAt.After(sweepStart) {
-						s.mu.Unlock()
-						continue
-					}
-					if connected {
-						st.cancel(ErrSessionStale)
-						delete(s.active, agentID)
-					}
-					_, reported := s.offlineReported[agentID]
-					// Marked only when the hook is there to announce it, so a
-					// sweep racing an unwired hook cannot swallow the outage.
-					announce := s.alertHook != nil && (connected || (settled && !reported))
-					if announce {
-						s.offlineReported[agentID] = struct{}{}
-					}
-					s.mu.Unlock()
-
-					if connected {
-						st.closeAll()
-						s.logger.Info("agent.stream_closed", "agent_id", agentID, "reason", "stale")
-						s.broadcaster.BroadcastEvent(event.AgentDisconnected, map[string]any{
-							"agent_id": agentID,
-						})
-					}
-					if !announce {
-						continue
-					}
-					if !connected {
-						s.logger.Info("agent.offline", "agent_id", agentID,
-							"detail", "absent with no live stream")
-					}
-					s.alertHook(agentID, "stale", false)
+				if connected {
+					st.cancel(ErrSessionStale)
+					delete(s.active, agentID)
 				}
+				_, reported := s.offlineReported[agentID]
+				// Marked only when the hook is there to announce it, so a
+				// sweep racing an unwired hook cannot swallow the outage.
+				announce := s.alertHook != nil && (connected || (settled && !reported))
+				if announce {
+					s.offlineReported[agentID] = struct{}{}
+				}
+				s.mu.Unlock()
+
+				if connected {
+					st.closeAll()
+					s.logger.Info("agent.stream_closed", "agent_id", agentID, "reason", "stale")
+					s.broadcaster.BroadcastEvent(event.AgentDisconnected, map[string]any{
+						"agent_id": agentID,
+					})
+				}
+				if !announce {
+					continue
+				}
+				if !connected {
+					s.logger.Info("agent.offline", "agent_id", agentID,
+						"detail", "absent with no live stream")
+				}
+				s.alertHook(agentID, "stale", false)
 			}
 		}
-	}()
+	}
 }
 
 // GRPCServerCertificate returns the SHA-256 fingerprint of the certificate served to agents and whether it is self-signed.

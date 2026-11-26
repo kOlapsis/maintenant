@@ -19,6 +19,32 @@ func (l blockingLister) ListContainerInfos(ctx context.Context) ([]ContainerInfo
 	return nil, ctx.Err()
 }
 
+type heldLister struct{ release chan struct{} }
+
+func (l heldLister) ListContainerInfos(context.Context) ([]ContainerInfo, error) {
+	<-l.release
+	return nil, nil
+}
+
+func TestTriggerScan_IsRunningAsSoonAsItReturnsAndRefusesASecondScan(t *testing.T) {
+	store := &stubStore{}
+	lister := heldLister{release: make(chan struct{})}
+	svc := NewService(Deps{Store: store, Scanner: newTestScanner(&stubRegistry{}, store), Containers: lister, Logger: testLogger()})
+
+	_, err := svc.TriggerScan(context.Background())
+	require.NoError(t, err)
+	require.True(t, svc.IsScanning())
+	_, err = svc.TriggerScan(context.Background())
+	require.ErrorIs(t, err, ErrScanInProgress)
+
+	close(lister.release)
+	svc.Wait()
+	require.False(t, svc.IsScanning())
+	_, err = svc.TriggerScan(context.Background())
+	require.NoError(t, err)
+	svc.Wait()
+}
+
 func TestTriggerScan_RunsOnlyOnTheContextOfStart(t *testing.T) {
 	t.Run("concurrent with Start", func(t *testing.T) {
 		store := &stubStore{}

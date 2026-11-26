@@ -29,7 +29,7 @@ func proManagerWithCache(t *testing.T, handler http.HandlerFunc, pub ed25519.Pub
 	t.Helper()
 	m := testManager(t, pub, handler)
 	signed := signPayload(t, priv, proPayload())
-	require.NoError(t, writeCache(m.dataDir, &signed))
+	require.NoError(t, writeCache(m.dataDir, &signed, time.Now()))
 	m.loadCache(context.Background())
 	require.Equal(t, extension.Pro, m.Edition())
 	return m
@@ -99,7 +99,7 @@ func TestManager_UnsignedRefusalDegradesLikeANetworkError(t *testing.T) {
 	payload := proPayload()
 	payload.VerifiedAt = time.Now().Add(-8 * 24 * time.Hour)
 	signed := signPayload(t, priv, payload)
-	require.NoError(t, writeCache(m.dataDir, &signed))
+	require.NoError(t, writeCache(m.dataDir, &signed, time.Now()))
 	m.loadCache(context.Background())
 
 	m.check(context.Background())

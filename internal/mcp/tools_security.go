@@ -6,7 +6,6 @@ package mcp
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/extension"
@@ -121,7 +120,7 @@ func getSecurityInsightsHandler(svc *Services) gomcp.ToolHandlerFor[getSecurityI
 		if svc.Containers != nil {
 			containers, err := svc.Containers.ListContainers(ctx, container.ListContainersOpts{})
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to list containers: %w", err)
+				return storeErrResult(err, "list containers")
 			}
 			total = len(containers)
 		}
@@ -146,15 +145,15 @@ func listCVEHandler(svc *Services) gomcp.ToolHandlerFor[listCVEInput, any] {
 				return errResult(ambiguousContainer)
 			}
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to resolve the container: %w", err)
+				return storeErrResult(err, "resolve the container")
 			}
 			cves, err := svc.UpdateStore.ListContainerCVEs(ctx, agentID, externalID)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to list container CVEs: %w", err)
+				return storeErrResult(err, "list container CVEs")
 			}
 			eval, err := svc.UpdateStore.GetCVEEvaluation(ctx, agentID, externalID)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to get CVE evaluation: %w", err)
+				return storeErrResult(err, "get CVE evaluation")
 			}
 			return jsonResult(containerCVEList{
 				ContainerID: input.ContainerID,
@@ -164,7 +163,7 @@ func listCVEHandler(svc *Services) gomcp.ToolHandlerFor[listCVEInput, any] {
 		}
 		cves, err := svc.UpdateStore.ListAllActiveCVEs(ctx, update.ListCVEsOpts{Severity: input.Severity})
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list CVEs: %w", err)
+			return storeErrResult(err, "list CVEs")
 		}
 		return jsonResult(cves)
 	}
@@ -204,11 +203,11 @@ func listRiskScoresHandler(svc *Services) gomcp.ToolHandlerFor[listRiskScoresInp
 				return errResult(ambiguousContainer)
 			}
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to resolve the container: %w", err)
+				return storeErrResult(err, "resolve the container")
 			}
 			u, err := svc.Updates.GetAgentImageUpdate(ctx, agentID, externalID)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to get container risk: %w", err)
+				return storeErrResult(err, "get container risk")
 			}
 			if u == nil {
 				return errResult("not found: no risk score for this container")
@@ -218,7 +217,7 @@ func listRiskScoresHandler(svc *Services) gomcp.ToolHandlerFor[listRiskScoresInp
 
 		updates, err := svc.Updates.ListImageUpdates(ctx, update.ListImageUpdatesOpts{})
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list risk scores: %w", err)
+			return storeErrResult(err, "list risk scores")
 		}
 		rows := make([]riskRow, len(updates))
 		for i, u := range updates {
@@ -226,7 +225,7 @@ func listRiskScoresHandler(svc *Services) gomcp.ToolHandlerFor[listRiskScoresInp
 		}
 		enriched, err := enrichWithAgentLabel(ctx, svc, rows)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to enrich risk scores: %w", err)
+			return storeErrResult(err, "enrich risk scores")
 		}
 		return jsonResult(enriched)
 	}
@@ -244,21 +243,21 @@ func getSecurityPostureHandler(svc *Services) gomcp.ToolHandlerFor[getSecurityPo
 		if input.ContainerID != "" {
 			c, err := svc.Containers.GetContainer(ctx, input.ContainerID)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to get container: %w", err)
+				return storeErrResult(err, "get container")
 			}
 			if c == nil {
 				return errResult("not found: container does not exist")
 			}
 			score, err := svc.Scorer.ScoreContainer(ctx, security.ContainerInfo{ID: c.ID, AgentID: c.AgentID, ExternalID: c.ExternalID, Name: c.Name})
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to score container: %w", err)
+				return storeErrResult(err, "score container")
 			}
 			return jsonResult(score)
 		}
 
 		containers, err := svc.Containers.ListContainers(ctx, container.ListContainersOpts{})
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list containers: %w", err)
+			return storeErrResult(err, "list containers")
 		}
 		infos := make([]security.ContainerInfo, len(containers))
 		for i, c := range containers {
@@ -266,7 +265,7 @@ func getSecurityPostureHandler(svc *Services) gomcp.ToolHandlerFor[getSecurityPo
 		}
 		posture, err := svc.Scorer.ScoreInfrastructure(ctx, infos)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to score infrastructure: %w", err)
+			return storeErrResult(err, "score infrastructure")
 		}
 		return jsonResult(posture)
 	}

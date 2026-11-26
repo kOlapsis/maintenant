@@ -40,10 +40,10 @@ Alert routing is not configured with labels. Channels and triggers decide who is
 
 | Label | Values | Description |
 |-------|--------|-------------|
-| `maintenant.ignore` | `true` or `1` | Leave this container out of monitoring. Any other value, including `True`, does not ignore it. |
+| `maintenant.ignore` | `true` or `1` | Leave this container out of monitoring. `false` and `0` keep it monitored. Any other value, including `True` or `yes`, does not ignore it and is logged as a warning. |
 | `maintenant.group` | any non-empty string | Group name, instead of the Compose project, the Swarm stack or the Kubernetes namespace. |
 | `maintenant.alert.severity` | `critical`, `warning`, `info` | Severity of the `container_down` alert for this container. Default `warning`. |
-| `maintenant.alert.restart_threshold` | positive integer | Restarts within 10 minutes before a `restart_loop` alert is raised. Default `3`. |
+| `maintenant.alert.restart_threshold` | positive integer | Restarts within 10 minutes before a `restart_loop` alert is raised. Default `3`. Any other value, `0` included, keeps `3` and is logged as a warning. |
 
 ```yaml
 labels:
@@ -55,7 +55,7 @@ labels:
 
 An ignored container is hidden from the dashboard and raises no alert. It produces no state-change event, no endpoint or certificate monitor, no resource sample, no security insight and no update check.
 
-`maintenant.alert.severity` applies to `container_down`, which only exists when `MAINTENANT_CONTAINER_DOWN_AFTER` is set (see [Configuration](../getting-started/configuration.md)). It does not change the other alerts: `restart_loop` is a warning that becomes critical at three times the threshold, and `health_unhealthy` is a warning. An invalid value is ignored and the severity stays `warning`.
+`maintenant.alert.severity` applies to `container_down`, which only exists when `MAINTENANT_CONTAINER_DOWN_AFTER` is set (see [Configuration](../getting-started/configuration.md)). It does not change the other alerts: `restart_loop` is a warning that becomes critical at three times the threshold, and `health_unhealthy` is a warning. An invalid value, `Critical` included, is ignored with a warning in the log and the severity stays `warning`.
 
 !!! note "One-off containers are skipped"
 
@@ -522,7 +522,7 @@ kubectl annotate deployment/api -n production \
   maintenant.update.track=minor
 ```
 
-Annotations are read on the server's own cluster. A Kubernetes agent reports the topology of its cluster without them. The endpoint and certificate labels have no Kubernetes equivalent.
+Annotations are read on the server's own cluster. A Kubernetes agent reports the topology of its cluster without them. The endpoint and certificate labels have no Kubernetes equivalent. As with labels, an unknown `maintenant.*` annotation (a typo such as `maintenant.ingore`) or a known one with a value maintenant cannot use is logged as a warning, once per workload or bare pod.
 
 A changed annotation is picked up when maintenant next reconciles: at startup, when the runtime reconnects, or when a new workload appears. There are two exceptions: `maintenant.ignore` on a workload or a pod, which drives the alerts and is re-read every 30 seconds, and `maintenant.update.*`, which is read at each update scan. See the [Kubernetes guide](kubernetes.md#annotations).
 

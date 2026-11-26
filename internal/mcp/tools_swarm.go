@@ -5,7 +5,6 @@ package mcp
 
 import (
 	"context"
-	"fmt"
 
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -75,7 +74,7 @@ func listSwarmServicesHandler(svc *Services) gomcp.ToolHandlerFor[listSwarmServi
 		}
 		services, err := svc.SwarmTopology.ListServices(ctx, resolveAgentScope(input.AgentID))
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list swarm services: %w", err)
+			return storeErrResult(err, "list swarm services")
 		}
 		return jsonResult(services)
 	}
@@ -88,7 +87,7 @@ func listSwarmTasksHandler(svc *Services) gomcp.ToolHandlerFor[listSwarmTasksInp
 		}
 		tasks, err := svc.SwarmTopology.ListTasks(ctx, resolveAgentScope(input.AgentID), input.ServiceID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list swarm tasks: %w", err)
+			return storeErrResult(err, "list swarm tasks")
 		}
 		return jsonResult(tasks)
 	}
@@ -101,7 +100,7 @@ func listSwarmNodesHandler(svc *Services) gomcp.ToolHandlerFor[listSwarmNodesInp
 		}
 		nodes, err := svc.SwarmNodes.ListNodes(ctx, resolveAgentScope(input.AgentID))
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list swarm nodes: %w", err)
+			return storeErrResult(err, "list swarm nodes")
 		}
 		return jsonResult(nodes)
 	}

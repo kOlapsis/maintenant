@@ -9,6 +9,9 @@ import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
 let release: () => void = () => {}
 const acknowledgeAlert = vi.fn(() => new Promise<void>((resolve) => (release = resolve)))
 
+const showToast = vi.hoisted(() => vi.fn())
+vi.mock('@/composables/useToast', () => ({ showToast }))
+
 vi.mock('@/stores/alerts', () => ({
   useAlertsStore: () => ({ acknowledgeAlert }),
 }))
@@ -29,6 +32,18 @@ describe('AcknowledgeButton', () => {
     release()
     await flushPromises()
     expect(button.text()).toBe('Acknowledge')
+  })
+
+  it('says when the acknowledgement failed', async () => {
+    acknowledgeAlert.mockRejectedValueOnce(new Error('HTTP 403'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapper = mount(AcknowledgeButton, { props: { alert: alertWith({}) } })
+
+    await wrapper.find('button').trigger('click')
+    await flushPromises()
+
+    expect(showToast).toHaveBeenCalledWith('Could not acknowledge the alert: HTTP 403', 'warning')
+    expect(wrapper.find('button').text()).toBe('Acknowledge')
   })
 
   it('names who acknowledged the alert', () => {

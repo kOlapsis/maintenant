@@ -9,13 +9,16 @@ import { sseBus } from '@/services/sseBus'
 export const useChannelsStore = defineStore('channels', () => {
   const channels = ref<NotificationChannel[]>([])
   const channelsLoading = ref(false)
+  const channelsError = ref<string | null>(null)
 
   async function fetchChannels() {
     channelsLoading.value = true
     try {
       const res = await listChannels()
       channels.value = res.channels
+      channelsError.value = null
     } catch (e) {
+      channelsError.value = e instanceof Error ? e.message : 'Failed to fetch channels'
       console.error('Failed to fetch channels:', e)
     } finally {
       channelsLoading.value = false
@@ -29,7 +32,7 @@ export const useChannelsStore = defineStore('channels', () => {
     } catch {
       return
     }
-    channels.value = [...channels.value, channel]
+    channels.value = [...channels.value.filter((c) => c.id !== channel.id), channel]
   }
 
   function onChannelUpdated(e: MessageEvent) {
@@ -70,11 +73,13 @@ export const useChannelsStore = defineStore('channels', () => {
     sseBus.off('channel.updated', onChannelUpdated)
     sseBus.off('channel.deleted', onChannelDeleted)
     sseBus.off('sse.reconnected', onReconnected)
+    sseBus.disconnect()
   }
 
   return {
     channels,
     channelsLoading,
+    channelsError,
     fetchChannels,
     connectSSE,
     disconnectSSE,

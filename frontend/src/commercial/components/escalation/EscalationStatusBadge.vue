@@ -18,6 +18,10 @@ const latestRun = computed(() => props.runs[0] ?? null)
 
 const displayRun = computed(() => activeRun.value ?? latestRun.value)
 
+const undelivered = computed(
+  () => displayRun.value?.deliveries?.filter((d) => d.status === 'failed' || d.status === 'abandoned').length ?? 0,
+)
+
 const levelLabel = computed(() => {
   if (!displayRun.value) return ''
   if (displayRun.value.status !== 'active') return ''
@@ -52,6 +56,7 @@ const statusLabel = computed(() => {
       <BellRing :size="10" class="shrink-0" />
       <span>{{ displayRun.policy?.name ?? 'Escalating' }}</span>
       <span v-if="levelLabel" class="text-mnt-status-warn/70">· {{ levelLabel }}</span>
+      <span v-if="undelivered" class="text-mnt-status-down">· {{ undelivered }} not delivered</span>
     </div>
     <!-- Stopped/final status -->
     <div
@@ -65,6 +70,7 @@ const statusLabel = computed(() => {
       />
       <BellOff v-else :size="10" class="shrink-0" />
       <span>{{ statusLabel }}</span>
+      <span v-if="undelivered" class="text-mnt-status-down">· {{ undelivered }} not delivered</span>
     </div>
   </template>
 </template>

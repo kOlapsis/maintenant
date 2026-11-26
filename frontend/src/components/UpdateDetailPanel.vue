@@ -19,6 +19,7 @@ import ChangelogViewer from '@/commercial/components/updates/ChangelogViewer.vue
 import FeatureGate from '@/components/FeatureGate.vue'
 import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import { copyText } from '@/utils/copyText'
 import InlineAlert from '@/components/ui/InlineAlert.vue'
 import TextareaInput from '@/components/ui/TextareaInput.vue'
 import { osCycleText, osStateTextClass } from '@/utils/osSupport'
@@ -52,6 +53,9 @@ const riskLevel = computed(() => {
   return 'low'
 })
 
+const unorderedTag = computed(() =>
+  detail.value?.update_type === 'digest_only' && !/^v?\d/.test(detail.value.current_tag))
+
 // Alerte update active de ce conteneur : même nom et même hôte (deux hôtes peuvent porter le même nom).
 const updateAlert = computed<Alert | undefined>(() => {
   const d = detail.value
@@ -71,14 +75,6 @@ async function loadDetail() {
   error.value = ''
   try {
     detail.value = await fetchContainerUpdate(props.containerId, props.agentId)
-    // Les alertes actives sont déjà chargées et tenues à jour app-wide
-    // (AppHeader → dashboard.fetchAll + SSE). On ne refetch QUE si le store est
-    // vide : sinon un refetch (snapshot pré-ack) écraserait la mise à jour
-    // optimiste d'un acquittement en cours.
-    const active = alertsStore.activeAlerts
-    if (active.critical.length + active.warning.length + active.info.length === 0) {
-      void alertsStore.fetchActiveAlerts()
-    }
     if (hasFeature('cve_enrichment')) {
       await updates.fetchContainerCves(props.containerId, props.agentId)
     }
@@ -91,28 +87,20 @@ async function loadDetail() {
 
 async function copyCommand() {
   if (!detail.value?.update_command) return
-  try {
-    await navigator.clipboard.writeText(detail.value.update_command)
-    copied.value = true
-    setTimeout(() => {
-      copied.value = false
-    }, 2000)
-  } catch {
-    // fallback
-  }
+  if (!(await copyText(detail.value.update_command))) return
+  copied.value = true
+  setTimeout(() => {
+    copied.value = false
+  }, 2000)
 }
 
 async function copyRollbackCommand() {
   if (!detail.value?.rollback_command) return
-  try {
-    await navigator.clipboard.writeText(detail.value.rollback_command)
-    copiedRollback.value = true
-    setTimeout(() => {
-      copiedRollback.value = false
-    }, 2000)
-  } catch {
-    // fallback
-  }
+  if (!(await copyText(detail.value.rollback_command))) return
+  copiedRollback.value = true
+  setTimeout(() => {
+    copiedRollback.value = false
+  }, 2000)
 }
 
 async function handlePin() {
@@ -192,6 +180,9 @@ onMounted(loadDetail)
           <Pin :size="8" class="inline mr-0.5" /> Pinned
         </span>
       </div>
+      <p v-if="unorderedTag" class="mt-2 text-xs text-mnt-muted break-all" data-testid="update-unordered-tag">
+        <span class="font-mono">{{ detail.current_tag }}</span> is not a version number: a newer version is never looked up, only a new image published under this tag is reported.
+      </p>
       <p v-if="detail.pinned && detail.pin_reason" class="mt-2 text-xs text-mnt-muted italic">
         {{ detail.pin_reason }}
       </p>

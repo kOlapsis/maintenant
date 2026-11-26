@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,8 @@ import (
 )
 
 const maxLogLineBytes = 1 << 20
+
+var podContainerName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
 
 // LogStreamer abstracts runtime log streaming for the API layer.
 type LogStreamer interface {
@@ -67,9 +70,16 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	containerName := r.URL.Query().Get("container")
+	if containerName != "" && !podContainerName.MatchString(containerName) {
+		WriteError(w, http.StatusBadRequest, "INVALID_CONTAINER", "container must be the name of a container of the pod")
+		return
+	}
+
 	// Look up the container to get its externalID.
 	var externalID string
 	var agentID string
+	var kubernetes bool
 	var containerDBID = id
 	if h.service != nil {
 		c, err := h.service.GetContainer(r.Context(), id)
@@ -83,6 +93,7 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 		}
 		externalID = c.ExternalID
 		agentID = c.AgentID
+		kubernetes = c.RuntimeType == "kubernetes"
 	} else {
 		externalID = id
 	}
@@ -123,9 +134,8 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Build the stream target: externalID + optional container name for K8s
 	streamID := externalID
-	if containerName := r.URL.Query().Get("container"); containerName != "" {
+	if kubernetes && containerName != "" {
 		streamID = streamID + "/" + containerName
 	}
 

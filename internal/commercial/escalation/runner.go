@@ -417,12 +417,7 @@ func (r *Runner) processRun(ctx context.Context, run *esc.Run, now time.Time) er
 		return r.store.TerminateRun(ctx, run.ID, esc.RunStatusStoppedByAck, now)
 	}
 
-	suppressed, sErr := r.suppressor.IsSuppressed(ctx, a.Source, a.EntityType, a.EntityID)
-	if sErr != nil {
-		r.logger.ErrorContext(ctx, "escalation: suppressor", "error", sErr, "run_id", run.ID)
-		// Fail-open on suppressor errors to avoid stalling escalations.
-	}
-	if suppressed {
+	if r.suppressed(ctx, a) {
 		recheckAt := now.Add(maintenanceRecheck)
 		if err := r.store.PauseRunForMaintenance(ctx, run.ID, recheckAt); err != nil {
 			return fmt.Errorf("pause run: %w", err)
@@ -497,6 +492,16 @@ func (r *Runner) processRun(ctx context.Context, run *esc.Run, now time.Time) er
 		return fmt.Errorf("update run progress: %w", err)
 	}
 	return nil
+}
+
+// suppressed reports whether a maintenance window covers the alert's entity, and false when that cannot be read, so
+// that a failing suppressor never stalls an escalation.
+func (r *Runner) suppressed(ctx context.Context, a *alert.Alert) bool {
+	covered, err := r.suppressor.IsSuppressed(ctx, a.Source, a.EntityType, a.EntityID)
+	if err != nil {
+		r.logger.ErrorContext(ctx, "escalation: suppressor", "error", err, "alert_id", a.ID)
+	}
+	return covered
 }
 
 // pendingAt reports whether a delivery of a level of the run is still being sent or waits for a retry.
@@ -641,7 +646,7 @@ func (r *Runner) retryDue(ctx context.Context, now time.Time) error {
 			r.closeDelivery(ctx, d, esc.DeliveryStatusAbandoned, reason)
 			continue
 		}
-		if run.Status == esc.RunStatusPausedByMaintenance && d.LevelIndex >= 0 {
+		if d.LevelIndex != specialLevelAck && r.suppressed(ctx, a) {
 			continue // retried once the maintenance window is over
 		}
 		if d.ChannelID == nil {

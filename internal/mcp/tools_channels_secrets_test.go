@@ -154,7 +154,7 @@ func TestMCPChannels_PlatformURLsAreTruncated(t *testing.T) {
 		{"slack", "https://hooks.slack.com/services/T000/B000/XXXXsecret", "https://hooks.slack.com", true},
 		{"discord", "https://discord.com/api/webhooks/1234/abcdTOKEN", "https://discord.com", true},
 		{"teams", "https://acme.webhook.office.com/webhookb2/guid/IncomingWebhook/id/key", "https://acme.webhook.office.com", true},
-		{"webhook", "https://hooks.example.com/path/kept", "https://hooks.example.com/path/kept", false},
+		{"webhook", "https://hooks.example.com/path/cut?token=s3cr3t", "https://hooks.example.com", true},
 	} {
 		t.Run(tc.typ, func(t *testing.T) {
 			svc, cs := buildSecretChannelServices(t)

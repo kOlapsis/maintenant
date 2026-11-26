@@ -274,3 +274,24 @@ func TestHandleAgentInventory_KeepsAnArchivedContainerItBringsBack(t *testing.T)
 		assert.Nil(t, b.held(agentA, id), "%s made room", id)
 	}
 }
+
+func TestHandleAgentInventory_DoesNotArchiveAContainerThatChangedAfterItWasBuilt(t *testing.T) {
+	const agentA = "00000000-0000-0000-0000-0000000000a9"
+	b := newCeilingBench(t, agentA)
+	now := time.Now().Truncate(time.Second)
+
+	require.NoError(t, b.svc.HandleAgentEvent(b.ctx, agentA, running("late"), agentevent.Meta{ObservedAt: now}))
+
+	require.NoError(t, b.svc.HandleAgentInventory(b.ctx, agentA, &agentpb.ContainerInventory{Complete: true},
+		agentevent.Meta{ObservedAt: now.Add(-5 * time.Second)}))
+	assert.False(t, b.held(agentA, "late").Archived, "an inventory built before the container started says nothing about it")
+
+	require.NoError(t, b.svc.HandleAgentInventory(b.ctx, agentA, &agentpb.ContainerInventory{Complete: true},
+		agentevent.Meta{ObservedAt: now.Add(5 * time.Second)}))
+	archived, err := b.st.ListContainers(b.ctx, container.ListContainersOpts{IncludeArchived: true, IncludeIgnored: true, AgentFilter: ptrTo(agentA)})
+	require.NoError(t, err)
+	require.Len(t, archived, 1)
+	assert.True(t, archived[0].Archived, "an inventory built after it, which does not list it, archives it")
+}
+
+func ptrTo[T any](v T) *T { return &v }

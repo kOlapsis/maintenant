@@ -23,7 +23,7 @@ import ErrorState from '@/components/ui/ErrorState.vue'
 import ListToolbar from '@/components/ui/ListToolbar.vue'
 import DataTable, { type Column } from '@/components/ui/DataTable.vue'
 import type { StatusChip } from '@/components/ui/listFilters'
-import { certificateTone, countdownColor, formatDaysRemaining, formatExpiryDate } from '@/utils/certFormat'
+import { certDaysRemaining, certificateTone, countdownColor, formatDaysRemaining, formatExpiryDate } from '@/utils/certFormat'
 import { timeAgo } from '@/utils/time'
 import { ShieldCheck } from 'lucide-vue-next'
 import { docUrl } from '@/utils/docs'
@@ -139,7 +139,7 @@ const sortedCertificates = computed(() => {
 })
 
 function daysLeft(cert: CertMonitor): number {
-  return cert.latest_check?.days_remaining ?? Number.MAX_SAFE_INTEGER
+  return certDaysRemaining(cert) ?? Number.MAX_SAFE_INTEGER
 }
 
 function checkedAt(cert: CertMonitor): number {
@@ -164,7 +164,7 @@ function sortValue(cert: CertMonitor, key: string): string | number | undefined 
     case 'status':
       return cert.status
     case 'days':
-      return cert.latest_check?.days_remaining
+      return certDaysRemaining(cert) ?? undefined
     case 'expires':
       return cert.latest_check?.not_after
         ? new Date(cert.latest_check.not_after).getTime()
@@ -454,9 +454,9 @@ function handleSelect(id: string) {
       <template #cell-days="{ row }">
         <span
           class="font-mono font-semibold tabular-nums"
-          :style="{ color: countdownColor(row.latest_check?.days_remaining) }"
+          :style="{ color: countdownColor(certDaysRemaining(row)) }"
         >
-          {{ formatDaysRemaining(row.latest_check?.days_remaining) }}
+          {{ formatDaysRemaining(certDaysRemaining(row)) }}
         </span>
       </template>
       <template #cell-expires="{ row }">

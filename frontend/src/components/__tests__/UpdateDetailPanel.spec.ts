@@ -28,7 +28,7 @@ vi.mock('@/composables/useEdition', () => ({
 
 // Mock sseBus to prevent real SSE connections
 vi.mock('@/services/sseBus', () => ({
-  sseBus: { on: vi.fn(), off: vi.fn() },
+  sseBus: { on: vi.fn(), off: vi.fn(), connected: { value: true } },
 }))
 
 import { fetchContainerUpdate } from '@/services/updateApi'
@@ -123,6 +123,29 @@ describe('UpdateDetailPanel — major tag and support', () => {
     const el = wrapper.find('[data-testid="update-support"]')
     expect(el.text()).toBe('PostgreSQL 13: Ended 6 mo ago')
     expect(el.classes()).toContain('text-mnt-status-down')
+  })
+
+  it('says that a tag which is not a version is only followed by its digest', async () => {
+    const wrapper = mountPanel({
+      ...baseDetail,
+      current_tag: 'RELEASE.2024-01-01T00-00-00Z',
+      latest_tag: 'RELEASE.2024-01-01T00-00-00Z',
+      update_type: 'digest_only',
+    })
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(wrapper.find('[data-testid="update-unordered-tag"]').text()).toBe(
+      'RELEASE.2024-01-01T00-00-00Z is not a version number: a newer version is never looked up, only a new image published under this tag is reported.',
+    )
+  })
+
+  it('says nothing of the kind for a version tag', async () => {
+    for (const detail of [baseDetail, { ...baseDetail, current_tag: 'v3', latest_tag: 'v3', update_type: 'digest_only' }]) {
+      const wrapper = mountPanel(detail)
+      await new Promise((r) => setTimeout(r, 50))
+
+      expect(wrapper.find('[data-testid="update-unordered-tag"]').exists()).toBe(false)
+    }
   })
 
   it('words an ending cycle and colors it as a warning', async () => {

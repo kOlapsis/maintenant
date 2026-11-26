@@ -136,12 +136,14 @@ Each monitor is first mapped to a status:
 
 | Monitor | Operational | Degraded | Major Outage |
 |---------|-------------|----------|--------------|
-| Container | `running` and not `unhealthy`, or `completed` | running but `unhealthy` | any other state (`exited`, `restarting`, `paused`, `created`, `dead`) |
+| Container | `running` and not `unhealthy`, `completed`, or `created` within 5 minutes of its creation (starting) | running but `unhealthy` | `exited`, `restarting`, `paused`, `dead`, `created` later than 5 minutes after its creation, or any state while its runtime does not answer or its agent is offline |
 | Endpoint | `up`, or not checked yet | `degraded` (served over a certificate that is not trusted) | `down`, or `unknown` after a check (its container is stopped) |
 | Heartbeat | `up`, `started`, `new`, `paused` | never | `down` |
-| Certificate | `valid` | `expiring` | `expired`, `error`, `unknown` |
+| Certificate | `valid`, or not checked yet | `expiring` | `expired`, `error`, or `unknown` after a check |
 
-A monitor that no longer exists counts as operational, and so does an endpoint or a certificate that is no longer monitored (its label was removed or its container deleted).
+A container counts as up only while maintenant can see it run. Its agent is offline when it has no live connection, was last seen longer ago than `MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS` (60 seconds by default) and its agent-offline alert is open, so the agents still reconnecting in the first two minutes after the server starts keep their last state; the local runtime does not answer when the Docker daemon or the Kubernetes API server is lost. A Kubernetes workload is `created` while none of its replicas is ready, and a pod while it is pending: a workload that loses its last ready replica is a major outage at once, and only a workload created less than 5 minutes ago counts as starting. The 5-minute wait of `replica_health` applies to the alert, not to this status.
+
+A monitor that no longer exists counts as operational, and so does an endpoint or a certificate that is no longer monitored (its label was removed or its container deleted). An endpoint or a certificate left unmonitored by the Community quota counts as operational too. A match-all container component leaves out the stopped container of a Swarm task that failed while a task container of the same service runs: Swarm keeps it in the task history after replacing it.
 
 A component with several monitors (or a match-all component) combines them:
 
@@ -302,7 +304,7 @@ A scheduler checks the windows every 60 seconds:
 
 Deleting a window that is running closes it the same way: the incident is resolved, the components get their previous status back and subscribers receive `Maintenance Completed: <title>`.
 
-The status page start and end can therefore lag the scheduled times by up to a minute. The alert suppression does not: from `starts_at` to `ends_at`, alerts about the monitors of the listed components are dropped, and [escalation runs](alert-escalation.md#maintenance-windows-suspend-escalation) on them are paused. A match-all component in a window covers every monitor of its type.
+The status page start and end can therefore lag the scheduled times by up to a minute. The alert suppression does not: from `starts_at` to `ends_at`, alerts about the monitors of the listed components are held as `silenced` instead of being notified, and raised within 30 seconds of the end of the window if the problem lasts (see [Silence Rules](alerts.md#silence-rules)), and [escalation runs](alert-escalation.md#maintenance-windows-suspend-escalation) on them are paused. A match-all component in a window covers every monitor of its type.
 
 `GET /api/v1/status/maintenance` returns the windows with their components; `limit` defaults to 20, and a value above 100 is replaced by 20. Until a window starts, the public page lists it under upcoming maintenance, which shows the next five. Windows stay until they are deleted.
 
@@ -402,8 +404,10 @@ POST /status/subscribe
 
 1. The visitor submits an address. `POST /status/subscribe` accepts JSON (`Content-Type: application/json`) or a form field `email` (`application/x-www-form-urlencoded`), and answers `200 {"status": "confirmation_sent"}`.
 2. A confirmation email arrives with a link that stays valid for 24 hours. The subscription is pending until the visitor opens it.
-3. Opening the link (`GET /status/confirm?token=…`) confirms the subscription. Unconfirmed subscriptions older than 24 hours are purged daily.
+3. Opening the link (`GET /status/confirm?token=…`) confirms the subscription. Unconfirmed subscriptions older than 24 hours are purged at startup and then daily.
 4. Every notification ends with a personal unsubscribe link (`GET /status/unsubscribe?token=…`). Unsubscribing always works, even when subscriptions are closed.
+
+A confirmation or unsubscribe link that was already used, is unknown or has expired answers a neutral page with a `200`, not an error: a mail scanner may open the link before the visitor does, and the visitor's own click then lands on that page.
 
 The answer to `POST /status/subscribe` is the same for a new address, a pending one and a confirmed one, so nobody can use the form to find out who is subscribed. Any other `Content-Type` answers `415 unsupported_media_type`. A pending address asked for less than 15 minutes ago receives nothing and its link keeps working; after 15 minutes it receives a fresh link and the previous one stops working. A confirmed address receives nothing. At most 100 confirmation emails are sent per hour: past that, requests get the same answer, no email goes out until the next hour, and a single warning is logged for that hour. A failed email is only written to the log.
 

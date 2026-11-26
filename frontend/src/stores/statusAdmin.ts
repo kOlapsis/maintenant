@@ -17,7 +17,7 @@ import { sseBus } from '@/services/sseBus'
 import { useEdition } from '@/composables/useEdition'
 
 export const useStatusAdminStore = defineStore('statusAdmin', () => {
-  const { hasFeature } = useEdition()
+  const { hasFeature, whenLoaded } = useEdition()
   // Components
   const components = ref<StatusComponent[]>([])
   const componentsLoading = ref(false)
@@ -51,6 +51,7 @@ export const useStatusAdminStore = defineStore('statusAdmin', () => {
   }
 
   async function fetchIncidents(params?: { status?: string; severity?: string; limit?: number; offset?: number }) {
+    await whenLoaded()
     if (!hasFeature('incidents')) return
     incidentsLoading.value = true
     try {
@@ -65,6 +66,7 @@ export const useStatusAdminStore = defineStore('statusAdmin', () => {
   }
 
   async function fetchMaintenance(params?: { status?: string; limit?: number }) {
+    await whenLoaded()
     if (!hasFeature('maintenance_windows')) return
     maintenanceLoading.value = true
     try {
@@ -77,6 +79,7 @@ export const useStatusAdminStore = defineStore('statusAdmin', () => {
   }
 
   async function fetchSubscribers() {
+    await whenLoaded()
     if (!hasFeature('subscribers')) return
     subscribersLoading.value = true
     try {

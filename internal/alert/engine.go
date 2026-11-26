@@ -640,11 +640,11 @@ func (e *Engine) Acknowledge(ctx context.Context, id, by string) (*Alert, error)
 	a.AcknowledgedAt = &at
 	a.AcknowledgedBy = by
 
-	if e.broadcaster != nil {
-		e.broadcaster.Broadcast(event.AlertAcknowledged, a)
-	}
 	if err := e.escalator.OnAlertAcknowledged(ctx, id, Acknowledgment{By: by, At: at}); err != nil {
 		e.logger.ErrorContext(ctx, "alert engine: OnAlertAcknowledged hook error", "error", err, "alert_id", id)
+	}
+	if e.broadcaster != nil {
+		e.broadcaster.Broadcast(event.AlertAcknowledged, a)
 	}
 	return a, nil
 }

@@ -163,7 +163,7 @@ export const useAgentsStore = defineStore('agents', () => {
     }
     const idx = agents.value.findIndex((a) => a.agent_id === data.agent_id)
     if (idx >= 0) {
-      agents.value[idx] = { ...agents.value[idx]!, connection_state: 'disconnected' }
+      agents.value[idx] = { ...agents.value[idx]!, connection_state: 'disconnected', runtime_unreachable: false }
     }
     fetchMetrics()
   }

@@ -6,9 +6,11 @@
 <template>
   <RouterView />
   <SessionExpiredOverlay />
+  <ToastContainer />
 </template>
 
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
 import SessionExpiredOverlay from '@/components/ui/SessionExpiredOverlay.vue'
+import ToastContainer from '@/components/ToastContainer.vue'
 </script>
