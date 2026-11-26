@@ -172,7 +172,7 @@ All routes are open in every edition.
 
 `GET /api/v1/containers/{id}/logs` query parameters: `lines` (default 100, at most 500) and `timestamps=true`. The answer is `{ "container_id", "container_name", "lines", "total_lines", "truncated" }`. Logs of a remote container are fetched from its agent (15-second deadline).
 
-`GET /api/v1/containers/{id}/logs/stream` is a Server-Sent Events stream with its own `lines` parameter (default 100, at most 500) and, on Kubernetes, `container` to pick a container of the pod. It sends `container.log_line` events (`container_id`, `line`, `stream`, `timestamp`), a keep-alive comment every 25 seconds while the container is silent, and ends with a `container.log_error` event (`container_id`, `error`: `container stopped`, `agent disconnected` or the agent's error). The route exists when the local runtime can read logs or an agent can serve them.
+`GET /api/v1/containers/{id}/logs/stream` is a Server-Sent Events stream with its own `lines` parameter (default 100, at most 500) and, on Kubernetes, `container` to pick a container of the pod (`400 INVALID_CONTAINER` when it is not a container name; ignored on Docker). It sends `container.log_line` events (`container_id`, `line`, `stream`, `timestamp`), a keep-alive comment every 25 seconds while the container is silent, and ends with a `container.log_error` event (`container_id`, `error`: `container stopped`, `agent disconnected` or the agent's error). The route exists when the local runtime can read logs or an agent can serve them.
 
 `DELETE /api/v1/containers/{id}` removes the container and its history with a hard delete and answers `204`. It emits `container.archived`.
 
