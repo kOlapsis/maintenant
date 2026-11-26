@@ -33,6 +33,7 @@ const fr = {
   subscribeUnavailable: 'Les mises à jour par e-mail ne sont pas disponibles pour le moment.',
   subscribeFailed: 'L\'abonnement a échoué. Réessayez plus tard.',
   updatedAt: 'Mis à jour',
+  refreshFailed: 'Actualisation impossible. L\'état affiché n\'est peut-être plus à jour.',
   poweredBy: 'Propulsé par Maintenant',
 } as const
 

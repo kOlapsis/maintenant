@@ -8,7 +8,6 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import StatusComponentBreakdown from '@/components/StatusComponentBreakdown.vue'
 import { useStatusPageI18n } from '@/composables/useStatusPageI18n'
 import { useVisibleInterval } from '@/composables/useVisibleInterval'
-import { guardedFetch } from '@/services/apiFetch'
 import type { MonitorRef } from '@/services/statusApi'
 import type { StatusPageDictKey } from '@/locales/status-page/en'
 import DisclosureButton from '@/components/ui/DisclosureButton.vue'
@@ -48,7 +47,7 @@ const { t } = useStatusPageI18n(locale)
 
 async function fetchSettings() {
   try {
-    const res = await guardedFetch('/status/settings.json')
+    const res = await fetch('/status/settings.json')
     if (res.ok) settings.value = await res.json()
   } catch {
     // graceful degradation — defaults already applied via null checks
@@ -99,6 +98,8 @@ interface StatusData {
 const data = ref<StatusData | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
+const fetchedAt = ref(0)
+const now = ref(Date.now())
 const expandedComponents = ref<Set<string>>(new Set())
 
 function toggleExpanded(id: string) {
@@ -115,9 +116,10 @@ let eventSource: EventSource | null = null
 
 async function fetchStatus() {
   try {
-    const res = await guardedFetch('/status/api')
+    const res = await fetch('/status/api')
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     data.value = await res.json()
+    fetchedAt.value = Date.now()
     error.value = null
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load status'
@@ -147,6 +149,7 @@ function onGlobalChanged(e: Event) {
   data.value.global_status = payload.status
   data.value.global_message = payload.message
   data.value.updated_at = new Date().toISOString()
+  fetchedAt.value = Date.now()
 }
 
 const REFETCH_EVENTS = [
@@ -160,19 +163,30 @@ const REFETCH_EVENTS = [
   'status.maintenance_ended',
 ] as const
 
+let opened = false
+let retries = 0
+let retryTimer: ReturnType<typeof setTimeout> | null = null
+
 function connectSSE() {
-  eventSource = new EventSource('/status/events')
-  eventSource.addEventListener('status.component_changed', onComponentChanged)
-  eventSource.addEventListener('status.global_changed', onGlobalChanged)
-  for (const name of REFETCH_EVENTS) eventSource.addEventListener(name, () => void fetchStatus())
-  let opened = false
-  eventSource.onopen = () => {
+  const es = new EventSource('/status/events')
+  eventSource = es
+  es.addEventListener('status.component_changed', onComponentChanged)
+  es.addEventListener('status.global_changed', onGlobalChanged)
+  for (const name of REFETCH_EVENTS) es.addEventListener(name, () => void fetchStatus())
+  es.onopen = () => {
+    retries = 0
     if (opened) void fetchStatus()
     opened = true
+  }
+  // The browser retries a dropped stream itself, but gives up on an HTTP error.
+  es.onerror = () => {
+    if (es.readyState !== EventSource.CLOSED) return
+    retryTimer = setTimeout(connectSSE, Math.min(30_000, 1000 * 2 ** retries++))
   }
 }
 
 useVisibleInterval(fetchStatus, 60_000)
+useVisibleInterval(() => { now.value = Date.now() }, 10_000)
 
 onMounted(() => {
   fetchSettings()
@@ -180,7 +194,10 @@ onMounted(() => {
   connectSSE()
 })
 
-onUnmounted(() => { eventSource?.close() })
+onUnmounted(() => {
+  eventSource?.close()
+  if (retryTimer) clearTimeout(retryTimer)
+})
 
 // --- Email subscription ---
 const subscribeEmail = ref('')
@@ -199,7 +216,7 @@ async function handleSubscribe() {
   subscribing.value = true
   subscribeResult.value = null
   try {
-    const res = await guardedFetch('/status/subscribe', {
+    const res = await fetch('/status/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
@@ -255,7 +272,7 @@ const componentStatusStyle = (status: string) => {
   return styles[status] || { dot: 'bg-slate-500', label: status, text: 'text-slate-400' }
 }
 
-function formatDate(iso: string) {
+function formatDate(iso: string | number) {
   const tz = settings.value?.timezone || undefined
   const loc = settings.value?.locale || 'en'
   if (settings.value?.date_format === 'absolute') {
@@ -265,7 +282,7 @@ function formatDate(iso: string) {
       timeZone: tz,
     }).format(new Date(iso))
   }
-  const diff = (Date.now() - new Date(iso).getTime()) / 1000
+  const diff = (now.value - new Date(iso).getTime()) / 1000
   const rtf = new Intl.RelativeTimeFormat(loc, { numeric: 'auto' })
   if (Math.abs(diff) < 60) return rtf.format(-Math.round(diff), 'second')
   if (Math.abs(diff) < 3600) return rtf.format(-Math.round(diff / 60), 'minute')
@@ -349,7 +366,8 @@ function formatDate(iso: string) {
             {{ globalBanner.icon }} {{ globalBanner.text }}
           </div>
           <p v-if="data.global_message" class="text-sm opacity-80 mt-1 text-white">{{ data.global_message }}</p>
-          <p class="text-xs opacity-60 mt-2 text-white">{{ t('updatedAt') }} {{ formatDate(data.updated_at) }}</p>
+          <p class="text-xs opacity-60 mt-2 text-white">{{ t('updatedAt') }} {{ formatDate(fetchedAt) }}</p>
+          <p v-if="error" role="status" class="text-xs font-semibold mt-1 text-white">{{ t('refreshFailed') }}</p>
         </div>
       </div>
 

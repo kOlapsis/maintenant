@@ -33,6 +33,7 @@ const en = {
   subscribeUnavailable: 'Email updates are not available right now.',
   subscribeFailed: 'The subscription failed. Try again later.',
   updatedAt: 'Updated',
+  refreshFailed: 'Could not refresh. The status shown may be out of date.',
   poweredBy: 'Powered by Maintenant',
 } as const
 
