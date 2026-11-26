@@ -122,7 +122,9 @@ func (s *Service) SetEventCallback(fn EventCallback) {
 
 // Start begins the periodic scan loop. Blocks until ctx is canceled.
 func (s *Service) Start(ctx context.Context) {
+	s.mu.Lock()
 	s.appCtx = ctx
+	s.mu.Unlock()
 	s.logger.Info("starting update intelligence service", "interval", s.interval)
 
 	// Run the first scan after a short delay to let containers start
@@ -148,19 +150,17 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 // TriggerScan starts an immediate scan. Returns the scan ID.
-// The scan runs with the application-scoped context (not the HTTP request context),
-// so it survives after the triggering request completes.
+// The scan runs with the context of Start (not the HTTP request context),
+// so it survives after the triggering request completes, and is refused before Start.
 func (s *Service) TriggerScan(_ context.Context) (string, error) {
 	s.mu.RLock()
-	if s.scanning {
-		s.mu.RUnlock()
+	ctx, scanning := s.appCtx, s.scanning
+	s.mu.RUnlock()
+	if scanning {
 		return "", fmt.Errorf("scan already in progress")
 	}
-	s.mu.RUnlock()
-
-	ctx := s.appCtx
 	if ctx == nil {
-		ctx = context.Background()
+		return "", fmt.Errorf("update service not started")
 	}
 	s.triggered.Go(func() { s.runScan(ctx) })
 	return "", nil

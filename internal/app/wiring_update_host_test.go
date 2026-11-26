@@ -247,6 +247,7 @@ func newUpdateAlertsFixture(t *testing.T, agents []agent.Agent, containerName, r
 		}),
 	}
 	f.app.wireUpdateCallback()
+	go f.app.updateSvc.Start(ctx)
 	return f
 }
 
@@ -290,8 +291,10 @@ func (f *updateAlertsFixture) scan(t *testing.T) map[string]map[string]map[strin
 	t.Helper()
 	idle := func() bool { return !f.app.updateSvc.IsScanning() }
 	require.Eventually(t, idle, 10*time.Second, 10*time.Millisecond)
-	_, err := f.app.updateSvc.TriggerScan(f.ctx)
-	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		_, err := f.app.updateSvc.TriggerScan(f.ctx)
+		return err == nil
+	}, 10*time.Second, 10*time.Millisecond)
 	events := map[string]map[string]map[string]any{}
 	timeout := time.After(60 * time.Second)
 	for {
