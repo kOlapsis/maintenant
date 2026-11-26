@@ -36,3 +36,15 @@ func TestLoadConfig_MalformedFlagIsRefused(t *testing.T) {
 		assert.Contains(t, err.Error(), env)
 	}
 }
+
+func TestLoadConfig_AddrFlagDrivesTheDefaultBaseURL(t *testing.T) {
+	t.Setenv("MAINTENANT_ADDR", "")
+	t.Setenv("MAINTENANT_BASE_URL", "")
+
+	cfg, _ := loadConfig([]string{"--addr", "0.0.0.0:9090"})
+	assert.Equal(t, "http://0.0.0.0:9090", cfg.BaseURL)
+
+	t.Setenv("MAINTENANT_BASE_URL", "")
+	cfg, _ = loadConfig([]string{"--addr", "0.0.0.0:9090", "--baseUrl", "https://now.example.com"})
+	assert.Equal(t, "https://now.example.com", cfg.BaseURL)
+}
