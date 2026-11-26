@@ -47,9 +47,14 @@ func (s *OAuthServer) handleAuthorizationCode(w http.ResponseWriter, r *http.Req
 	// only one concurrent exchange of the same code can ever succeed.
 	codeHash := HashToken(code)
 	authCode, err := s.store.ConsumeCode(r.Context(), codeHash)
-	if err != nil {
+	switch {
+	case errors.Is(err, ErrCodeNotFound), errors.Is(err, ErrCodeUsed), errors.Is(err, ErrCodeExpired):
 		s.logger.Warn("token request with invalid code", "error", err)
 		tokenError(w, http.StatusBadRequest, "invalid_grant", err.Error())
+		return
+	case err != nil:
+		s.logger.Error("failed to consume authorization code", "error", err)
+		tokenError(w, http.StatusInternalServerError, "server_error", "internal error")
 		return
 	}
 

@@ -2,7 +2,9 @@ package oauth
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -16,8 +18,12 @@ func NewTokenVerifier(store MCPOAuthStore) auth.TokenVerifier {
 	return func(ctx context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
 		tokenHash := HashToken(token)
 		stored, err := store.GetToken(ctx, tokenHash)
+		if errors.Is(err, ErrTokenNotFound) {
+			return nil, fmt.Errorf("%w: unknown token", auth.ErrInvalidToken)
+		}
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s", auth.ErrInvalidToken, err.Error())
+			slog.Error("mcp oauth token lookup failed", "error", err)
+			return nil, errors.New("token lookup failed")
 		}
 
 		if stored.Revoked {
