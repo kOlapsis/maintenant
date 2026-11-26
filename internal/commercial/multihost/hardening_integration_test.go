@@ -248,6 +248,87 @@ func TestIntegration_PushOpeningIsRateLimitedPerAddress(t *testing.T) {
 	assert.NotNil(t, msg.GetChallenge())
 }
 
+func answerChallenge(t *testing.T, stream agentpb.Ingest_PushClient, challenge *agentpb.ServerMessage, agentID string, priv ed25519.PrivateKey) {
+	t.Helper()
+	now := time.Now().Unix()
+	payload, err := buildSignPayload(challenge.GetChallenge().GetNonce(), agentID, now)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&agentpb.ClientMessage{Payload: &agentpb.ClientMessage_Auth{Auth: &agentpb.AuthResponse{
+		AgentId: agentID, Timestamp: now, Signature: ed25519.Sign(priv, payload),
+	}}}))
+}
+
+func TestIntegration_SuccessfulPushDoesNotSpendTheAddressQuota(t *testing.T) {
+	withMultiHostEdition(t)
+	logger := quietLogger()
+	st := store.NewAgentStore(openIntegrationDB(t))
+	sessions := multihost.NewSessions(logger, noopBroadcaster{})
+	addr, clientTLS := startTestServer(t, multihost.Deps{
+		AgentStore: st, Broadcaster: noopBroadcaster{}, Sessions: sessions, Logger: logger,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	const fleet = 15
+	const proxy = "127.0.0.41"
+	ids := make([]string, fleet+1)
+	keys := make([]ed25519.PrivateKey, fleet+1)
+	for i := range ids {
+		pub, priv, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+		ids[i], keys[i] = fmt.Sprintf("b1c2d3e4-0000-4000-8000-0000000000%02d", i), priv
+		require.NoError(t, st.Insert(ctx, &agent.Agent{
+			AgentID: ids[i], PublicKey: pub, Hostname: "host", Label: "host", OSArch: "linux/amd64",
+			AgentVersion: "1.0.0", DetectedRuntime: "docker", Status: "active", CreatedAt: time.Now().UTC(),
+		}))
+	}
+
+	open := func() (agentpb.Ingest_PushClient, *agentpb.ServerMessage, error) {
+		stream, err := dialFrom(t, addr, clientTLS, proxy).Push(ctx)
+		require.NoError(t, err)
+		challenge, err := stream.Recv()
+		return stream, challenge, err
+	}
+	connect := func(i int, stream agentpb.Ingest_PushClient, challenge *agentpb.ServerMessage) {
+		answerChallenge(t, stream, challenge, ids[i], keys[i])
+		require.Eventually(t, func() bool { return sessions.IsConnected(ids[i]) }, 5*time.Second, 10*time.Millisecond,
+			"agent %d never connected", i)
+	}
+
+	for i := range fleet {
+		stream, challenge, err := open()
+		require.NoError(t, err, "opening %d of an enrolled agent is within the quota", i+1)
+		connect(i, stream, challenge)
+	}
+
+	for i := 1; i <= 10; i++ {
+		stream, challenge, err := open()
+		require.NoError(t, err, "failed authentication %d is within the quota", i)
+		answerChallenge(t, stream, challenge, ids[0], keys[1])
+		_, err = stream.Recv()
+		require.Equal(t, codes.Unauthenticated, grpcstatus.Code(err), "%v", err)
+	}
+	_, _, err := open()
+	require.Equal(t, codes.ResourceExhausted, grpcstatus.Code(err), "failed authentications empty the bucket: %v", err)
+
+	// One token comes back every 6 s (10 per minute).
+	emptied := time.Now()
+	for {
+		stream, challenge, err := open()
+		if err == nil {
+			connect(fleet, stream, challenge)
+			break
+		}
+		require.Equal(t, codes.ResourceExhausted, grpcstatus.Code(err), "%v", err)
+		require.Less(t, time.Since(emptied), 10*time.Second, "a legitimate agent is back once one token has refilled")
+		select {
+		case <-ctx.Done():
+			t.Fatal("test deadline reached")
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+}
+
 // US2 scenario 4, FR-013, SC-004: an unknown token is refused by a read, so 100 such
 // calls answer while the writer is busy, and a valid enrollment follows unslowed.
 func TestIntegration_UnknownTokenIsRefusedWithoutAWriteTransaction(t *testing.T) {

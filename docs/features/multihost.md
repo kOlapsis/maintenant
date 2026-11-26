@@ -390,12 +390,12 @@ These bounds are fixed, not configurable:
 | Connection handshake | 30 s | the connection is closed |
 | Connection without any stream | 5 min | closed with `GOAWAY`; the agent reconnects. Server keep-alive pings every 60 s |
 | Authentication of a `Push` stream, from the challenge to a verified answer | 30 s | `DeadlineExceeded` `authentication timed out`, the stream is closed |
-| `RegisterAgent` calls and `Push` openings per source address | 10 per minute, burst of 10 | `ResourceExhausted` `too many connection attempts from this address` |
+| `RegisterAgent` calls and `Push` openings that do not authenticate, per source address | 10 per minute, burst of 10 | `ResourceExhausted` `too many connection attempts from this address` |
 | `hostname` / `os_arch` / `agent_version` at enrollment | 253 / 32 / 64 characters | `InvalidArgument` naming the field |
 | Containers in one inventory | 10,000 | the inventory is refused whole (`invalid_argument` stream error), nothing is written |
 | Labels on one container | 256 labels | same as above |
 
-`agent_id` must be a UUID, at enrollment and in the authentication answer; it is stored and matched in lower case. An unknown enrollment token is refused with `NotFound` by a read, before any write transaction. The per-address quota applies only before authentication, and it is keyed on the TCP peer address: agents behind the same NAT, or a gRPC listener behind a TCP proxy, share one quota. Authenticated streams keep their per-agent event limit (`MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND`).
+`agent_id` must be a UUID, at enrollment and in the authentication answer; it is stored and matched in lower case. An unknown enrollment token is refused with `NotFound` by a read, before any write transaction. The per-address quota applies only before authentication, and it is keyed on the TCP peer address: agents behind the same NAT, or a gRPC listener behind a TCP proxy, share one quota. A `Push` that authenticates gets its attempt back, so agents reconnecting together after a server restart do not use it up; while the quota of an address is empty, every opening from that address is refused, including those of enrolled agents. Authenticated streams keep their per-agent event limit (`MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND`).
 
 ### `--grpc-insecure-skip-tls-verify`
 

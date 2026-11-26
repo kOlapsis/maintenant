@@ -226,6 +226,9 @@ func (impl *ingestImpl) Push(stream pushStream) error {
 	if err != nil {
 		return err
 	}
+	if impl.perIP != nil {
+		impl.perIP.Refund(peerIP(stream.Context()))
+	}
 
 	// Phase 3: open session with a cancellable context.
 	// sessions.CloseStream() calls cancel() which unblocks the recv loop below.

@@ -79,6 +79,19 @@ func (l *Limiter) Allow(ip string) bool {
 	return true
 }
 
+// Refund gives one token back to key, never above the burst.
+func (l *Limiter) Refund(key string) {
+	// An evicted bucket had already refilled to its burst.
+	val, known := l.visitors.Load(key)
+	if !known {
+		return
+	}
+	v := val.(*visitor)
+	v.mu.Lock()
+	v.tokens = min(v.tokens+1, float64(l.burst))
+	v.mu.Unlock()
+}
+
 // Len reports how many addresses currently hold a bucket.
 func (l *Limiter) Len() int {
 	n := 0

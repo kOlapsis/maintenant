@@ -110,3 +110,45 @@ func TestLimiterEvictionWaitsForARefilledBucket(t *testing.T) {
 		t.Fatalf("hourly bucket: got %s, want 1h", got)
 	}
 }
+
+func allowed(l *Limiter, key string, calls int) int {
+	n := 0
+	for range calls {
+		if l.Allow(key) {
+			n++
+		}
+	}
+	return n
+}
+
+func TestRefundGivesOneTokenBack(t *testing.T) {
+	l := New(0.0001, 2, nil)
+	if got := allowed(l, "a", 3); got != 2 {
+		t.Fatalf("got %d calls allowed before the refund, want the burst of 2", got)
+	}
+
+	l.Refund("a")
+
+	if got := allowed(l, "a", 2); got != 1 {
+		t.Fatalf("got %d calls allowed after one refund, want 1", got)
+	}
+}
+
+func TestRefundNeverExceedsTheBurst(t *testing.T) {
+	l := New(0.0001, 2, nil)
+	l.Allow("a")
+	for range 5 {
+		l.Refund("a")
+		l.Refund("never-seen")
+	}
+
+	if got := allowed(l, "a", 5); got != 2 {
+		t.Fatalf("got %d calls allowed after five refunds, want the burst of 2", got)
+	}
+	if got := l.Len(); got != 1 {
+		t.Fatalf("got %d buckets, want 1: a refund must not create one", got)
+	}
+	if got := allowed(l, "never-seen", 5); got != 2 {
+		t.Fatalf("got %d calls allowed for a key refunded before its first call, want the burst of 2", got)
+	}
+}
