@@ -307,7 +307,7 @@ func TestQueryCVEs_MemoisesVulnFetchAcrossQueries(t *testing.T) {
 	assert.Equal(t, 1, log.totalVulnRequests())
 }
 
-func TestQueryCVEs_VulnFetchFailureSkipsOnlyThatID(t *testing.T) {
+func TestQueryCVEs_VulnFetchFailureFailsTheQuery(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/querybatch", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(t, w, osvBatchResponse{
@@ -323,16 +323,66 @@ func TestQueryCVEs_VulnFetchFailureSkipsOnlyThatID(t *testing.T) {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	client := newTestCVEClient(&cveStubStore{}, server.URL)
+	store := &cveStubStore{}
+	client := newTestCVEClient(store, server.URL)
 
-	result, err := client.QueryCVEs(context.Background(), []ImageCVEQuery{
+	_, err := client.QueryCVEs(context.Background(), []ImageCVEQuery{
 		{ContainerID: "c1", PackageName: "libfoo", Ecosystem: "Debian", Version: "1.0"},
 	})
-	require.NoError(t, err)
+	require.Error(t, err)
+	assert.Empty(t, store.inserted, "a truncated list must not be cached as the full one")
+}
 
-	entries := result["c1"]
-	require.Len(t, entries, 1)
-	assert.Equal(t, "CVE-B", entries[0].CVEID)
+func TestQueryCVEs_PaginationCapFailsTheQuery(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/querybatch", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, osvBatchResponse{
+			Results: []osvBatchResult{{Vulns: []osvBatchVuln{{ID: "CVE-A"}}, NextPageToken: "more"}},
+		})
+	})
+	mux.HandleFunc("/v1/vulns/", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, osvVulnRecord{ID: "CVE-A"})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	store := &cveStubStore{}
+	client := newTestCVEClient(store, server.URL)
+
+	_, err := client.QueryCVEs(context.Background(), []ImageCVEQuery{
+		{ContainerID: "c1", PackageName: "libfoo", Ecosystem: "Debian", Version: "1.0"},
+	})
+	require.Error(t, err)
+	assert.Empty(t, store.inserted)
+}
+
+func TestQueryCVEs_SeverityFallsBackOnTheDatabaseRating(t *testing.T) {
+	for rating, want := range map[string]update.CVESeverity{
+		"CRITICAL": update.CVESeverityCritical,
+		"HIGH":     update.CVESeverityHigh,
+		"MODERATE": update.CVESeverityMedium,
+		"LOW":      update.CVESeverityLow,
+		"":         update.CVESeverityUnknown,
+	} {
+		t.Run(rating, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/v1/querybatch", func(w http.ResponseWriter, r *http.Request) {
+				writeJSON(t, w, osvBatchResponse{Results: []osvBatchResult{{Vulns: []osvBatchVuln{{ID: "GHSA-v4"}}}}})
+			})
+			mux.HandleFunc("/v1/vulns/", func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write([]byte(`{"id":"GHSA-v4","severity":[{"type":"CVSS_V4","score":"CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:N/VI:N/VA:N/SC:H/SI:H/SA:N"}],"database_specific":{"severity":"` + rating + `"}}`))
+			})
+			server := httptest.NewServer(mux)
+			defer server.Close()
+
+			result, err := newTestCVEClient(&cveStubStore{}, server.URL).QueryCVEs(context.Background(), []ImageCVEQuery{
+				{ContainerID: "c1", PackageName: "github.com/traefik/traefik/v3", Ecosystem: "Go", Version: "3.1.0"},
+			})
+			require.NoError(t, err)
+			require.Len(t, result["c1"], 1)
+			assert.Equal(t, want, result["c1"][0].Severity)
+		})
+	}
 }
 
 func TestQueryCVEs_UsesFreshCacheWithoutNetwork(t *testing.T) {

@@ -89,6 +89,10 @@ type osvVulnRecord struct {
 	Affected   []osvAffected  `json:"affected"`
 	References []osvReference `json:"references"`
 	Aliases    []string       `json:"aliases"`
+
+	DatabaseSpecific struct {
+		Severity string `json:"severity"`
+	} `json:"database_specific"`
 }
 
 type osvSeverity struct {
@@ -177,7 +181,10 @@ func (c *CVEClient) QueryCVEs(ctx context.Context, queries []ImageCVEQuery) (map
 		vulnIDs[i] = ids
 	}
 
-	records := c.hydrateVulns(ctx, vulnIDs)
+	records, err := c.hydrateVulns(ctx, vulnIDs)
+	if err != nil {
+		return results, err
+	}
 
 	now := time.Now()
 	expires := now.Add(cveCacheTTL)
@@ -185,11 +192,7 @@ func (c *CVEClient) QueryCVEs(ctx context.Context, queries []ImageCVEQuery) (map
 	for i, q := range uncached {
 		var entries []*update.CVECacheEntry
 		for _, id := range vulnIDs[i] {
-			rec, ok := records[id]
-			if !ok {
-				continue
-			}
-			entry := c.buildCVECacheEntry(q, rec, now, expires)
+			entry := c.buildCVECacheEntry(q, records[id], now, expires)
 			if _, err := c.store.InsertCVECacheEntry(ctx, entry); err != nil {
 				c.logger.Warn("cve: failed to cache entry", "cve", entry.CVEID, "error", err)
 			}
@@ -210,8 +213,7 @@ func (c *CVEClient) paginateResult(ctx context.Context, q osvQuery, first osvBat
 
 	for token != "" {
 		if page >= maxOSVPages {
-			c.logger.Warn("cve: osv pagination cap reached", "package", q.Package.Name, "ecosystem", q.Package.Ecosystem)
-			break
+			return ids, fmt.Errorf("osv lists more than %d pages of vulnerabilities for %s", maxOSVPages, q.Package.Name)
 		}
 
 		select {
@@ -269,8 +271,7 @@ func (c *CVEClient) postBatch(ctx context.Context, queries []osvQuery) (osvBatch
 }
 
 // hydrateVulns fetches each distinct vuln id once, memoising across queries.
-// A fetch failure for one id is logged and skipped, never fails the run.
-func (c *CVEClient) hydrateVulns(ctx context.Context, perQueryIDs [][]string) map[string]*osvVulnRecord {
+func (c *CVEClient) hydrateVulns(ctx context.Context, perQueryIDs [][]string) (map[string]*osvVulnRecord, error) {
 	records := make(map[string]*osvVulnRecord)
 	seen := make(map[string]bool)
 	fetched := false
@@ -285,7 +286,7 @@ func (c *CVEClient) hydrateVulns(ctx context.Context, perQueryIDs [][]string) ma
 			if fetched {
 				select {
 				case <-ctx.Done():
-					return records
+					return nil, ctx.Err()
 				case <-time.After(c.delay):
 				}
 			}
@@ -293,14 +294,13 @@ func (c *CVEClient) hydrateVulns(ctx context.Context, perQueryIDs [][]string) ma
 
 			rec, err := c.fetchVuln(ctx, id)
 			if err != nil {
-				c.logger.Warn("cve: failed to fetch vuln", "id", id, "error", err)
-				continue
+				return nil, err
 			}
 			records[id] = rec
 		}
 	}
 
-	return records
+	return records, nil
 }
 
 func (c *CVEClient) fetchVuln(ctx context.Context, id string) (*osvVulnRecord, error) {
@@ -351,6 +351,10 @@ func (c *CVEClient) buildCVECacheEntry(q ImageCVEQuery, rec *osvVulnRecord, now,
 		}
 	}
 
+	if entry.Severity == update.CVESeverityUnknown {
+		entry.Severity = databaseSeverity(rec.DatabaseSpecific.Severity)
+	}
+
 	if len(rec.References) > 0 {
 		if b, err := json.Marshal(rec.References); err == nil {
 			entry.ReferencesJSON = string(b)
@@ -366,6 +370,21 @@ func idsFromVulns(vulns []osvBatchVuln) []string {
 		ids[i] = v.ID
 	}
 	return ids
+}
+
+// databaseSeverity reads the rating an advisory database gives when the record carries no CVSS v3 vector.
+func databaseSeverity(rating string) update.CVESeverity {
+	switch strings.ToUpper(rating) {
+	case "CRITICAL":
+		return update.CVESeverityCritical
+	case "HIGH":
+		return update.CVESeverityHigh
+	case "MODERATE", "MEDIUM":
+		return update.CVESeverityMedium
+	case "LOW":
+		return update.CVESeverityLow
+	}
+	return update.CVESeverityUnknown
 }
 
 func cvssV3Vector(rec *osvVulnRecord) (string, bool) {
