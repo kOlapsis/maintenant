@@ -197,17 +197,34 @@ func (s *PersonalizationStoreImpl) DeleteFooterLink(ctx context.Context, id stri
 }
 
 func (s *PersonalizationStoreImpl) ReorderFooterLinks(ctx context.Context, ids []string) ([]status.FooterLink, error) {
-	for pos, id := range ids {
-		res, err := s.writer.Exec(ctx,
-			`UPDATE status_page_footer_links SET position = ? WHERE id = ?`, pos, id)
-		if err != nil {
-			return nil, fmt.Errorf("reorder footer link %s: %w", id, err)
-		}
-		if res.RowsAffected == 0 {
-			return nil, fmt.Errorf("footer link %s not found", id)
-		}
+	if err := s.reorder(ctx, "status_page_footer_links", "footer link", ids); err != nil {
+		return nil, err
 	}
 	return s.ListFooterLinks(ctx)
+}
+
+func (s *PersonalizationStoreImpl) reorder(ctx context.Context, table, what string, ids []string) error {
+	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		seen := make(map[string]struct{}, len(ids))
+		for pos, id := range ids {
+			if _, repeated := seen[id]; repeated {
+				return fmt.Errorf("%s %s is listed twice", what, id)
+			}
+			seen[id] = struct{}{}
+			res, err := tx.ExecContext(ctx, `UPDATE `+table+` SET position = ? WHERE id = ?`, pos, id)
+			if err != nil {
+				return fmt.Errorf("reorder %s %s: %w", what, id, err)
+			}
+			n, err := res.RowsAffected()
+			if err != nil {
+				return fmt.Errorf("reorder %s %s: %w", what, id, err)
+			}
+			if n == 0 {
+				return fmt.Errorf("%s %s not found", what, id)
+			}
+		}
+		return nil
+	})
 }
 
 func (s *PersonalizationStoreImpl) ListFAQItems(ctx context.Context) ([]status.FAQItem, error) {
@@ -275,15 +292,8 @@ func (s *PersonalizationStoreImpl) DeleteFAQItem(ctx context.Context, id string)
 }
 
 func (s *PersonalizationStoreImpl) ReorderFAQItems(ctx context.Context, ids []string) ([]status.FAQItem, error) {
-	for pos, id := range ids {
-		res, err := s.writer.Exec(ctx,
-			`UPDATE status_page_faq_items SET position = ? WHERE id = ?`, pos, id)
-		if err != nil {
-			return nil, fmt.Errorf("reorder faq item %s: %w", id, err)
-		}
-		if res.RowsAffected == 0 {
-			return nil, fmt.Errorf("faq item %s not found", id)
-		}
+	if err := s.reorder(ctx, "status_page_faq_items", "faq item", ids); err != nil {
+		return nil, err
 	}
 	return s.ListFAQItems(ctx)
 }
