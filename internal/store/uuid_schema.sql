@@ -775,7 +775,8 @@ CREATE TABLE version_pins (
     pinned_digest TEXT NOT NULL,
     reason        TEXT,
     pinned_at     BIGINT NOT NULL,
-    agent_id      TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'
+    agent_id      TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+    container_name TEXT NOT NULL DEFAULT ''
 );
 CREATE UNIQUE INDEX uq_version_pins_agent_container ON version_pins(agent_id, container_id);
 

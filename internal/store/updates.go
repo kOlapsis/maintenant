@@ -583,15 +583,16 @@ func (s *UpdateStore) GetCVEEvaluation(ctx context.Context, agentID, containerID
 func (s *UpdateStore) InsertVersionPin(ctx context.Context, p *update.VersionPin) (string, error) {
 	p.ID = uid.New()
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO version_pins (id, agent_id, container_id, image, pinned_tag, pinned_digest, reason, pinned_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO version_pins (id, agent_id, container_id, container_name, image, pinned_tag, pinned_digest, reason, pinned_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(agent_id, container_id) DO UPDATE SET
+			container_name=excluded.container_name,
 			image=excluded.image,
 			pinned_tag=excluded.pinned_tag,
 			pinned_digest=excluded.pinned_digest,
 			reason=excluded.reason,
 			pinned_at=excluded.pinned_at`,
-		p.ID, uid.Agent(p.AgentID), p.ContainerID, p.Image, p.PinnedTag, p.PinnedDigest, p.Reason, p.PinnedAt.Unix(),
+		p.ID, uid.Agent(p.AgentID), p.ContainerID, p.ContainerName, p.Image, p.PinnedTag, p.PinnedDigest, p.Reason, p.PinnedAt.Unix(),
 	)
 	if err != nil {
 		return "", fmt.Errorf("insert version pin: %w", err)
@@ -599,11 +600,35 @@ func (s *UpdateStore) InsertVersionPin(ctx context.Context, p *update.VersionPin
 	return p.ID, nil
 }
 
+const versionPinColumns = `id, agent_id, container_id, container_name, image, pinned_tag, pinned_digest, reason, pinned_at`
+
 func (s *UpdateStore) GetVersionPin(ctx context.Context, agentID, containerID string) (*update.VersionPin, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, agent_id, container_id, image, pinned_tag, pinned_digest, reason, pinned_at
+		`SELECT `+versionPinColumns+`
 		FROM version_pins WHERE agent_id = ? AND container_id = ?`, uid.Agent(agentID), containerID)
 	return scanVersionPin(row)
+}
+
+// AdoptVersionPin returns the pin of a container, after moving to it the pin that a container of the same name left when it went away.
+func (s *UpdateStore) AdoptVersionPin(ctx context.Context, agentID, containerID, name string) (*update.VersionPin, error) {
+	pin, err := s.GetVersionPin(ctx, agentID, containerID)
+	if err != nil || pin != nil || name == "" {
+		return pin, err
+	}
+	pin, err = scanVersionPin(s.db.QueryRowContext(ctx,
+		`SELECT `+versionPinColumns+`
+		FROM version_pins WHERE agent_id = ? AND container_name = ?
+			AND NOT EXISTS (SELECT 1 FROM containers c WHERE c.agent_id = version_pins.agent_id
+				AND c.external_id = version_pins.container_id AND c.archived = 0)
+		ORDER BY pinned_at DESC LIMIT 1`, uid.Agent(agentID), name))
+	if err != nil || pin == nil {
+		return nil, err
+	}
+	if _, err := s.writer.Exec(ctx, `UPDATE version_pins SET container_id = ? WHERE id = ?`, containerID, pin.ID); err != nil {
+		return nil, fmt.Errorf("adopt version pin: %w", err)
+	}
+	pin.ContainerID = containerID
+	return pin, nil
 }
 
 func (s *UpdateStore) DeleteVersionPin(ctx context.Context, agentID, containerID string) error {
@@ -988,7 +1013,7 @@ func scanVersionPin(row rowScanner) (*update.VersionPin, error) {
 	var pinnedAt int64
 	var reason sql.NullString
 
-	err := row.Scan(&p.ID, &p.AgentID, &p.ContainerID, &p.Image, &p.PinnedTag, &p.PinnedDigest, &reason, &pinnedAt)
+	err := row.Scan(&p.ID, &p.AgentID, &p.ContainerID, &p.ContainerName, &p.Image, &p.PinnedTag, &p.PinnedDigest, &reason, &pinnedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

@@ -35,6 +35,7 @@ type UpdateStore interface {
 	// Version pins
 	InsertVersionPin(ctx context.Context, p *VersionPin) (string, error)
 	GetVersionPin(ctx context.Context, agentID, containerID string) (*VersionPin, error)
+	AdoptVersionPin(ctx context.Context, agentID, containerID, name string) (*VersionPin, error)
 	DeleteVersionPin(ctx context.Context, agentID, containerID string) error
 
 	// Update exclusions

@@ -109,14 +109,15 @@ func BaseRiskScore(ut UpdateType) int {
 
 // VersionPin tracks a pinned (intentionally frozen) image.
 type VersionPin struct {
-	ID           string    `json:"id"`
-	ContainerID  string    `json:"container_id"`
-	AgentID      string    `json:"agent_id"`
-	Image        string    `json:"image"`
-	PinnedTag    string    `json:"pinned_tag"`
-	PinnedDigest string    `json:"pinned_digest"`
-	Reason       string    `json:"reason,omitempty"`
-	PinnedAt     time.Time `json:"pinned_at"`
+	ID            string    `json:"id"`
+	ContainerID   string    `json:"container_id"`
+	ContainerName string    `json:"container_name"` // what a recreated container is recognised by
+	AgentID       string    `json:"agent_id"`
+	Image         string    `json:"image"`
+	PinnedTag     string    `json:"pinned_tag"`
+	PinnedDigest  string    `json:"pinned_digest"`
+	Reason        string    `json:"reason,omitempty"`
+	PinnedAt      time.Time `json:"pinned_at"`
 }
 
 // UpdateExclusion is a global exclusion rule for images or tags.

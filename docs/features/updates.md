@@ -130,6 +130,8 @@ DELETE /api/v1/updates/pin/{container_id}
 
 `container_id` is the `container_id` of the update in `GET /api/v1/updates`, which is the container's runtime ID (`namespace/Kind/name` for a Kubernetes workload). For a container on a remote agent, add `?agent_id=` with the update's `agent_id`: two clusters can run a workload under the same name, and each one is pinned on its own. Without `agent_id` the call acts on the local runtime when it runs the container, else on the only agent that does, and answers `400 AGENT_REQUIRED` when several remote agents do. Pinning needs an update to pin: it answers `404 NOT_FOUND` when none is pending for the container. The pin records the tag and digest the container runs. The update shows as **Pinned** until the next scan, which skips the container, drops the update and resolves its alert. `DELETE` removes the pin and the container is checked again.
 
+A pin follows its container when the container is recreated. Docker gives a recreated container a new ID, so the pin also records a name: the container name, or the service name for a Swarm task. At the next scan, a container that carries that name on the same host takes over the pin of a container that is gone. A pin on a Swarm task is taken over by one task of the service, not by all its replicas. A scan that cannot read the pins counts the container as a scan error and reports no update for it.
+
 ---
 
 ## Update Exclusions
@@ -156,7 +158,7 @@ DELETE /api/v1/updates/exclusions/{id}
 | `image` | The image name without tag or digest (`myregistry.example.com/internal-app`), then its short Docker Hub form (`library/nginx` becomes `nginx`), then the full reference as written (`nginx:1.25`). |
 | `tag` | The tag the container runs now. |
 
-Patterns are shell-style globs, not regular expressions: `*` matches any run of characters except `/`, `?` one character, `[a-z]` a range. `myregistry.example.com/*` therefore excludes `myregistry.example.com/app` but not `myregistry.example.com/team/app`. Creating a new exclusion answers `201`, and creating one that exists already answers `200` with the stored one. Any other `pattern_type` answers `400 INVALID_TYPE`.
+Patterns are shell-style globs, not regular expressions: `*` matches any run of characters except `/`, `?` one character, `[a-z]` a range. `myregistry.example.com/*` therefore excludes `myregistry.example.com/app` but not `myregistry.example.com/team/app`. Creating a new exclusion answers `201`, and creating one that exists already answers `200` with the stored one. Any other `pattern_type` answers `400 INVALID_TYPE`, and a pattern that is not a valid glob, such as an unclosed `[`, answers `400 INVALID_PATTERN`.
 
 ---
 

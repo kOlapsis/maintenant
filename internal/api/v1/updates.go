@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/eol"
@@ -386,14 +387,21 @@ func (h *UpdateHandler) HandlePinVersion(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	name := u.ContainerName
+	if h.containers != nil {
+		if ci, err := h.containers.GetContainerInfo(r.Context(), agentID, containerID); err == nil {
+			name = ci.PinName()
+		}
+	}
 	pin := &update.VersionPin{
-		ContainerID:  containerID,
-		AgentID:      agentID,
-		Image:        u.Image,
-		PinnedTag:    u.CurrentTag,
-		PinnedDigest: u.CurrentDigest,
-		Reason:       input.Reason,
-		PinnedAt:     time.Now(),
+		ContainerID:   containerID,
+		ContainerName: name,
+		AgentID:       agentID,
+		Image:         u.Image,
+		PinnedTag:     u.CurrentTag,
+		PinnedDigest:  u.CurrentDigest,
+		Reason:        input.Reason,
+		PinnedAt:      time.Now(),
 	}
 
 	if _, err := h.store.InsertVersionPin(r.Context(), pin); err != nil {
@@ -490,6 +498,10 @@ func (h *UpdateHandler) HandleCreateExclusion(w http.ResponseWriter, r *http.Req
 	}
 	if input.PatternType != "image" && input.PatternType != "tag" {
 		WriteError(w, http.StatusBadRequest, "INVALID_TYPE", "Pattern type must be 'image' or 'tag'")
+		return
+	}
+	if _, err := filepath.Match(input.Pattern, ""); err != nil {
+		WriteError(w, http.StatusBadRequest, "INVALID_PATTERN", "Pattern is not a valid glob")
 		return
 	}
 

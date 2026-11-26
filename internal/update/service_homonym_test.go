@@ -14,7 +14,7 @@ type stagingPinStore struct {
 	*insertRecordingStore
 }
 
-func (s *stagingPinStore) GetVersionPin(_ context.Context, agentID, _ string) (*VersionPin, error) {
+func (s *stagingPinStore) AdoptVersionPin(_ context.Context, agentID, _, _ string) (*VersionPin, error) {
 	if agentID == "agent-staging" {
 		return &VersionPin{AgentID: agentID, PinnedTag: "1.0.0"}, nil
 	}
