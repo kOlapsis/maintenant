@@ -122,7 +122,7 @@ A run is checked whenever a level comes due. If a [maintenance window](status-pa
 
 ### Chain exhausted
 
-If all levels fire without an acknowledgment or resolution, the run ends with status `exhausted` at the next evaluation. A final notice is sent on the last level's channels:
+If all levels fire without an acknowledgment or resolution, the run ends with status `exhausted` at the first evaluation where no delivery of the last level is still waiting for a retry, so the final notice never goes out before a last-level page that can still arrive. An earlier level whose delivery is still retrying keeps retrying after the run is exhausted. The final notice is sent on the last level's channels:
 
 ```
 Escalation exhausted after <N> level(s) without acknowledgment, human action required: <original alert message>
@@ -130,7 +130,9 @@ Escalation exhausted after <N> level(s) without acknowledgment, human action req
 
 ### Disabled or failing channels
 
-A delivery to a disabled channel is recorded as `failed` with the error `channel disabled`, and the run goes on with the next level. A channel deleted since the policy was written is recorded the same way, without a channel id and with the error `channel deleted: <id>`. A delivery to an enabled channel makes up to three attempts, at once, after 1 second and after 5 seconds, and is recorded as `failed` with the last error if all three fail.
+A delivery to a disabled channel is recorded as `failed` with the error `channel disabled`, and the run goes on with the next level. A channel deleted since the policy was written is recorded the same way, without a channel id and with the error `channel deleted: <id>`. A delivery to an enabled channel makes up to three attempts, at once, after 1 second and after 5 seconds. If all three fail, it stays `pending` with the last error and is tried again 5 seconds later, then 10, 20, 40 seconds later and so on, the wait doubling up to one hour, like an [alert notification](alerts.md#delivery-and-retries); a retry that is due goes out at the next evaluation, about once a minute. A refusal that will not change, an HTTP 4xx other than 408 and 429, is recorded as `failed` at once, and so is a delivery still not sent 24 hours after its first attempt.
+
+Retries stop, and the delivery is recorded as `abandoned`, once the alert is resolved or acknowledged, or once the run is stopped (policy deleted or disabled, edition downgrade). They wait while a maintenance window pauses the run. An acknowledgment notice is retried as long as the alert is active. The next levels fire at their delay whether or not an earlier level's delivery has gone out yet. An attempt is made by one sender at a time: a server that stops in the middle of an attempt leaves the delivery to be tried again once the attempt's 2-minute claim runs out.
 
 A level is only counted as sent once each of its channels has a delivery. If the database cannot be read or written while a level goes out, the level stays due and is tried again at the next evaluation, about a minute later: the channels it already reached are not notified a second time.
 
@@ -169,7 +171,7 @@ The [MCP server](mcp.md) offers `list_escalation_policies`, `get_escalation_poli
 Yes. Each matching active policy starts its own independent run. The overlap-probe endpoint helps you detect potential conflicts before saving a policy: it takes a policy body and lists the existing policies whose filters can match the same alerts and that share at least one channel.
 
 **What happens if a channel fails to deliver?**
-The delivery is recorded with `status=failed` and the error message, after three attempts. The run continues to the next level: a single channel failure does not stop the chain. A delivery left `pending` for more than 2 minutes (the server stopped before it finished, for instance) is retried while the alert is still active, and marked `abandoned` otherwise.
+The delivery stays `pending` with the error message and is retried in the background, 5 seconds after the first failure and then with a wait that doubles up to one hour, for at most 24 hours and only while the alert is active and unacknowledged and the run is not stopped; otherwise it is marked `abandoned`. A refusal that will not change is recorded as `failed` at once. The next levels still fire at their delay: a single channel failure neither stops nor delays the chain.
 
 **What happens to runs when I downgrade from Pro?**
 Going from Pro to Personal or Community deactivates all active policies and stops all active runs with `stopped_by_edition_downgrade`. When you upgrade back to Pro, policies are automatically restored to their previous active state.
