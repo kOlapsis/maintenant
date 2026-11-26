@@ -17,12 +17,17 @@ import (
 // sseKeepAliveInterval stays under the 60 s a proxy such as nginx lets a silent stream idle before cutting it.
 var sseKeepAliveInterval = 25 * time.Second
 
+var sseWriteTimeout = 10 * time.Second
+
+const maxSSEClients = 1000
+
 // SSEBroker manages Server-Sent Event connections and broadcasts events.
 type SSEBroker struct {
-	clients   map[chan SSEEvent]struct{}
-	observers map[chan SSEEvent]struct{}
-	mu        sync.RWMutex
-	logger    *slog.Logger
+	clients    map[chan SSEEvent]struct{}
+	observers  map[chan SSEEvent]struct{}
+	maxClients int
+	mu         sync.RWMutex
+	logger     *slog.Logger
 }
 
 // SSEEvent represents an event to be sent to SSE clients.
@@ -34,9 +39,10 @@ type SSEEvent struct {
 // NewSSEBroker creates a new SSE broker.
 func NewSSEBroker(logger *slog.Logger) *SSEBroker {
 	return &SSEBroker{
-		clients:   make(map[chan SSEEvent]struct{}),
-		observers: make(map[chan SSEEvent]struct{}),
-		logger:    logger,
+		clients:    make(map[chan SSEEvent]struct{}),
+		observers:  make(map[chan SSEEvent]struct{}),
+		maxClients: maxSSEClients,
+		logger:     logger,
 	}
 }
 
@@ -83,17 +89,19 @@ func (b *SSEBroker) RemoveObserver(ch chan SSEEvent) {
 
 // ServeHTTP handles SSE connections.
 func (b *SSEBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
+	if _, ok := w.(http.Flusher); !ok {
 		http.Error(w, "SSE not supported", http.StatusInternalServerError)
 		return
 	}
 
-	setSSEHeaders(w.Header())
-
 	ch := make(chan SSEEvent, 64)
 
 	b.mu.Lock()
+	if len(b.clients) >= b.maxClients {
+		b.mu.Unlock()
+		WriteError(w, http.StatusServiceUnavailable, "TOO_MANY_STREAMS", "Too many open event streams, retry later")
+		return
+	}
 	b.clients[ch] = struct{}{}
 	b.mu.Unlock()
 
@@ -104,10 +112,19 @@ func (b *SSEBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		close(ch)
 	}()
 
-	if _, err := io.WriteString(w, ": ping\n\n"); err != nil {
+	setSSEHeaders(w.Header())
+	rc := http.NewResponseController(w)
+	write := func(frame string) bool {
+		_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
+		if _, err := io.WriteString(w, frame); err != nil {
+			return false
+		}
+		return rc.Flush() == nil
+	}
+
+	if !write(": ping\n\n") {
 		return
 	}
-	flusher.Flush()
 
 	keepAlive := time.NewTicker(sseKeepAliveInterval)
 	defer keepAlive.Stop()
@@ -118,7 +135,7 @@ func (b *SSEBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			return
 		case <-keepAlive.C:
-			if !writeSSEKeepAlive(w, flusher) {
+			if !write(": keepalive\n\n") {
 				return
 			}
 		case event := <-ch:
@@ -128,8 +145,9 @@ func (b *SSEBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			eventType := strings.NewReplacer("\n", "", "\r", "").Replace(event.Type)
-			_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, data)
-			flusher.Flush()
+			if !write(fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, data)) {
+				return
+			}
 		}
 	}
 }

@@ -956,7 +956,7 @@ The public status page has its own event stream, separate from the one above:
 GET /status/events
 ```
 
-It carries only the status page events, so the public page never receives dashboard data. The dashboard stream above receives the same events without the visibility filter: it names every component.
+It carries only the status page events, so the public page never receives dashboard data. Each of the two streams accepts 1000 simultaneous connections and answers `503 TOO_MANY_STREAMS` beyond that; a client that has not read anything for 10 seconds while events are waiting is disconnected. The dashboard stream above receives the same events without the visibility filter: it names every component.
 
 | Event | Emitted when | Payload keys |
 |-------|--------------|--------------|
