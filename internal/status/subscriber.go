@@ -35,6 +35,8 @@ type SubscriberService struct {
 	hourStart time.Time
 	sent      int
 	warned    bool
+
+	sending sync.WaitGroup
 }
 
 const confirmationsPerHour = 100
@@ -88,9 +90,14 @@ func (s *SubscriberService) Subscribe(ctx context.Context, email string) error {
 		return fmt.Errorf("record subscriber: %w", err)
 	}
 	if issued && s.takeConfirmationSlot() {
-		go s.sendConfirmation(context.WithoutCancel(ctx), email, confirmToken)
+		s.sending.Go(func() { s.sendConfirmation(context.WithoutCancel(ctx), email, confirmToken) })
 	}
 	return nil
+}
+
+// Wait blocks until the confirmation emails started by Subscribe have been sent.
+func (s *SubscriberService) Wait() {
+	s.sending.Wait()
 }
 
 func (s *SubscriberService) sendConfirmation(ctx context.Context, email, token string) {

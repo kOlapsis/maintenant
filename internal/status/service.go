@@ -57,7 +57,8 @@ type Service struct {
 	page      cached[*PageData]
 	feed      cached[[]Incident]
 
-	logger *slog.Logger
+	logger  *slog.Logger
+	sending sync.WaitGroup
 }
 
 const publicCacheTTL = 2 * time.Second
@@ -168,7 +169,12 @@ func (s *Service) NotifySubscribers(ctx context.Context, subject, message string
 	if s.notifier == nil || !s.SubscriptionsEnabled() {
 		return
 	}
-	go s.notifier.NotifyAll(context.WithoutCancel(ctx), subject, message)
+	s.sending.Go(func() { s.notifier.NotifyAll(context.WithoutCancel(ctx), subject, message) })
+}
+
+// Wait blocks until the notifications started by NotifySubscribers have been sent.
+func (s *Service) Wait() {
+	s.sending.Wait()
 }
 
 // Broadcast sends an event to the public page and to the dashboard.

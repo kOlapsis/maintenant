@@ -66,6 +66,7 @@ type Engine struct {
 	recheckEvery time.Duration
 	mu           sync.RWMutex
 	procMu       sync.Mutex // serializes a store write with the map update that follows it
+	running      sync.WaitGroup
 }
 
 const (
@@ -181,7 +182,7 @@ func (e *Engine) Start(ctx context.Context) {
 		e.logger.Error("alert engine: failed to reload silenced alerts", "error", err)
 	}
 
-	go func() {
+	e.running.Go(func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -193,14 +194,19 @@ func (e *Engine) Start(ctx context.Context) {
 				e.processEvent(ctx, evt)
 			}
 		}
-	}()
+	})
 
-	go e.runSilenceRecheck(ctx)
+	e.running.Go(func() { e.runSilenceRecheck(ctx) })
 
 	// Start escalation evaluator only when a real Escalator is injected
 	if _, isNoop := e.escalator.(noopEscalator); !isNoop {
-		go e.runEscalationEvaluator(ctx)
+		e.running.Go(func() { e.runEscalationEvaluator(ctx) })
 	}
+}
+
+// Wait blocks until the goroutines of Start have returned, which follows the end of its context.
+func (e *Engine) Wait() {
+	e.running.Wait()
 }
 
 func (e *Engine) runEscalationEvaluator(ctx context.Context) {

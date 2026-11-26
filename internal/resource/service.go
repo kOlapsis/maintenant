@@ -101,11 +101,13 @@ func (s *Service) emit(eventType string, data map[string]interface{}) {
 	}
 }
 
-// Start begins the resource collection loop. Blocks until ctx is cancelled.
+// Start begins the resource collection loop. Blocks until ctx is cancelled and the rollup loop has returned.
 func (s *Service) Start(ctx context.Context) {
 	s.logger.Info("starting resource collector", "interval", s.collector.interval)
-	go s.startRollupLoop(ctx)
+	var rollup sync.WaitGroup
+	rollup.Go(func() { s.startRollupLoop(ctx) })
 	s.collector.Start(ctx)
+	rollup.Wait()
 }
 
 // GetCurrentSnapshot returns the latest in-memory snapshot for a container, local or on a remote agent.

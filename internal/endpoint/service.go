@@ -77,6 +77,7 @@ type Service struct {
 	onEndpointRemoved EndpointRemovedCallback
 	ctx               context.Context
 	limitMu           sync.Mutex
+	limitLoop         sync.WaitGroup
 
 	// manualChecks holds the endpoint ids with an on-demand check in flight.
 	manualChecks sync.Map
@@ -129,7 +130,7 @@ func (s *Service) Start(ctx context.Context) {
 	s.ctx = ctx
 	s.limitMu.Unlock()
 	s.applyLimitLogged(ctx)
-	go func() {
+	s.limitLoop.Go(func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
 		for {
@@ -140,7 +141,7 @@ func (s *Service) Start(ctx context.Context) {
 				s.applyLimitLogged(ctx)
 			}
 		}
-	}()
+	})
 	eps, err := s.store.ListEndpoints(ctx, ListEndpointsOpts{Source: string(SourceStandalone)})
 	if err != nil {
 		s.logger.Error("load standalone endpoints", "error", err)
@@ -151,8 +152,9 @@ func (s *Service) Start(ctx context.Context) {
 	}
 }
 
-// Stop shuts down the check engine.
+// Stop waits for the slot allocation loop, which ends with the context of Start, then shuts down the check engine.
 func (s *Service) Stop() {
+	s.limitLoop.Wait()
 	s.engine.Stop()
 }
 

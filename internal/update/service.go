@@ -75,6 +75,7 @@ type Service struct {
 	nextScanTime time.Time
 	scanning     bool
 	appCtx       context.Context // application-scoped context for background scans
+	triggered    sync.WaitGroup
 }
 
 // NewService creates the update intelligence service.
@@ -161,8 +162,13 @@ func (s *Service) TriggerScan(_ context.Context) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	go s.runScan(ctx)
+	s.triggered.Go(func() { s.runScan(ctx) })
 	return "", nil
+}
+
+// Wait blocks until the scans started by TriggerScan have returned.
+func (s *Service) Wait() {
+	s.triggered.Wait()
 }
 
 // GetLastScanTime returns when the last scan completed.

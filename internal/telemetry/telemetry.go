@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"sync"
 
 	shm "github.com/kolapsis/shm/sdk/golang"
 )
@@ -55,9 +56,10 @@ type Deps struct {
 // Disabled instances (via opt-out or unwritable datadir) hold a nil client
 // and treat Start as a no-op.
 type Service struct {
-	cfg    Config
-	logger *slog.Logger
-	client *shm.Client
+	cfg     Config
+	logger  *slog.Logger
+	client  *shm.Client
+	running sync.WaitGroup
 }
 
 // New constructs the telemetry service. It evaluates the opt-out and
@@ -127,7 +129,7 @@ func (s *Service) Start(ctx context.Context) {
 	if s == nil || s.client == nil {
 		return
 	}
-	go func() {
+	s.running.Go(func() {
 		defer func() {
 			if r := recover(); r != nil {
 				s.logger.Warn("telemetry panic recovered",
@@ -137,7 +139,14 @@ func (s *Service) Start(ctx context.Context) {
 			}
 		}()
 		s.client.Start(ctx)
-	}()
+	})
+}
+
+// Wait blocks until the reporting goroutine has returned, which follows the end of the context of Start.
+func (s *Service) Wait() {
+	if s != nil {
+		s.running.Wait()
+	}
 }
 
 func applyDefaults(cfg Config) Config {

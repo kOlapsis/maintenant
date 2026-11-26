@@ -379,7 +379,9 @@ func (a *App) buildHTTPServer() *http.Server {
 			})
 			mcpHandler = authMiddleware(mcpHandler)
 
-			go mcpoauth.StartCleanup(context.Background(), mcpOAuthStore, a.logger.With("component", "mcp-oauth-cleanup"))
+			a.mcpOAuthCleanup = func(ctx context.Context) {
+				mcpoauth.StartCleanup(ctx, mcpOAuthStore, a.logger.With("component", "mcp-oauth-cleanup"))
+			}
 
 			a.logger.Info("MCP server enabled with OAuth2 auth", "client_id", a.cfg.MCP.ClientID)
 		} else if a.cfg.MCP.AllowUnauthenticated {

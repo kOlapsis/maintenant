@@ -67,6 +67,7 @@ type Service struct {
 	licenseChecker LicenseChecker
 	baseURL        string
 	createMu       sync.Mutex
+	running        sync.WaitGroup
 }
 
 // NewService creates a new heartbeat service with all dependencies.
@@ -616,7 +617,7 @@ func (s *Service) StartDeadlineChecker(ctx context.Context) {
 	} else if n > 0 {
 		s.logger.Info("heartbeat: deadlines passed while stopped postponed", "count", n)
 	}
-	go func() {
+	s.running.Go(func() {
 		s.logger.Info("heartbeat: deadline checker started")
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
@@ -630,7 +631,12 @@ func (s *Service) StartDeadlineChecker(ctx context.Context) {
 				s.checkDeadlines(ctx)
 			}
 		}
-	}()
+	})
+}
+
+// Wait blocks until the deadline checker has returned, which follows the end of its context.
+func (s *Service) Wait() {
+	s.running.Wait()
 }
 
 func (s *Service) checkDeadlines(ctx context.Context) {
