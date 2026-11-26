@@ -115,9 +115,9 @@ func TestKubernetesReconcile_RaisesAndResolvesAlerts(t *testing.T) {
 		}
 	}, 2*time.Second, 10*time.Millisecond)
 
-	cluster.set(nil, []kubernetes.K8sPod{{Name: "api-x", Namespace: "shop", Status: "Running", RestartCount: 5}})
+	cluster.set(nil, nil)
 	reconcileCluster(ctx, a, cluster)
-	require.Eventually(t, func() bool { return len(activeKubernetesAlerts(t, ctx, a)) == 0 }, 2*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return len(activeKubernetesAlerts(t, ctx, a)) == 0 }, 2*time.Second, 10*time.Millisecond, "the crash-looping pod was replaced")
 }
 
 func TestSeedKubernetesAlertTracking_ResolvesAfterRestart(t *testing.T) {

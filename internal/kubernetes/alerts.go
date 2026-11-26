@@ -59,6 +59,7 @@ type podAlertState struct {
 	counted   bool
 	restarts  []time.Time
 	alerted   bool
+	backoffAt time.Time // last check that saw the pod in CrashLoopBackOff
 }
 
 type nodeAlertState struct {
@@ -249,7 +250,11 @@ func (c *K8sAlertChecker) checkPods(pods []K8sPod, workloads []K8sWorkload, now 
 		st.restarts = recent
 
 		ignored := pod.Ignored || ignoredWorkloads[pod.WorkloadRef]
-		crashLooping := pod.StatusReason == "CrashLoopBackOff" || len(st.restarts) >= defaultCrashLoopRestarts
+		if pod.StatusReason == "CrashLoopBackOff" {
+			st.backoffAt = now
+		}
+		// The container runs between two backoffs, so the reason alone comes and goes.
+		crashLooping := now.Sub(st.backoffAt) < defaultCrashLoopWindow || len(st.restarts) >= defaultCrashLoopRestarts
 		details := map[string]any{
 			"namespace":     pod.Namespace,
 			"restart_count": pod.RestartCount,
