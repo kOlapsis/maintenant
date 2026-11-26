@@ -181,7 +181,8 @@ func TestSnapshotFromRuntime_ListErrors(t *testing.T) {
 		{name: "nodes forbidden", nodesErr: forbidden("nodes")},
 		{name: "events forbidden", eventsErr: forbidden("events")},
 		{name: "nodes throttled", nodesErr: throttled, wantErr: true},
-		{name: "events throttled", eventsErr: throttled, wantErr: true},
+		{name: "events throttled", eventsErr: throttled},
+		{name: "events timeout", eventsErr: context.DeadlineExceeded},
 		{name: "nodes timeout", nodesErr: context.DeadlineExceeded, wantErr: true},
 	}
 	for _, tt := range tests {

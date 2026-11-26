@@ -6,6 +6,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
@@ -33,8 +34,8 @@ type SnapshotSource interface {
 	ListAllEvents(ctx context.Context) ([]K8sEventRef, error)
 }
 
-// SnapshotFromRuntime queries the live cluster for namespaces, workloads, pods,
-// nodes and events; only an RBAC denial on nodes or events leaves that list empty.
+// SnapshotFromRuntime queries the live cluster; nodes tolerate only an RBAC
+// denial and events are best effort, any other list error fails the snapshot.
 func SnapshotFromRuntime(ctx context.Context, src SnapshotSource) (TopologySnapshot, error) {
 	var snap TopologySnapshot
 
@@ -77,7 +78,7 @@ func SnapshotFromRuntime(ctx context.Context, src SnapshotSource) (TopologySnaps
 
 	events, err := src.ListAllEvents(ctx)
 	if err != nil && !k8serrors.IsForbidden(err) {
-		return TopologySnapshot{}, fmt.Errorf("list events: %w", err)
+		slog.Default().Warn("kubernetes topology snapshot: events left out", "error", err)
 	}
 	snap.Events = events
 
