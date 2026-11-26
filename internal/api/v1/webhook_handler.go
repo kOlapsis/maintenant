@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/kolapsis/maintenant/internal/redact"
 	"github.com/kolapsis/maintenant/internal/ssrf"
 	"github.com/kolapsis/maintenant/internal/webhook"
 )
@@ -41,12 +42,15 @@ func (h *WebhookHandler) HandleListWebhooks(w http.ResponseWriter, r *http.Reque
 		WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list webhooks")
 		return
 	}
-	if subs == nil {
-		subs = []*webhook.WebhookSubscription{}
+	shown := make([]*webhook.WebhookSubscription, len(subs))
+	for i, sub := range subs {
+		cp := *sub
+		cp.URL = redact.URL(cp.URL)
+		shown[i] = &cp
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"webhooks": subs,
+		"webhooks": shown,
 	})
 }
 
@@ -123,7 +127,7 @@ func (h *WebhookHandler) HandleCreateWebhook(w http.ResponseWriter, r *http.Requ
 	WriteJSON(w, http.StatusCreated, map[string]interface{}{
 		"id":          sub.ID,
 		"name":        sub.Name,
-		"url":         sub.URL,
+		"url":         redact.URL(sub.URL),
 		"event_types": sub.EventTypes,
 		"is_active":   true,
 		"created_at":  sub.CreatedAt,
@@ -175,7 +179,7 @@ func (h *WebhookHandler) HandleTestWebhook(w http.ResponseWriter, r *http.Reques
 	}
 	if err != nil {
 		result["status"] = webhook.DeliveryFailed
-		result["error"] = err.Error()
+		result["error"] = redact.Text(err.Error())
 	}
 	WriteJSON(w, http.StatusOK, result)
 }
