@@ -462,10 +462,14 @@ resolve_paths() {
 
 # ── prepare_dirs ──────────────────────────────────────────────────────────────
 
+_foreign_dir() {
+    [ -d "$1" ] || return 1
+    [ -z "$(find "$1" -prune -user "$SERVICE_USER" 2>/dev/null)" ] || return 1
+    [ -n "$(ls -A "$1")" ]
+}
+
 _refuse_foreign_dir() {
-    [ -d "$1" ] || return 0
-    [ -z "$(find "$1" -prune -user "$SERVICE_USER" 2>/dev/null)" ] || return 0
-    [ -z "$(ls -A "$1")" ] && return 0
+    _foreign_dir "$1" || return 0
     abort "$1 already exists, is not empty and does not belong to $SERVICE_USER: use a dedicated directory, or chown it to $SERVICE_USER first" 30
 }
 
@@ -828,6 +832,9 @@ _install_env_file() {
 uninstall() {
     log_step "Uninstalling Maintenant..."
     resolve_paths
+    if [ -n "${DO_PURGE:-}" ] && _foreign_dir "$DATA_DIR"; then
+        abort "$DATA_DIR is not empty and does not belong to $SERVICE_USER: nothing was removed. Pass the --data-dir of the install, or delete that directory yourself" 30
+    fi
 
     # Stop and disable service
     systemctl stop maintenant 2>/dev/null || true

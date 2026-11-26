@@ -289,7 +289,7 @@ curl -fsSL https://install.maintenant.dev | sudo bash -s -- --uninstall
 curl -fsSL https://install.maintenant.dev | sudo bash -s -- --uninstall --purge
 ```
 
-`--purge` deletes the data directory, the configuration directory and the `maintenant` user. It prompts for confirmation when the script reads from a terminal. In a non-interactive pipe (`curl | bash`), it executes directly: only pass `--purge` when you mean it. If you installed with `--data-dir` or `--db`, pass the same flags (or keep them in the env file) so the script finds what to remove.
+`--purge` deletes the data directory, the configuration directory and the `maintenant` user. It prompts for confirmation when the script reads from a terminal. In a non-interactive pipe (`curl | bash`), it executes directly: only pass `--purge` when you mean it. A data directory that is not empty and does not belong to the `maintenant` user is never deleted: the script stops with exit code 30 before removing anything. If you installed with `--data-dir` or `--db`, pass the same flags (or keep them in the env file) so the script finds what to remove.
 
 ---
 
@@ -369,5 +369,5 @@ gh attestation verify --owner kOlapsis maintenant-${VERSION}-linux-${ARCH}
 | `20` | Release not found, release without standalone binaries, or download failure |
 | `21` | SHA256 checksum mismatch, or (offline) no matching `linux-<arch>` entry in `SHA256SUMS` |
 | `22` | cosign signature invalid |
-| `30` | Filesystem error, including a non-empty directory owned by someone else |
+| `30` | Filesystem error, including a non-empty directory owned by someone else, at install or at `--purge` |
 | `31` | systemd failure: a `systemctl` command failed, or the service stopped or was restarted within 5 seconds of its start |
