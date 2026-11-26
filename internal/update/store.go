@@ -44,7 +44,7 @@ type UpdateStore interface {
 	DeleteExclusion(ctx context.Context, id string) error
 
 	// CVE cache
-	InsertCVECacheEntry(ctx context.Context, e *CVECacheEntry) (string, error)
+	ReplaceCVECache(ctx context.Context, ecosystem, packageName, packageVersion string, entries []*CVECacheEntry) error
 	GetCVECacheEntries(ctx context.Context, ecosystem, packageName, packageVersion string) ([]*CVECacheEntry, error)
 	IsCVECacheFresh(ctx context.Context, ecosystem, packageName, packageVersion string) (bool, error)
 

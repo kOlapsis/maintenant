@@ -106,8 +106,8 @@ func (s *stubStore) ListExclusions(_ context.Context) ([]*UpdateExclusion, error
 	return s.exclusions, nil
 }
 func (s *stubStore) DeleteExclusion(_ context.Context, _ string) error { return nil }
-func (s *stubStore) InsertCVECacheEntry(_ context.Context, _ *CVECacheEntry) (string, error) {
-	return "", nil
+func (s *stubStore) ReplaceCVECache(_ context.Context, _, _, _ string, _ []*CVECacheEntry) error {
+	return nil
 }
 func (s *stubStore) GetCVECacheEntries(_ context.Context, _, _, _ string) ([]*CVECacheEntry, error) {
 	return nil, nil

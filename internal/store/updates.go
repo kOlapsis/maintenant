@@ -362,30 +362,42 @@ func (s *UpdateStore) DeleteOrphanImageUpdates(ctx context.Context) (int64, erro
 
 // --- CVE cache ---
 
-func (s *UpdateStore) InsertCVECacheEntry(ctx context.Context, e *update.CVECacheEntry) (string, error) {
-	e.ID = uid.New()
-	_, err := s.writer.Exec(ctx,
-		`INSERT INTO cve_cache
-		(id, ecosystem, package_name, package_version, cve_id, cvss_score, cvss_vector, severity,
-		 summary, fixed_in, references_json, fetched_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(ecosystem, package_name, package_version, cve_id) DO UPDATE SET
-			cvss_score=excluded.cvss_score,
-			cvss_vector=excluded.cvss_vector,
-			severity=excluded.severity,
-			summary=excluded.summary,
-			fixed_in=excluded.fixed_in,
-			references_json=excluded.references_json,
-			fetched_at=excluded.fetched_at,
-			expires_at=excluded.expires_at`,
-		e.ID, e.Ecosystem, e.PackageName, e.PackageVersion, e.CVEID, e.CVSSScore, e.CVSSVector,
-		string(e.Severity), e.Summary, e.FixedIn, e.ReferencesJSON,
-		e.FetchedAt.Unix(), e.ExpiresAt.Unix(),
-	)
+// ReplaceCVECache stores entries as the whole cached answer for one package version, or leaves the cache as it was.
+func (s *UpdateStore) ReplaceCVECache(ctx context.Context, ecosystem, packageName, packageVersion string, entries []*update.CVECacheEntry) error {
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM cve_cache WHERE ecosystem = ? AND package_name = ? AND package_version = ?`,
+			ecosystem, packageName, packageVersion); err != nil {
+			return err
+		}
+		for _, e := range entries {
+			e.ID = uid.New()
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO cve_cache
+				(id, ecosystem, package_name, package_version, cve_id, cvss_score, cvss_vector, severity,
+				 summary, fixed_in, references_json, fetched_at, expires_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(ecosystem, package_name, package_version, cve_id) DO UPDATE SET
+					cvss_score=excluded.cvss_score,
+					cvss_vector=excluded.cvss_vector,
+					severity=excluded.severity,
+					summary=excluded.summary,
+					fixed_in=excluded.fixed_in,
+					references_json=excluded.references_json,
+					fetched_at=excluded.fetched_at,
+					expires_at=excluded.expires_at`,
+				e.ID, ecosystem, packageName, packageVersion, e.CVEID, e.CVSSScore, e.CVSSVector,
+				string(e.Severity), e.Summary, e.FixedIn, e.ReferencesJSON,
+				e.FetchedAt.Unix(), e.ExpiresAt.Unix()); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
-		return "", fmt.Errorf("insert cve cache entry: %w", err)
+		return fmt.Errorf("replace cve cache: %w", err)
 	}
-	return e.ID, nil
+	return nil
 }
 
 func (s *UpdateStore) GetCVECacheEntries(ctx context.Context, ecosystem, packageName, packageVersion string) ([]*update.CVECacheEntry, error) {

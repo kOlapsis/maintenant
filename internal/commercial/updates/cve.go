@@ -194,11 +194,10 @@ func (c *CVEClient) QueryCVEs(ctx context.Context, queries []ImageCVEQuery) (map
 	for i, q := range uncached {
 		var entries []*update.CVECacheEntry
 		for _, id := range vulnIDs[i] {
-			entry := c.buildCVECacheEntry(q, records[id], now, expires)
-			if _, err := c.store.InsertCVECacheEntry(ctx, entry); err != nil {
-				c.logger.Warn("cve: failed to cache entry", "cve", entry.CVEID, "error", err)
-			}
-			entries = append(entries, entry)
+			entries = append(entries, c.buildCVECacheEntry(q, records[id], now, expires))
+		}
+		if err := c.store.ReplaceCVECache(ctx, q.Ecosystem, q.PackageName, q.Version, entries); err != nil {
+			c.logger.Warn("cve: failed to cache the answer", "package", q.PackageName, "error", err)
 		}
 		results[q.ContainerID] = entries
 	}

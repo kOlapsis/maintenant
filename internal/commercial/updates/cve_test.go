@@ -45,11 +45,11 @@ func (s *cveStubStore) GetCVECacheEntries(_ context.Context, ecosystem, packageN
 	return s.cachedEntries[cveCacheKey(ecosystem, packageName, packageVersion)], nil
 }
 
-func (s *cveStubStore) InsertCVECacheEntry(_ context.Context, e *update.CVECacheEntry) (string, error) {
+func (s *cveStubStore) ReplaceCVECache(_ context.Context, _, _, _ string, entries []*update.CVECacheEntry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.inserted = append(s.inserted, e)
-	return "cache-id", nil
+	s.inserted = append(s.inserted, entries...)
+	return nil
 }
 
 // requestLog records the OSV requests a test server received, safe for
