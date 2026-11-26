@@ -150,7 +150,7 @@ type APIMaintBrief struct {
 
 // HandleStatusAPI serves the JSON status snapshot.
 func (h *Handler) HandleStatusAPI(w http.ResponseWriter, r *http.Request) {
-	data, err := h.service.GetPageData(r.Context())
+	data, err := h.service.PublicPageData(r.Context())
 	if err != nil {
 		h.logger.Error("failed to get status API data", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)

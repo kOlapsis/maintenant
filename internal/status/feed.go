@@ -7,7 +7,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 )
@@ -48,20 +47,11 @@ func PageURL(statusURL, baseURL string) string {
 
 // HandleAtomFeed serves the Atom feed of the ongoing incidents and those resolved in the last 30 days, latest change first.
 func (h *Handler) HandleAtomFeed(w http.ResponseWriter, r *http.Request) {
-	active, err := h.service.incidents.ListActiveIncidents(r.Context())
+	incidents, err := h.service.FeedIncidents(r.Context())
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
-	recent, err := h.service.incidents.ListRecentIncidents(r.Context(), 30)
-	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	incidents := append(active, recent...)
-	sort.SliceStable(incidents, func(i, j int) bool {
-		return incidents[i].UpdatedAt.After(incidents[j].UpdatedAt)
-	})
 
 	feed := AtomFeed{
 		XMLNS:   "http://www.w3.org/2005/Atom",

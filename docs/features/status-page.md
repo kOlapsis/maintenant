@@ -11,7 +11,7 @@ Give your users a clean status page. Incident management with timeline updates, 
 
 ## How It Works
 
-maintenant serves the public status page through the same Vue SPA as the admin UI. The page loads its content from `/status/api`, follows changes through an SSE stream (`/status/events`), and reads its look from a settings document (`/status/settings.json`) that is served with a 30-second cache.
+maintenant serves the public status page through the same Vue SPA as the admin UI. The page loads its content from `/status/api`, follows changes through an SSE stream (`/status/events`), and reads its look from a settings document (`/status/settings.json`) that is served with a 30-second cache. The snapshot of `/status/api` and the incidents of `/status/feed.atom` are computed at most once every 2 seconds and shared between visitors; a change announced on the stream is in the next snapshot.
 
 The status page displays:
 

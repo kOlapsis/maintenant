@@ -6,6 +6,10 @@ package status
 import (
 	"context"
 	"log/slog"
+	"sort"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/event"
@@ -49,7 +53,40 @@ type Service struct {
 	notifier          SubscriberNotifier
 	incidentHandler   AlertIncidentHandler
 
+	publicGen atomic.Uint64
+	page      cached[*PageData]
+	feed      cached[[]Incident]
+
 	logger *slog.Logger
+}
+
+const publicCacheTTL = 2 * time.Second
+
+// cached keeps one computed value for publicCacheTTL, or until gen moves; concurrent callers wait for a single computation.
+type cached[T any] struct {
+	mu  sync.Mutex
+	at  time.Time
+	gen uint64
+	val T
+}
+
+func (c *cached[T]) get(ctx context.Context, gen *atomic.Uint64, load func(context.Context) (T, error)) (T, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	g := gen.Load()
+	if !c.at.IsZero() && c.gen == g && time.Since(c.at) < publicCacheTTL {
+		return c.val, nil
+	}
+	if err := ctx.Err(); err != nil {
+		var zero T
+		return zero, err
+	}
+	v, err := load(ctx)
+	if err != nil {
+		return v, err
+	}
+	c.val, c.at, c.gen = v, time.Now(), g
+	return v, nil
 }
 
 // NewService creates a new status page service.
@@ -60,7 +97,7 @@ func NewService(d Deps) *Service {
 	if d.Logger == nil {
 		panic("status.NewService: Logger is required")
 	}
-	return &Service{
+	s := &Service{
 		components:        d.Components,
 		logger:            d.Logger,
 		incidents:         d.Incidents,
@@ -68,10 +105,17 @@ func NewService(d Deps) *Service {
 		monitorStatus:     d.MonitorStatus,
 		monitorPopulation: d.MonitorPopulation,
 		monitorName:       d.MonitorName,
-		publicBroadcaster: d.PublicBroadcaster,
 		adminBroadcaster:  d.AdminBroadcaster,
 		subscribers:       d.Subscribers,
 	}
+	if d.PublicBroadcaster != nil {
+		// The page refetches its snapshot on these events: drop the cached one before they leave.
+		s.publicBroadcaster = func(eventType string, data any) {
+			s.publicGen.Add(1)
+			d.PublicBroadcaster(eventType, data)
+		}
+	}
+	return s
 }
 
 // SetMonitorStatusProvider sets the function used to derive component status from monitors.
@@ -300,6 +344,30 @@ func StatusLabel(s string) string {
 	default:
 		return "Unknown"
 	}
+}
+
+// PublicPageData returns the page data shared by the public visitors, at most publicCacheTTL old.
+func (s *Service) PublicPageData(ctx context.Context) (*PageData, error) {
+	return s.page.get(ctx, &s.publicGen, s.GetPageData)
+}
+
+// FeedIncidents returns the ongoing incidents and those resolved in the last 30 days, latest change first, at most publicCacheTTL old.
+func (s *Service) FeedIncidents(ctx context.Context) ([]Incident, error) {
+	return s.feed.get(ctx, &s.publicGen, func(ctx context.Context) ([]Incident, error) {
+		active, err := s.incidents.ListActiveIncidents(ctx)
+		if err != nil {
+			return nil, err
+		}
+		recent, err := s.incidents.ListRecentIncidents(ctx, 30)
+		if err != nil {
+			return nil, err
+		}
+		incidents := append(active, recent...)
+		sort.SliceStable(incidents, func(i, j int) bool {
+			return incidents[i].UpdatedAt.After(incidents[j].UpdatedAt)
+		})
+		return incidents, nil
+	})
 }
 
 // GetPageData assembles all data for the public status page.
