@@ -141,7 +141,8 @@ func loadConfig(args []string) (app.Config, map[string]string) {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
 	}
-	// A flag value the environment parser replaced by its default must not come back through the merge.
+	// A flag value the environment parser normalised or replaced by its default must not come back through the merge.
+	cfg.Mode = fromEnv.Mode
 	cfg.Retention = fromEnv.Retention
 	cfg.MultiHost.AgentRateLimitPerSecond = fromEnv.MultiHost.AgentRateLimitPerSecond
 	cfg.MultiHost.AgentStaleThresholdSeconds = fromEnv.MultiHost.AgentStaleThresholdSeconds

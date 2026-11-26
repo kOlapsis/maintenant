@@ -453,7 +453,10 @@ func ConfigFromEnv() Config {
 	cfg.ProxyLabels = envBool("MAINTENANT_PROXY_LABELS", &mistyped)
 	cfg.AllowPrivateWebhooks = envBool("MAINTENANT_ALLOW_PRIVATE_WEBHOOKS", &mistyped)
 
-	cfg.Mode = envOr("MAINTENANT_MODE", "embedded")
+	cfg.Mode = strings.ToLower(strings.TrimSpace(os.Getenv("MAINTENANT_MODE")))
+	if cfg.Mode == "" {
+		cfg.Mode = "embedded"
+	}
 
 	cfg.MultiHost = MultiHostConfig{
 		GRPCPublicURL:              os.Getenv("MAINTENANT_GRPC_URL"),

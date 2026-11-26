@@ -71,11 +71,24 @@ func TestValidateMode(t *testing.T) {
 		t.Setenv("MAINTENANT_MODE", mode)
 		assert.NoError(t, ConfigFromEnv().ValidateMode(), mode)
 	}
-	for _, mode := range []string{"agnet", "Agent", "standalone"} {
+	for _, mode := range []string{"agnet", "standalone", "server agent"} {
 		t.Setenv("MAINTENANT_MODE", mode)
 		err := ConfigFromEnv().ValidateMode()
 		require.ErrorIs(t, err, ErrMode, mode)
 		assert.Contains(t, err.Error(), mode)
+	}
+}
+
+func TestConfigFromEnv_ModeIgnoresCaseAndOuterSpaces(t *testing.T) {
+	for raw, want := range map[string]string{
+		"Server": "server", "AGENT": "agent", " agent ": "agent", "Embedded\t": "embedded", "  ": "embedded",
+	} {
+		t.Setenv("MAINTENANT_MODE", raw)
+
+		cfg := ConfigFromEnv()
+
+		assert.Equal(t, want, cfg.Mode, raw)
+		assert.NoError(t, cfg.ValidateMode(), raw)
 	}
 }
 

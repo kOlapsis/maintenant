@@ -53,6 +53,15 @@ func TestLoadConfig_FlagOverridesAMalformedEnvironment(t *testing.T) {
 	assert.Equal(t, 72*time.Hour, cfg.Retention.Snapshots)
 }
 
+func TestLoadConfig_ModeFlagIgnoresCaseAndOuterSpaces(t *testing.T) {
+	t.Setenv("MAINTENANT_MODE", "")
+
+	cfg, _ := loadConfig([]string{"--mode", " AGENT "})
+
+	assert.Equal(t, "agent", cfg.Mode)
+	assert.NoError(t, cfg.ValidateMode())
+}
+
 func TestLoadConfig_MalformedFlagFallsBackToTheDefault(t *testing.T) {
 	t.Setenv("MAINTENANT_RETENTION_BATCH_SIZE", "")
 	t.Setenv("MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS", "")

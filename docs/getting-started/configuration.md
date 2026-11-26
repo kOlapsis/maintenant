@@ -105,7 +105,7 @@ These variables drive [Multi-Host Monitoring](../features/multihost.md). The [Ag
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MAINTENANT_MODE` | `embedded` | `embedded`: the web server and the local runtime, which also accepts remote agents when the edition allows it. `server`: the same, but refuses to start below the Personal edition. `agent`: no web interface, reports to a server. Any other value stops the startup, and the names are lowercase. |
+| `MAINTENANT_MODE` | `embedded` | `embedded`: the web server and the local runtime, which also accepts remote agents when the edition allows it. `server`: the same, but refuses to start below the Personal edition. `agent`: no web interface, reports to a server. Case and outer spaces are ignored. Any other value stops the startup. |
 | `MAINTENANT_SERVER` | — | Agent: gRPC URL of the server, for example `grpcs://maintenant.example.com:8443`. |
 | `MAINTENANT_ENROLLMENT_TOKEN` | — | Agent: enrollment token generated on the server's Agents page. It is used on the first start, and again to enroll under a new identity when the server refuses the stored one (agent revoked or deleted). Without a token, a refused agent stops with exit code 1. |
 | `MAINTENANT_LABEL` | — | Agent: display label shown in the UI. |
