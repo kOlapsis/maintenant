@@ -64,6 +64,7 @@ _fs() {
 
 TMPDIR_INSTALL="${TMPDIR_INSTALL:-}"
 BINARY_TMP=""
+BINARY_PREVIOUS=""
 cleanup() {
     if [ -n "${TMPDIR_INSTALL:-}" ]; then rm -rf "$TMPDIR_INSTALL"; fi
     if [ -n "${BINARY_TMP:-}" ]; then rm -f "$BINARY_TMP"; fi
@@ -507,6 +508,11 @@ install_binary() {
     BINARY_TMP=$(mktemp "$INSTALL_DIR/.maintenant.XXXXXX") \
         || abort "Cannot create a temporary file in $INSTALL_DIR" 30
     _fs install -m 0755 -o root -g root "$BINARY_SRC" "$BINARY_TMP"
+    BINARY_PREVIOUS=""
+    if [ -f "$INSTALL_DIR/maintenant" ]; then
+        _fs cp -pf "$INSTALL_DIR/maintenant" "$INSTALL_DIR/.maintenant.previous"
+        BINARY_PREVIOUS="$INSTALL_DIR/.maintenant.previous"
+    fi
     _fs mv -f "$BINARY_TMP" "$INSTALL_DIR/maintenant"
     BINARY_TMP=""
     log_info "Binary installed to $INSTALL_DIR/maintenant"
@@ -553,8 +559,22 @@ WantedBy=multi-user.target
 UNIT
 }
 
+_service_failed() {
+    [ -n "$BINARY_PREVIOUS" ] || abort "$1" 31
+    _fs mv -f "$BINARY_PREVIOUS" "$INSTALL_DIR/maintenant"
+    BINARY_PREVIOUS=""
+    if [ -z "$WAS_ACTIVE" ]; then
+        abort "$1. The previous binary was put back; the service was not running before and is left stopped" 31
+    fi
+    if systemctl restart maintenant; then
+        abort "$1. The previous binary was put back and the service restarted on it. The flags given to this run stay in $CONFIG_DIR/maintenant.env" 31
+    fi
+    abort "$1. The previous binary was put back but the service could not be restarted: journalctl -u maintenant" 31
+}
+
 install_service() {
     if [ -n "${NO_SERVICE:-}" ]; then
+        [ -z "$BINARY_PREVIOUS" ] || rm -f "$BINARY_PREVIOUS"
         log_info "Skipping service installation (--no-service)"
         if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet maintenant 2>/dev/null; then
             log_warn "maintenant.service still runs the previous binary: systemctl restart maintenant"
@@ -565,15 +585,17 @@ install_service() {
     log_step "Installing systemd service..."
     render_unit > "$SERVICE_FILE" || abort "Failed to write $SERVICE_FILE" 30
 
-    systemctl daemon-reload || abort "systemctl daemon-reload failed" 31
-    systemctl enable maintenant || abort "systemctl enable maintenant failed" 31
+    WAS_ACTIVE=""
+    if systemctl is-active --quiet maintenant; then WAS_ACTIVE=1; fi
+    systemctl daemon-reload || _service_failed "systemctl daemon-reload failed"
+    systemctl enable maintenant || _service_failed "systemctl enable maintenant failed"
     systemctl reset-failed maintenant 2>/dev/null || true
-    if systemctl is-active --quiet maintenant; then
+    if [ -n "$WAS_ACTIVE" ]; then
         log_step "Restarting the service on the new binary..."
-        systemctl restart maintenant || abort "systemctl restart maintenant failed" 31
+        systemctl restart maintenant || _service_failed "systemctl restart maintenant failed"
     else
         log_step "Starting the service..."
-        systemctl start maintenant || abort "systemctl start maintenant failed" 31
+        systemctl start maintenant || _service_failed "systemctl start maintenant failed"
     fi
 
     # Type=simple is active as soon as the process exists: only a later look tells a crash from a start.
@@ -581,13 +603,14 @@ install_service() {
     sleep 5
     restarts=$(systemctl show -p NRestarts --value maintenant 2>/dev/null || true)
     if systemctl is-active --quiet maintenant && [ "${restarts:-0}" = 0 ]; then
+        [ -z "$BINARY_PREVIOUS" ] || rm -f "$BINARY_PREVIOUS"
         log_info "Service is running"
         return
     fi
 
     log_error "Service did not stay up. Last 50 log lines:"
     journalctl -u maintenant -n 50 --no-pager >&2 || true
-    abort "Maintenant is installed but its service does not stay up: fix the cause shown above, then systemctl restart maintenant" 31
+    _service_failed "The new Maintenant binary does not stay up as a service, for the cause shown above"
 }
 
 # ── print_summary ─────────────────────────────────────────────────────────────

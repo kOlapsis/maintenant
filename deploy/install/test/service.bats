@@ -35,8 +35,86 @@ run_install_service() {
         _INSTALL_SH_TESTING=1 . '$SCRIPT'
         DATA_DIR=/var/lib/maintenant
         DB_DIR=/var/lib/maintenant
+        INSTALL_DIR='$WORK/bin'
+        [ ! -e '$WORK/bin/.maintenant.previous' ] || BINARY_PREVIOUS='$WORK/bin/.maintenant.previous'
         install_service
     "
+}
+
+upgrade_in_place() {
+    mkdir -p "$WORK/bin"
+    printf 'new' > "$WORK/bin/maintenant"
+    printf 'old' > "$WORK/bin/.maintenant.previous"
+}
+
+@test "install_service: an upgrade that stays up drops the previous binary" {
+    upgrade_in_place
+    ALREADY_ACTIVE=1 run_install_service
+    [ "$status" -eq 0 ]
+    [ "$(cat "$WORK/bin/maintenant")" = "new" ]
+    [ "$(ls -A "$WORK/bin")" = "maintenant" ]
+}
+
+@test "install_service: an upgrade that crashes puts the previous binary back and restarts it" {
+    upgrade_in_place
+    ALREADY_ACTIVE=1 CRASH_AFTER_START=1 run_install_service
+    [ "$status" -eq 31 ]
+    [ "$(cat "$WORK/bin/maintenant")" = "old" ]
+    [ "$(ls -A "$WORK/bin")" = "maintenant" ]
+    [ "$(grep -c '^restart maintenant$' "$WORK/systemctl.log")" -eq 2 ]
+    [[ "$output" == *"previous binary was put back"* ]]
+    [[ "$output" != *"Maintenant is installed"* ]]
+}
+
+@test "install_service: an upgrade that systemd already restarted is rolled back too" {
+    upgrade_in_place
+    ALREADY_ACTIVE=1 NRESTARTS=2 run_install_service
+    [ "$status" -eq 31 ]
+    [ "$(cat "$WORK/bin/maintenant")" = "old" ]
+}
+
+@test "install_service: a failing restart on an upgrade puts the previous binary back" {
+    upgrade_in_place
+    run bash -c "
+        NO_COLOR=1
+        SERVICE_FILE='$WORK/maintenant.service'
+        export NO_COLOR SERVICE_FILE
+        systemctl() {
+            case \"\$*\" in
+                restart*) return 1 ;;
+            esac
+            return 0
+        }
+        journalctl() { :; }
+        export -f systemctl journalctl
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
+        DATA_DIR=/var/lib/maintenant
+        DB_DIR=/var/lib/maintenant
+        INSTALL_DIR='$WORK/bin'
+        BINARY_PREVIOUS='$WORK/bin/.maintenant.previous'
+        install_service
+    "
+    [ "$status" -eq 31 ]
+    [ "$(cat "$WORK/bin/maintenant")" = "old" ]
+    [[ "$output" == *"could not be restarted"* ]]
+}
+
+@test "install_service: --no-service drops the previous binary" {
+    upgrade_in_place
+    NO_SERVICE=1 run_install_service
+    [ "$status" -eq 0 ]
+    [ "$(cat "$WORK/bin/maintenant")" = "new" ]
+    [ "$(ls -A "$WORK/bin")" = "maintenant" ]
+}
+
+@test "install_service: a first install that crashes has nothing to put back" {
+    mkdir -p "$WORK/bin"
+    printf 'new' > "$WORK/bin/maintenant"
+    CRASH_AFTER_START=1 run_install_service
+    [ "$status" -eq 31 ]
+    [ "$(cat "$WORK/bin/maintenant")" = "new" ]
+    [[ "$output" == *"does not stay up"* ]]
+    [[ "$output" != *"previous binary"* ]]
 }
 
 @test "install_service: restarts a service that is already running" {
@@ -151,6 +229,27 @@ summary_for() {
     written=$(cat "$WORK/install.log")
     [ "$(dirname "$written")" = "$WORK/bin" ]
     [ "$written" != "$WORK/bin/maintenant" ]
+    [ "$(cat "$WORK/bin/.maintenant.previous")" = "old" ]
+    [ "$(ls -A "$WORK/bin" | wc -l)" -eq 2 ]
+}
+
+@test "install_binary: a first install keeps no previous binary" {
+    mkdir -p "$WORK/bin" "$WORK/tmp"
+    printf 'new' > "$WORK/tmp/maintenant-v1.0.0-linux-amd64"
+
+    run bash -c "
+        NO_COLOR=1
+        export NO_COLOR
+        install() { cp \"\${@: -2:1}\" \"\${@: -1}\"; }
+        export -f install
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
+        INSTALL_DIR='$WORK/bin'
+        BINARY_SRC='$WORK/tmp/maintenant-v1.0.0-linux-amd64'
+        install_binary
+        printf 'previous=[%s]' \"\$BINARY_PREVIOUS\"
+    "
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"previous=[]"* ]]
     [ "$(ls -A "$WORK/bin")" = "maintenant" ]
 }
 

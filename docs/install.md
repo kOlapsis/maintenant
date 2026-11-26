@@ -35,8 +35,8 @@ curl -fsSL https://install.maintenant.dev | sudo bash
 3. Creates the `maintenant` system user (no login shell, home in the data directory) and adds it to the `docker` group when that group exists, see [The docker group](#the-docker-group).
 4. Creates the data directory (`0750`, owned by the service user) and the configuration directory (`0750`, `root:maintenant`).
 5. Merges the configuration flags you passed into `/etc/maintenant/maintenant.env`.
-6. Replaces the binary atomically (written next to `/usr/local/bin/maintenant`, then renamed).
-7. Writes the systemd unit, enables it, then restarts the service if it runs or starts it if not. Five seconds later it checks that the service is still running and that systemd has not restarted it; otherwise it prints the last 50 log lines and exits with code 31.
+6. Replaces the binary atomically (written next to `/usr/local/bin/maintenant`, then renamed). On an upgrade, the previous binary is kept next to it as `.maintenant.previous` until the service check of the next step has passed.
+7. Writes the systemd unit, enables it, then restarts the service if it runs or starts it if not. Five seconds later it checks that the service is still running and that systemd has not restarted it; otherwise it prints the last 50 log lines and exits with code 31. On an upgrade it first puts the previous binary back and restarts the service on it, and says so; the flags given to that run stay in the env file. The same happens when a `systemctl` command fails.
 8. Prints a summary: version, binary path and the address it listens on.
 
 ---
