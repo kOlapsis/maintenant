@@ -136,8 +136,6 @@ function shortTag(tag: string): string {
 
 const formatTime = timeAgo
 
-const hasScanned = computed(() => timeAgo(updates.summary?.last_scan, '') !== '')
-
 function openFromQuery() {
   const containerName = route.query.container as string | undefined
   if (!containerName || updates.updates.length === 0) return
@@ -368,13 +366,15 @@ onUnmounted(() => {
       </template>
 
       <!-- Empty state -->
-      <div v-if="updates.updates.length === 0 && !updates.loading && !updates.error" class="flex flex-col items-center justify-center py-16">
-        <template v-if="hasScanned">
+      <div v-if="updates.summary && updates.updates.length === 0 && !updates.loading && !updates.error" class="flex flex-col items-center justify-center py-16">
+        <template v-if="updates.summary.scan_status === 'completed'">
           <CheckCircle :size="40" class="text-mnt-status-ok opacity-30 mb-3" />
           <p class="text-sm text-mnt-muted font-medium">All containers are up to date</p>
         </template>
         <template v-else>
-          <p class="text-sm text-mnt-muted font-medium">No scan has run yet</p>
+          <p class="text-sm text-mnt-muted font-medium">
+            {{ updates.summary.scan_status === 'idle' ? 'No scan has run yet' : 'The last scan did not finish' }}
+          </p>
           <p class="text-[10px] text-mnt-muted mt-1">Run a scan to check for available updates</p>
         </template>
       </div>

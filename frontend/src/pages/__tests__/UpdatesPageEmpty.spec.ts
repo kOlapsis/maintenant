@@ -40,7 +40,7 @@ vi.mock('vue-router', () => ({
 
 const counts = { critical: 0, recommended: 0, available: 0, up_to_date: 3, pinned: 0 }
 
-function summary(lastScan: string, status = 'idle') {
+function summary(lastScan: string, status = 'completed') {
   return { last_scan: lastScan, next_scan: '', scan_status: status, counts }
 }
 
@@ -77,8 +77,31 @@ describe('UpdatesPage with nothing to list', () => {
     expect(wrapper.find('[role="alert"]').text()).toContain('HTTP 503')
   })
 
-  it('does not claim anything before the first scan', async () => {
+  it('still says up to date after a restart, before the next scan', async () => {
     api.fetchUpdateSummary.mockResolvedValue(summary('0001-01-01T00:00:00Z'))
+    const wrapper = await mountPage()
+
+    expect(wrapper.text()).toContain(UP_TO_DATE)
+  })
+
+  it('says the last scan did not finish', async () => {
+    api.fetchUpdateSummary.mockResolvedValue(summary('2026-11-20T10:00:00Z', 'failed'))
+    const wrapper = await mountPage()
+
+    expect(wrapper.text()).not.toContain(UP_TO_DATE)
+    expect(wrapper.text()).toContain('The last scan did not finish')
+  })
+
+  it('claims nothing while the summary is not loaded', async () => {
+    api.fetchUpdateSummary.mockReturnValue(new Promise(() => {}))
+    const wrapper = await mountPage()
+
+    expect(wrapper.text()).not.toContain(UP_TO_DATE)
+    expect(wrapper.text()).not.toContain('No scan has run yet')
+  })
+
+  it('does not claim anything before the first scan', async () => {
+    api.fetchUpdateSummary.mockResolvedValue(summary('0001-01-01T00:00:00Z', 'idle'))
     const wrapper = await mountPage()
 
     expect(wrapper.text()).not.toContain(UP_TO_DATE)
