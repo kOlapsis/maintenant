@@ -220,6 +220,30 @@ func (s *Service) timelineAt(ctx context.Context, c *Container, ts time.Time) (C
 	return state, c.HealthStatus, nil
 }
 
+// adoptLateTransition gives t the id of the next transition when that one records the same change, seen later by an inventory, and reports whether t ends the timeline.
+func (s *Service) adoptLateTransition(ctx context.Context, c *Container, t *StateTransition) (adopted, latest bool, err error) {
+	window, err := s.store.GetTransitionsInWindow(ctx, c.ID, t.Timestamp, time.Now().Add(maxInventoryLead))
+	if err != nil {
+		return false, false, err
+	}
+	var later []*StateTransition
+	for _, w := range window {
+		if w.Timestamp.Unix() > t.Timestamp.Unix() {
+			later = append(later, w)
+		}
+	}
+	if len(later) == 0 {
+		return false, true, nil
+	}
+	if later[0].PreviousState != t.PreviousState || later[0].NewState != t.NewState {
+		return false, false, nil
+	}
+	t.ID = later[0].ID
+	return true, len(later) == 1, nil
+}
+
+const maxInventoryLead = time.Hour
+
 func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, newState ContainerState) error {
 	c, err := s.lookup(ctx, evt)
 	if err != nil {
@@ -275,6 +299,20 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 		PreviousState: previousState,
 		NewState:      newState,
 		Timestamp:     evt.Timestamp,
+	}
+	if evt.Replayed {
+		adopted, latest, err := s.adoptLateTransition(ctx, c, transition)
+		if err != nil {
+			s.logger.Error("read timeline for replayed state change", "container_id", c.ID, "error", err)
+			return err
+		}
+		if latest && c.State == newState && (adopted || evt.Timestamp.After(c.LastStateChangeAt)) {
+			c.LastStateChangeAt = evt.Timestamp
+			if err := s.store.UpdateContainer(ctx, c); err != nil {
+				s.logger.Error("update container state change time", "id", c.ID, "error", err)
+				return err
+			}
+		}
 	}
 
 	if evt.ExitCode != "" {
