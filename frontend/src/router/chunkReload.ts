@@ -16,6 +16,10 @@ export function reloadOnMissingChunk(
     console.error(error)
     return
   }
+  if (!navigator.onLine) {
+    showToast('You are offline. Open this page again once the connection is back.', 'warning')
+    return
+  }
   if (sessionStorage.getItem(RELOADED_KEY)) {
     showToast('This page could not be loaded. Reload the application to get its latest version.', 'warning')
     return
