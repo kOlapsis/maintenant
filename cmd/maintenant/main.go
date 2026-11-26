@@ -69,7 +69,7 @@ func main() {
 		logger.Info("demo mode enabled: instance is read-only")
 	}
 
-	warnMistypedBooleans(cfg, logger)
+	warnIgnoredSettings(cfg, logger)
 	validateStartup(cfg, logger)
 
 	// --copy-store-to runs the copy and exits: the binary has
@@ -130,7 +130,8 @@ func loadConfig(args []string) (app.Config, map[string]string) {
 		}
 	}
 
-	cfg := app.ConfigFromEnv()
+	fromEnv := app.ConfigFromEnv()
+	cfg := fromEnv
 	cfg.Version = version
 	cfg.Commit = commit
 	cfg.BuildDate = buildDate
@@ -140,6 +141,10 @@ func loadConfig(args []string) (app.Config, map[string]string) {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
 	}
+	// A flag value the environment parser replaced by its default must not come back through the merge.
+	cfg.Retention = fromEnv.Retention
+	cfg.MultiHost.AgentRateLimitPerSecond = fromEnv.MultiHost.AgentRateLimitPerSecond
+	cfg.MultiHost.AgentStaleThresholdSeconds = fromEnv.MultiHost.AgentStaleThresholdSeconds
 	return cfg, visited
 }
 
@@ -157,7 +162,12 @@ func runMCPStdio(cfg app.Config, logger *slog.Logger) {
 	}
 }
 
-func warnMistypedBooleans(cfg app.Config, logger *slog.Logger) {
+func warnIgnoredSettings(cfg app.Config, logger *slog.Logger) {
+	for _, s := range cfg.InvalidSettings {
+		logger.Warn("setting is not a usable value, the default is used instead",
+			"variable", s.Name, "value", s.Raw, "default", s.Default,
+			"accepted", "a positive Go duration such as 30m or 48h (no day unit), or a positive whole number")
+	}
 	for _, s := range cfg.MistypedBooleans {
 		logger.Warn("boolean setting is not a recognised value and is read as false",
 			"variable", s.Name, "value", s.Raw,
@@ -211,7 +221,7 @@ func validateStartup(cfg app.Config, logger *slog.Logger) {
 		os.Exit(1)
 	}
 
-	if err := cfg.ValidateSettings(); err != nil {
+	if err := cfg.ValidateMode(); err != nil {
 		logger.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}

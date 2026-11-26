@@ -16,6 +16,18 @@ import (
 	"github.com/kolapsis/maintenant/internal/app"
 )
 
+func TestWarnIgnoredSettings_NamesTheVariableTheValueAndTheDefault(t *testing.T) {
+	t.Setenv("MAINTENANT_RETENTION_SNAPSHOTS", "7d")
+	var out bytes.Buffer
+
+	cfg, _ := loadConfig(nil)
+	warnIgnoredSettings(cfg, slog.New(slog.NewJSONHandler(&out, nil)))
+
+	assert.Equal(t, 1, strings.Count(out.String(), "\n"))
+	assert.Contains(t, out.String(), `"level":"WARN"`)
+	assert.Contains(t, out.String(), `"variable":"MAINTENANT_RETENTION_SNAPSHOTS","value":"7d","default":"48h0m0s"`)
+}
+
 func TestWarnMistypedBooleans_NamesEachVariableOnce(t *testing.T) {
 	t.Setenv("MAINTENANT_DISABLE_TELEMETRY", "ture")
 	t.Setenv("MAINTENANT_MCP", "treu")
@@ -23,7 +35,7 @@ func TestWarnMistypedBooleans_NamesEachVariableOnce(t *testing.T) {
 	var out bytes.Buffer
 
 	cfg, _ := loadConfig(nil)
-	warnMistypedBooleans(cfg, slog.New(slog.NewJSONHandler(&out, nil)))
+	warnIgnoredSettings(cfg, slog.New(slog.NewJSONHandler(&out, nil)))
 
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	require.Len(t, lines, 2)
@@ -37,23 +49,22 @@ func TestLoadConfig_FlagOverridesAMalformedEnvironment(t *testing.T) {
 
 	cfg, _ := loadConfig([]string{"--retentionSnapshots", "72h"})
 
-	require.NoError(t, cfg.ValidateSettings())
+	assert.Empty(t, cfg.InvalidSettings)
 	assert.Equal(t, 72*time.Hour, cfg.Retention.Snapshots)
 }
 
-func TestLoadConfig_MalformedFlagIsRefused(t *testing.T) {
-	for flag, env := range map[string]string{
-		"--retentionBatchSize": "MAINTENANT_RETENTION_BATCH_SIZE",
-		"--updateInterval":     "MAINTENANT_UPDATE_INTERVAL",
-	} {
-		t.Setenv(env, "")
+func TestLoadConfig_MalformedFlagFallsBackToTheDefault(t *testing.T) {
+	t.Setenv("MAINTENANT_RETENTION_BATCH_SIZE", "")
+	t.Setenv("MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS", "")
 
-		cfg, _ := loadConfig([]string{flag, "0"})
+	cfg, _ := loadConfig([]string{"--retentionBatchSize", "0", "--agentStaleThresholdSeconds", "-1"})
 
-		err := cfg.ValidateSettings()
-		require.ErrorIs(t, err, app.ErrInvalidSetting, flag)
-		assert.Contains(t, err.Error(), env)
-	}
+	assert.Equal(t, 1000, cfg.Retention.BatchSize)
+	assert.Equal(t, 60, cfg.MultiHost.AgentStaleThresholdSeconds)
+	assert.ElementsMatch(t, []app.InvalidSetting{
+		{Name: "MAINTENANT_RETENTION_BATCH_SIZE", Raw: "0", Default: "1000"},
+		{Name: "MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS", Raw: "-1", Default: "60"},
+	}, cfg.InvalidSettings)
 }
 
 func TestLoadConfig_AddrFlagDrivesTheDefaultBaseURL(t *testing.T) {

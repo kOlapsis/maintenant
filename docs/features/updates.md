@@ -68,7 +68,7 @@ The scan interval is configured via the `MAINTENANT_UPDATE_INTERVAL` environment
 MAINTENANT_UPDATE_INTERVAL=24h  # Default: check once per day
 ```
 
-Accepts Go duration format: `12h`, `6h`, `30m`, etc. A value that does not parse, or that is not positive, stops the startup.
+Accepts Go duration format: `12h`, `6h`, `30m`, etc. A value that does not parse, or that is not positive, is replaced by `24h`, and the startup logs a warning.
 
 The first scan runs 30 seconds after startup. Within a scan, images are checked one at a time with one second between two of them, so a large fleet takes a while and sends few requests per second to a registry.
 

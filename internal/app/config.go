@@ -87,6 +87,7 @@ type Config struct {
 	Mode      string // "embedded" | "server" | "agent"
 	MultiHost MultiHostConfig
 
+	// InvalidSettings lists the durations and counts replaced by their default because their value is not usable.
 	InvalidSettings []InvalidSetting
 	// MistypedBooleans lists the boolean variables read as false because their value is not a boolean.
 	MistypedBooleans []InvalidSetting
@@ -134,8 +135,9 @@ type MultiHostConfig struct {
 // InvalidSetting is a configuration value that was rejected rather than
 // replaced by its default.
 type InvalidSetting struct {
-	Name string
-	Raw  string
+	Name    string
+	Raw     string
+	Default string
 }
 
 func (m *MultiHostConfig) acceptSpoolSetting(env string) {
@@ -324,25 +326,16 @@ func (c Config) ValidateAgentSpool() error {
 	return errors.Join(errs...)
 }
 
-// ErrInvalidSetting refuses a duration or a count that does not parse or is not positive.
-var ErrInvalidSetting = errors.New(
-	"setting is not valid: a duration is a positive Go duration such as 30m or 48h (there is no day unit), a count is a positive whole number")
-
 // ErrMode refuses a mode the binary does not know.
 var ErrMode = errors.New("MAINTENANT_MODE is not a known mode: use embedded, server or agent")
 
-// ValidateSettings refuses a setting that would silently be replaced by its default, and an unknown mode.
-func (c Config) ValidateSettings() error {
-	var errs []error
-	for _, s := range c.InvalidSettings {
-		errs = append(errs, fmt.Errorf("%w (%s=%q)", ErrInvalidSetting, s.Name, s.Raw))
-	}
+// ValidateMode refuses an unknown mode.
+func (c Config) ValidateMode() error {
 	switch c.Mode {
 	case "embedded", "server", "agent":
-	default:
-		errs = append(errs, fmt.Errorf("%w (got %q)", ErrMode, c.Mode))
+		return nil
 	}
-	return errors.Join(errs...)
+	return fmt.Errorf("%w (got %q)", ErrMode, c.Mode)
 }
 
 // ValidateHTTP rejects a configuration that must not be served over HTTP.
@@ -539,7 +532,7 @@ func envIntOr(key string, fallback int, invalid *[]InvalidSetting) int {
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil || n <= 0 {
-		*invalid = append(*invalid, InvalidSetting{Name: key, Raw: v})
+		*invalid = append(*invalid, InvalidSetting{Name: key, Raw: v, Default: strconv.Itoa(fallback)})
 		return fallback
 	}
 	return n
@@ -567,7 +560,7 @@ func envDurationOr(key string, fallback time.Duration, invalid *[]InvalidSetting
 	}
 	d, err := time.ParseDuration(v)
 	if err != nil || d <= 0 {
-		*invalid = append(*invalid, InvalidSetting{Name: key, Raw: v})
+		*invalid = append(*invalid, InvalidSetting{Name: key, Raw: v, Default: fallback.String()})
 		return fallback
 	}
 	return d
