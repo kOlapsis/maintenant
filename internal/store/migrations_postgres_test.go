@@ -150,6 +150,7 @@ func TestMigratePostgres_ConcurrentCatchUp(t *testing.T) {
 		"ALTER TABLE image_updates DROP COLUMN major_tag",                                                             // 48
 		"ALTER TABLE escalation_deliveries DROP COLUMN attempts, DROP COLUMN next_attempt_at, DROP COLUMN created_at", // 50
 		"ALTER TABLE version_pins DROP COLUMN container_name",                                                         // 51
+		"DROP TABLE mcp_oauth_client",                                                                                 // 52
 	} {
 		_, err = db.ReadDB().Exec(undo)
 		require.NoError(t, err, undo)

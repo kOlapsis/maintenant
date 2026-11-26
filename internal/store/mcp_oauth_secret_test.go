@@ -134,13 +134,13 @@ func TestMCPOAuth_FirstStartAfterTheUpgradeKeepsTheTokens(t *testing.T) {
 	assert.ErrorIs(t, err, auth.ErrInvalidToken, "the secret it was first seen under is the one recorded")
 }
 
-func TestMigration51_DownAndUpRunWithARecordedFingerprint(t *testing.T) {
+func TestMigration52_DownAndUpRunWithARecordedFingerprint(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
 	startOAuth(t, db, "secret-A").code()
 
 	for _, direction := range []string{"down", "up"} {
-		matches, err := fs.Glob(migrationFS, "migrations/"+db.dialect.String()+"/51_*."+direction+".sql")
+		matches, err := fs.Glob(migrationFS, "migrations/"+db.dialect.String()+"/52_*."+direction+".sql")
 		require.NoError(t, err)
 		require.Len(t, matches, 1)
 		sqlText, err := fs.ReadFile(migrationFS, matches[0])
