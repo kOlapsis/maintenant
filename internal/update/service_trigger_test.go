@@ -11,25 +11,65 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type blockingLister struct{ entered chan struct{} }
+
+func (l blockingLister) ListContainerInfos(ctx context.Context) ([]ContainerInfo, error) {
+	l.entered <- struct{}{}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
 func TestTriggerScan_RunsOnlyOnTheContextOfStart(t *testing.T) {
-	store := &stubStore{}
-	svc := NewService(Deps{Store: store, Scanner: newTestScanner(&stubRegistry{}, store), Containers: stubLister{}, Logger: testLogger()})
+	t.Run("concurrent with Start", func(t *testing.T) {
+		store := &stubStore{}
+		svc := NewService(Deps{Store: store, Scanner: newTestScanner(&stubRegistry{}, store), Containers: stubLister{}, Logger: testLogger()})
+		ctx, cancel := context.WithCancel(context.Background())
+		stopped := make(chan struct{})
+		go func() {
+			svc.Start(ctx)
+			close(stopped)
+		}()
+		_, _ = svc.TriggerScan(context.Background())
+		cancel()
+		<-stopped
+		svc.Wait()
+	})
 
-	_, err := svc.TriggerScan(context.Background())
-	require.Error(t, err, "before Start no context could ever cancel the scan")
-
-	ctx, cancel := context.WithCancel(context.Background())
-	stopped := make(chan struct{})
-	go func() {
-		svc.Start(ctx)
-		close(stopped)
-	}()
-	require.Eventually(t, func() bool {
+	t.Run("cancelled with the service", func(t *testing.T) {
+		store := &stubStore{}
+		lister := blockingLister{entered: make(chan struct{}, 1)}
+		svc := NewService(Deps{Store: store, Scanner: newTestScanner(&stubRegistry{}, store), Containers: lister, Logger: testLogger()})
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		stopped := make(chan struct{})
+		go func() {
+			svc.Start(ctx)
+			close(stopped)
+		}()
+		require.Eventually(t, func() bool {
+			svc.mu.RLock()
+			defer svc.mu.RUnlock()
+			return svc.appCtx != nil
+		}, 5*time.Second, time.Millisecond)
 		_, err := svc.TriggerScan(context.Background())
-		return err == nil
-	}, 5*time.Second, time.Millisecond)
+		require.NoError(t, err)
+		select {
+		case <-lister.entered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the triggered scan never started")
+		}
 
-	cancel()
-	<-stopped
-	svc.Wait()
+		cancel()
+		<-stopped
+		waited := make(chan struct{})
+		go func() {
+			svc.Wait()
+			close(waited)
+		}()
+		select {
+		case <-waited:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the triggered scan outlived the context of Start")
+		}
+	})
 }

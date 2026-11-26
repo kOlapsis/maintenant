@@ -150,8 +150,8 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 // TriggerScan starts an immediate scan. Returns the scan ID.
-// The scan runs with the context of Start (not the HTTP request context),
-// so it survives after the triggering request completes, and is refused before Start.
+// The scan runs with the application-scoped context (not the HTTP request context),
+// so it survives after the triggering request completes.
 func (s *Service) TriggerScan(_ context.Context) (string, error) {
 	s.mu.RLock()
 	ctx, scanning := s.appCtx, s.scanning
@@ -160,7 +160,7 @@ func (s *Service) TriggerScan(_ context.Context) (string, error) {
 		return "", fmt.Errorf("scan already in progress")
 	}
 	if ctx == nil {
-		return "", fmt.Errorf("update service not started")
+		ctx = context.Background()
 	}
 	s.triggered.Go(func() { s.runScan(ctx) })
 	return "", nil
