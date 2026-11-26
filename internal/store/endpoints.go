@@ -261,15 +261,6 @@ func (s *EndpointStore) deleteCheckResultsBefore(ctx context.Context, before tim
 }
 
 func (s *EndpointStore) DeleteInactiveEndpointsBefore(ctx context.Context, before time.Time) (int64, error) {
-	// First, delete check results for inactive endpoints
-	_, err := s.writer.Exec(ctx,
-		`DELETE FROM check_results WHERE endpoint_id IN (
-			SELECT id FROM endpoints WHERE active=0 AND last_seen_at<?
-		)`, before.Unix())
-	if err != nil {
-		return 0, fmt.Errorf("delete check results for inactive endpoints: %w", err)
-	}
-
 	res, err := s.writer.Exec(ctx,
 		`DELETE FROM endpoints WHERE active=0 AND last_seen_at<?`, before.Unix())
 	if err != nil {
@@ -327,10 +318,6 @@ func (s *EndpointStore) UpdateStandaloneEndpoint(ctx context.Context, id string,
 // whatever its source. The caller decides what may be deleted; see
 // endpoint.Service.Delete.
 func (s *EndpointStore) DeleteEndpoint(ctx context.Context, id string) error {
-	if _, err := s.writer.Exec(ctx, `DELETE FROM check_results WHERE endpoint_id=?`, id); err != nil {
-		return fmt.Errorf("delete check results for endpoint %s: %w", id, err)
-	}
-
 	res, err := s.writer.Exec(ctx, `DELETE FROM endpoints WHERE id=?`, id)
 	if err != nil {
 		return fmt.Errorf("delete endpoint %s: %w", id, err)
@@ -343,12 +330,6 @@ func (s *EndpointStore) DeleteEndpoint(ctx context.Context, id string) error {
 
 // DeleteStandaloneEndpoint permanently removes a standalone endpoint and its check results.
 func (s *EndpointStore) DeleteStandaloneEndpoint(ctx context.Context, id string) error {
-	// Delete check results first
-	_, err := s.writer.Exec(ctx, `DELETE FROM check_results WHERE endpoint_id=?`, id)
-	if err != nil {
-		return fmt.Errorf("delete check results for standalone endpoint %s: %w", id, err)
-	}
-
 	res, err := s.writer.Exec(ctx,
 		`DELETE FROM endpoints WHERE id=? AND source='standalone'`, id)
 	if err != nil {
