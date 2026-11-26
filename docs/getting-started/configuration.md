@@ -284,12 +284,13 @@ services:
 
 ### Verification and offline behavior
 
-The key is verified against the license server at startup and then every 24 hours. The signed answer is cached in `.maintenant-license`, in the directory of `MAINTENANT_DB`. When the server cannot be reached, the edition stays active from that cache:
+The key is verified against the license server at startup and then every 24 hours. A check that gets no signed answer is retried after about a minute, then at doubling intervals up to one hour, until the server answers. The signed answer is cached in `.maintenant-license`, in the directory of `MAINTENANT_DB`. When the server cannot be reached, the edition stays active from that cache:
 
 - After 7 days without a successful check, the status message says the server is unreachable and the edition stays active.
 - After 30 days, the status message counts down the days left before the fallback.
 - After 60 days, the instance falls back to Community, and this applies to a Personal license too: a perpetual license has no end date, but it must reach the license server at least once every 60 days. The edition returns at the next successful check.
-- With no cache at all (first start offline), the status is `unreachable` and the instance runs as Community.
+- Once the cached license has passed its end date, the status is `expired` and the instance runs as Community until the server confirms a renewal.
+- With no cache at all (first start offline), the status is `unreachable` and the instance runs as Community until the first successful check.
 
 A key the server refuses is dropped at once: `expired`, `revoked` or `unknown` (key not recognized) leaves the instance on Community.
 

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/retry"
 	"github.com/kolapsis/maintenant/internal/trust"
 )
 
@@ -26,6 +27,11 @@ const (
 	graceDegradationWarn     = 7 * 24 * time.Hour  // 7 days
 	graceDegradationError    = 30 * 24 * time.Hour // 30 days
 	graceDegradationDisabled = 60 * 24 * time.Hour // 60 days
+)
+
+var (
+	checkRetryMin = time.Minute
+	checkRetryMax = time.Hour
 )
 
 // State is the licence status the manager maintains.
@@ -104,10 +110,9 @@ func NewManager(licenseKey, dataDir, version, buildDate string, logger *slog.Log
 // Non-blocking: errors during the initial check are logged, not fatal. The
 // disk cache has already been loaded by NewManager.
 func (m *Manager) Start(ctx context.Context) {
-	// Run initial check (non-blocking on failure)
-	m.check(ctx)
+	ok := m.check(ctx)
 
-	m.running.Go(func() { m.ticker(ctx) })
+	m.running.Go(func() { m.ticker(ctx, ok) })
 }
 
 // loadCache populates state from the disk cache, if a valid one exists.
@@ -116,16 +121,13 @@ func (m *Manager) loadCache(ctx context.Context) {
 	if err != nil || cached == nil {
 		return
 	}
-	if !cached.ExpiresAt.IsZero() && time.Now().After(cached.ExpiresAt) {
-		m.logger.Warn("cached license has expired, ignoring cache",
+	if fallback := offlineFallback(cached.VerifiedAt, cached.ExpiresAt, time.Now()); fallback != nil {
+		m.logger.Warn("cached license no longer grants an edition",
+			"status", fallback.Status,
+			"verified_at", cached.VerifiedAt,
 			"expires_at", cached.ExpiresAt,
 		)
-		deleteCache(m.dataDir)
-		m.setStateAndNotify(ctx, &State{
-			Status:    "expired",
-			ExpiresAt: cached.ExpiresAt,
-			Message:   "Your license has expired. This instance has fallen back to the Community edition.",
-		})
+		m.setStateAndNotify(ctx, fallback)
 		return
 	}
 	m.applyPayload(ctx, cached)
@@ -201,33 +203,42 @@ func (m *Manager) setStateAndNotify(ctx context.Context, newState *State) {
 	m.baselineSet = true
 }
 
-func (m *Manager) ticker(ctx context.Context) {
-	t := time.NewTicker(checkInterval)
+func (m *Manager) ticker(ctx context.Context, ok bool) {
+	backoff := retry.New(checkRetryMin, checkRetryMax, 0.25)
+	t := time.NewTimer(checkInterval)
 	defer t.Stop()
 	for {
+		wait := checkInterval
+		if ok {
+			backoff.Reset()
+		} else {
+			wait = backoff.Next()
+		}
+		t.Reset(wait)
 		select {
 		case <-ctx.Done():
 			return
 		case <-m.stop:
 			return
 		case <-t.C:
-			m.check(ctx)
+			ok = m.check(ctx)
 		}
 	}
 }
 
-func (m *Manager) check(ctx context.Context) {
+// check asks the license server for the current verdict and reports whether a signed one arrived.
+func (m *Manager) check(ctx context.Context) bool {
 	serverURL := getLicenseServerURL()
 	resp, statusCode, err := fetchLicense(ctx, m.client, serverURL, m.licenseKey, m.version)
 
 	if err != nil {
 		if (statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden) && m.applyRefusal(ctx, statusCode, resp, err) {
-			return
+			return true
 		}
 
 		// Network error or other non-200: graceful degradation
 		m.handleNetworkError(ctx, err)
-		return
+		return false
 	}
 
 	// Verify signature
@@ -236,7 +247,7 @@ func (m *Manager) check(ctx context.Context) {
 		// Invalid signature = treat as network error (keep current state)
 		m.logger.Error("license signature verification failed", "error", err)
 		m.handleNetworkError(ctx, err)
-		return
+		return false
 	}
 
 	switch payload.Status {
@@ -285,6 +296,7 @@ func (m *Manager) check(ctx context.Context) {
 			Message: "Unexpected license status: " + payload.Status,
 		})
 	}
+	return true
 }
 
 // applyRefusal acts on a 401 or 403 only when its body is signed by the license server and does not grant the license, and reports whether it did.
@@ -419,36 +431,21 @@ func (m *Manager) handleNetworkError(ctx context.Context, err error) {
 		return
 	}
 
-	// If the cached license has already passed its expiry date, report it as
-	// expired — not as unreachable. Graceful degradation must not hide expiry.
-	if !current.ExpiresAt.IsZero() && time.Now().After(current.ExpiresAt) {
-		m.logger.Warn("cached license has expired, disabling Pro",
+	// The cache stays: only the server can tell a renewal from an end.
+	if fallback := offlineFallback(current.VerifiedAt, current.ExpiresAt, time.Now()); fallback != nil {
+		m.logger.Error("license server unreachable and the cached license no longer grants an edition",
+			"error", err,
+			"status", fallback.Status,
+			"verified_at", current.VerifiedAt,
 			"expires_at", current.ExpiresAt,
 		)
-		deleteCache(m.dataDir)
-		m.setStateAndNotify(ctx, &State{
-			Status:    "expired",
-			ExpiresAt: current.ExpiresAt,
-			Message:   "Your license has expired. This instance has fallen back to the Community edition.",
-		})
+		m.setStateAndNotify(ctx, fallback)
 		return
 	}
 
 	age := time.Since(current.VerifiedAt)
 
 	switch {
-	case age > graceDegradationDisabled:
-		m.logger.Error("license server unreachable for over 60 days, disabling Pro",
-			"error", err,
-			"verified_at", current.VerifiedAt,
-		)
-		deleteCache(m.dataDir)
-		m.setStateAndNotify(ctx, &State{
-			Status:     "unreachable",
-			VerifiedAt: current.VerifiedAt,
-			Message:    "License server unreachable for over 60 days. This instance has fallen back to the Community edition.",
-		})
-
 	case age > graceDegradationError:
 		daysLeft := int((graceDegradationDisabled - age).Hours() / 24)
 		m.logger.Error("license server unreachable for over 30 days",
@@ -497,6 +494,26 @@ func (m *Manager) replayUpdateWindow(state *State) {
 		return
 	}
 	m.enforceUpdateWindow(state, cached, time.Now())
+}
+
+// offlineFallback returns the Community state a cached license falls to at now, or nil while it still grants its edition.
+func offlineFallback(verifiedAt, expiresAt, now time.Time) *State {
+	switch {
+	case !expiresAt.IsZero() && now.After(expiresAt):
+		return &State{
+			Status:     "expired",
+			VerifiedAt: verifiedAt,
+			ExpiresAt:  expiresAt,
+			Message:    "Your license has expired. This instance has fallen back to the Community edition.",
+		}
+	case now.Sub(verifiedAt) > graceDegradationDisabled:
+		return &State{
+			Status:     "unreachable",
+			VerifiedAt: verifiedAt,
+			Message:    "License server unreachable for over 60 days. This instance has fallen back to the Community edition.",
+		}
+	}
+	return nil
 }
 
 func formatDays(n int) string {
