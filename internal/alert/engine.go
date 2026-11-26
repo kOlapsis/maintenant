@@ -244,15 +244,11 @@ func (e *Engine) reloadActiveAlerts(ctx context.Context) error {
 	return nil
 }
 
-// reloadSilencedAlerts holds back again the recent silenced alerts that a silence or a maintenance window still covers.
+// reloadSilencedAlerts holds back again the recent silenced alerts, leaving the recheck to promote those no longer covered.
 func (e *Engine) reloadSilencedAlerts(ctx context.Context) error {
 	var held []*Alert
-	var rules []*SilenceRule
 	if err := withRetry(ctx, func() (err error) {
-		if held, err = e.alertStore.ListSilencedAlertsSince(ctx, time.Now().Add(-silencedReloadMaxAge)); err != nil {
-			return err
-		}
-		rules, err = e.silenceStore.GetActiveSilenceRules(ctx)
+		held, err = e.alertStore.ListSilencedAlertsSince(ctx, time.Now().Add(-silencedReloadMaxAge))
 		return err
 	}); err != nil {
 		return err
@@ -271,9 +267,6 @@ func (e *Engine) reloadSilencedAlerts(ctx context.Context) error {
 		_, active := e.activeAlerts[key]
 		e.mu.RUnlock()
 		if active {
-			continue
-		}
-		if covered, err := e.covered(ctx, rules, eventOf(a)); err == nil && !covered {
 			continue
 		}
 		e.silenced[key] = a
