@@ -493,20 +493,20 @@ func TestRuntimeWatch_ReportsUnreachableAfterThreeFailuresAndTheReturn(t *testin
 	t.Cleanup(func() { _ = spool.Close() })
 	w := &runtimeWatch{agentID: "agent-1", label: RuntimeKubernetes, spool: spool, logger: testLogger()}
 
-	w.observe(false)
-	w.observe(false)
-	w.observe(true)
-	w.observe(false)
-	w.observe(false)
+	w.observe("inventory", false)
+	w.observe("inventory", false)
+	w.observe("inventory", true)
+	w.observe("inventory", false)
+	w.observe("inventory", false)
 	assert.Empty(t, runtimeReports(sink), "two failures in a row are not a lost runtime")
 
-	w.observe(false)
-	w.observe(false)
+	w.observe("inventory", false)
+	w.observe("inventory", false)
 	kube := agentpb.Runtime_RUNTIME_KUBERNETES
 	assert.Equal(t, []runtimeReport{{kube, true}}, runtimeReports(sink), "the third failure in a row is reported once")
 
-	w.observe(true)
-	w.observe(true)
+	w.observe("inventory", true)
+	w.observe("inventory", true)
 	assert.Equal(t, []runtimeReport{{kube, true}, {kube, false}}, runtimeReports(sink))
 }
 
@@ -574,4 +574,28 @@ func TestRuntimeLink_IsLostAfterThreeFailedAttempts(t *testing.T) {
 
 	_, err = link.attach(context.Background())
 	require.Error(t, err, "further failures change nothing")
+}
+
+func TestRuntimeWatch_StaysUnreachableWhileOneOfItsSourcesStillFails(t *testing.T) {
+	sink := &captureSink{}
+	spool := NewSpool(t.TempDir(), SpoolConfig{}, testLogger())
+	spool.Attach(sink)
+	t.Cleanup(func() { _ = spool.Close() })
+	w := &runtimeWatch{agentID: "agent-1", label: RuntimeSwarm, spool: spool, logger: testLogger()}
+	swarmKind := agentpb.Runtime_RUNTIME_SWARM
+
+	for range 3 {
+		w.observe("inventory", true)
+		w.observe("topology", false)
+	}
+	assert.Equal(t, []runtimeReport{{swarmKind, true}}, runtimeReports(sink), "one source failing three times in a row is enough")
+
+	for range 3 {
+		w.observe("inventory", false)
+	}
+	w.observe("topology", true)
+	assert.Equal(t, []runtimeReport{{swarmKind, true}}, runtimeReports(sink), "the other source still fails")
+
+	w.observe("inventory", true)
+	assert.Equal(t, []runtimeReport{{swarmKind, true}, {swarmKind, false}}, runtimeReports(sink))
 }

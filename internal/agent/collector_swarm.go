@@ -15,7 +15,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/swarm"
 )
 
-const swarmTopologyInterval = 30 * time.Second
+var swarmTopologyInterval = 30 * time.Second
 
 // swarmRecheckInterval is how often a Docker agent re-reads its Swarm membership. A var so tests can shorten it.
 var swarmRecheckInterval = time.Minute
@@ -50,9 +50,10 @@ func watchSwarmMembership(ctx context.Context, label string, inSwarm func(contex
 // snapshot against the rows it holds for this agent, hard-deleting whatever is
 // gone. Sends one snapshot immediately so the server has state before the first
 // tick. Blocks until ctx is cancelled or a push fails.
-func streamSwarmTopology(ctx context.Context, id *Identity, disc *swarm.ServiceDiscovery, client swarm.ServiceClient, spool *Spool, logger *slog.Logger) error {
+func streamSwarmTopology(ctx context.Context, id *Identity, disc *swarm.ServiceDiscovery, client swarm.ServiceClient, watch *runtimeWatch, spool *Spool, logger *slog.Logger) error {
 	send := func() error {
 		snap, err := swarm.SnapshotFromClient(ctx, disc, client)
+		watch.observe("topology", err == nil)
 		if err != nil {
 			logger.Warn("collector: swarm topology snapshot failed", "err", err)
 			return nil

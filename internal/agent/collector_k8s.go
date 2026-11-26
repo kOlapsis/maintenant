@@ -76,7 +76,7 @@ func streamKubernetesTopology(ctx context.Context, id *Identity, src kubernetes.
 	watch := &runtimeWatch{agentID: id.AgentID, label: RuntimeKubernetes, spool: spool, logger: logger}
 	send := func() error {
 		snap, err := kubernetes.SnapshotFromRuntime(ctx, src)
-		watch.observe(err == nil)
+		watch.observe("topology", err == nil)
 		if err != nil {
 			logger.Warn("collector: kubernetes topology snapshot failed", "err", err)
 			return nil

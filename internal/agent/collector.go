@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -109,7 +110,7 @@ func collectRuntime(ctx context.Context, id *Identity, link *runtimeLink, label,
 
 func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runtime, label string, inSwarm func(context.Context) (bool, error), spool *Spool, logger *slog.Logger) error {
 	watch := &runtimeWatch{agentID: id.AgentID, label: label, spool: spool, logger: logger}
-	watch.observe(syncInventory(ctx, id, rt, spool, logger) == nil)
+	watch.observe("inventory", syncInventory(ctx, id, rt, spool, logger) == nil)
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error { return watchRuntimeEvents(gCtx, id, rt, spool, logger) })
 	g.Go(func() error { return streamInventory(gCtx, id, rt, watch, spool, logger) })
@@ -125,7 +126,7 @@ func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runti
 		if dr, ok := rt.(*docker.Runtime); ok {
 			disc := swarm.NewServiceDiscovery(dr.Client(), logger)
 			client := dr.Client()
-			g.Go(func() error { return streamSwarmTopology(gCtx, id, disc, client, spool, logger) })
+			g.Go(func() error { return streamSwarmTopology(gCtx, id, disc, client, watch, spool, logger) })
 		} else {
 			logger.Warn("collector: swarm runtime is not a docker runtime; topology snapshots disabled")
 		}
@@ -240,23 +241,39 @@ func runtimeEvent(agentID, label string) *agentpb.AgentEvent {
 
 const unreachableAfter = 3
 
-// runtimeWatch tells the server when the runtime stops answering, after unreachableAfter failures in a row, and when it answers again.
+// runtimeWatch tells the server when the runtime stops answering one of its sources unreachableAfter times in a row, and when every source answers again.
 type runtimeWatch struct {
-	agentID  string
-	label    string
-	spool    *Spool
-	logger   *slog.Logger
-	failures int
+	agentID string
+	label   string
+	spool   *Spool
+	logger  *slog.Logger
+
+	mu       sync.Mutex
+	failures map[string]int
 }
 
-func (w *runtimeWatch) observe(ok bool) {
-	wasLost := w.failures >= unreachableAfter
-	if ok {
-		w.failures = 0
-	} else {
-		w.failures++
+func (w *runtimeWatch) lost() bool {
+	for _, n := range w.failures {
+		if n >= unreachableAfter {
+			return true
+		}
 	}
-	if lost := w.failures >= unreachableAfter; lost != wasLost {
+	return false
+}
+
+func (w *runtimeWatch) observe(source string, ok bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.failures == nil {
+		w.failures = make(map[string]int)
+	}
+	wasLost := w.lost()
+	if ok {
+		w.failures[source] = 0
+	} else {
+		w.failures[source]++
+	}
+	if lost := w.lost(); lost != wasLost {
 		w.report(lost)
 	}
 }
@@ -280,7 +297,7 @@ func streamInventory(ctx context.Context, id *Identity, rt runtime.Runtime, watc
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			watch.observe(syncInventory(ctx, id, rt, spool, logger) == nil)
+			watch.observe("inventory", syncInventory(ctx, id, rt, spool, logger) == nil)
 		}
 	}
 }
