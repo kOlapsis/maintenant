@@ -2235,7 +2235,7 @@ type CertificateInfo struct {
 	NotAfter          *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=not_after,json=notAfter,proto3" json:"not_after,omitempty"`
 	FingerprintSha256 []byte                 `protobuf:"bytes,7,opt,name=fingerprint_sha256,json=fingerprintSha256,proto3" json:"fingerprint_sha256,omitempty"`
 	SanDns            []string               `protobuf:"bytes,8,rep,name=san_dns,json=sanDns,proto3" json:"san_dns,omitempty"`
-	ChainValid        *bool                  `protobuf:"varint,9,opt,name=chain_valid,json=chainValid,proto3,oneof" json:"chain_valid,omitempty"` // absent from an agent that does not report its validation
+	ChainValid        *bool                  `protobuf:"varint,9,opt,name=chain_valid,json=chainValid,proto3,oneof" json:"chain_valid,omitempty"`
 	ChainError        string                 `protobuf:"bytes,10,opt,name=chain_error,json=chainError,proto3" json:"chain_error,omitempty"`
 	HostnameMatch     *bool                  `protobuf:"varint,11,opt,name=hostname_match,json=hostnameMatch,proto3,oneof" json:"hostname_match,omitempty"`
 	unknownFields     protoimpl.UnknownFields
