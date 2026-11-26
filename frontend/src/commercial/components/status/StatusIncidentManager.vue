@@ -5,7 +5,7 @@
 -->
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useStatusAdminStore } from '@/stores/statusAdmin'
 import { useConfirm } from '@/composables/useConfirm'
 import {
@@ -103,9 +103,9 @@ function startPostUpdate(inc: Incident) {
   updateForm.value = { status: inc.status, message: '' }
 }
 
-function applyFilter() {
-  store.fetchIncidents({ status: statusFilter.value || undefined })
-}
+const visibleIncidents = computed(() =>
+  (store.incidents ?? []).filter((inc) => !statusFilter.value || inc.status === statusFilter.value),
+)
 
 const severityColors: Record<string, { bg: string; color: string }> = {
   minor: { bg: 'var(--mnt-status-warn-bg)', color: 'var(--mnt-status-warn)' },
@@ -133,7 +133,6 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
           v-model="statusFilter"
           size="sm"
           :options="[{ value: '', label: 'All statuses' }, ...incidentStatusOptions.map((s) => ({ value: s, label: s }))]"
-          @change="applyFilter"
         />
         <UiButton variant="primary" @click="showCreateForm = true">Create Incident</UiButton>
       </div>
@@ -181,13 +180,13 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
     </div>
 
     <!-- Incident list -->
-    <div v-if="(store.incidents?.length ?? 0) === 0 && !store.incidentsLoading" class="rounded-lg border p-6 text-center" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
+    <div v-if="visibleIncidents.length === 0 && !store.incidentsLoading" class="rounded-lg border p-6 text-center" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
       <p class="text-sm" style="color: var(--mnt-text-muted)">No incidents</p>
     </div>
 
     <div class="space-y-3">
       <div
-        v-for="inc in store.incidents"
+        v-for="inc in visibleIncidents"
         :key="inc.id"
         class="rounded-lg border p-4"
         style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"

@@ -17,8 +17,9 @@ vi.mock('@/stores/statusAdmin', () => ({
     components: [],
     incidents: [
       { id: 'inc-1', title: 'DB down', severity: 'major', status: 'investigating', components: [], updates: [], created_at: '2026-11-01T10:00:00Z' },
+      { id: 'inc-2', title: 'Cache slow', severity: 'minor', status: 'resolved', components: [], updates: [], created_at: '2026-11-01T09:00:00Z' },
     ],
-    incidentsTotal: 1,
+    incidentsTotal: 2,
     incidentsLoading: false,
     fetchIncidents,
   }),
@@ -99,5 +100,17 @@ describe('StatusIncidentManager failures', () => {
     void del.trigger('click')
     await flushPromises()
     expect(deleteIncident).toHaveBeenCalledOnce()
+  })
+
+  it('filters the incidents it shows without reloading the list the dashboard shares', async () => {
+    const wrapper = mount(StatusIncidentManager)
+    expect(wrapper.text()).toContain('DB down')
+    expect(wrapper.text()).toContain('Cache slow')
+
+    await wrapper.find('select').setValue('resolved')
+
+    expect(wrapper.text()).not.toContain('DB down')
+    expect(wrapper.text()).toContain('Cache slow')
+    expect(fetchIncidents).not.toHaveBeenCalled()
   })
 })
