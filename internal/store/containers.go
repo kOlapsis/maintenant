@@ -181,18 +181,61 @@ func (s *ContainerStore) DeleteContainerByID(ctx context.Context, id string) err
 			return fmt.Errorf("get container external_id: %w", err)
 		}
 
-		for _, ref := range containerSoftRefs {
-			if _, err := tx.ExecContext(ctx,
-				`DELETE FROM `+ref.table+` WHERE agent_id = ? AND `+ref.column+` = ?`, agentID, externalID); err != nil {
-				return fmt.Errorf("delete container %s: %w", ref.table, err)
+		return deleteContainerRows(ctx, tx, id, agentID, externalID)
+	})
+}
+
+func deleteContainerRows(ctx context.Context, tx *Tx, id, agentID, externalID string) error {
+	for _, ref := range containerSoftRefs {
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM `+ref.table+` WHERE agent_id = ? AND `+ref.column+` = ?`, agentID, externalID); err != nil {
+			return fmt.Errorf("delete container %s: %w", ref.table, err)
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM containers WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete container: %w", err)
+	}
+	return nil
+}
+
+// DeleteOldestArchivedContainers removes up to limit archived containers of agentID, the longest archived first, with the rows that depend on them.
+func (s *ContainerStore) DeleteOldestArchivedContainers(ctx context.Context, agentID string, limit int) (int64, error) {
+	var deleted int64
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		rows, err := tx.QueryContext(ctx,
+			`SELECT id, external_id FROM containers WHERE agent_id = ? AND archived = 1 ORDER BY archived_at ASC, id ASC LIMIT ?`,
+			agentID, limit)
+		if err != nil {
+			return fmt.Errorf("select oldest archived containers: %w", err)
+		}
+		type target struct{ id, externalID string }
+		var targets []target
+		for rows.Next() {
+			var t target
+			if err := rows.Scan(&t.id, &t.externalID); err != nil {
+				_ = rows.Close()
+				return fmt.Errorf("scan oldest archived container: %w", err)
 			}
+			targets = append(targets, t)
+		}
+		if err := rows.Close(); err != nil {
+			return fmt.Errorf("select oldest archived containers: %w", err)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("select oldest archived containers: %w", err)
 		}
 
-		if _, err := tx.ExecContext(ctx, `DELETE FROM containers WHERE id = ?`, id); err != nil {
-			return fmt.Errorf("delete container: %w", err)
+		deleted = 0
+		for _, t := range targets {
+			if err := deleteContainerRows(ctx, tx, t.id, agentID, t.externalID); err != nil {
+				return err
+			}
+			deleted++
 		}
 		return nil
 	})
+	return deleted, err
 }
 
 var containerSoftRefs = []struct{ table, column string }{

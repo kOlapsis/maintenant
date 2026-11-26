@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/uid"
@@ -63,6 +64,8 @@ type Service struct {
 	targets HTTPSTargets
 	mu      sync.Mutex
 	limitMu sync.Mutex
+
+	agentRows container.AgentRowBudget
 
 	// manualChecks holds the monitor ids with an on-demand check in flight.
 	manualChecks sync.Map

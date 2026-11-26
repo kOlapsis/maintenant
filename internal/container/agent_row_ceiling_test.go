@@ -150,3 +150,47 @@ func TestHandleAgentEvent_DropsWhatItKeptInMemoryWhenTheContainerGoes(t *testing
 	require.NoError(t, b.report(agentA, never))
 	assert.False(t, container.UnknownLabelsWarned("gone-3"), "a removal of a container the server never held leaves nothing behind")
 }
+
+func TestHandleAgentEvent_MakesRoomAmongArchivedContainersAtTheCeiling(t *testing.T) {
+	const agentA = "00000000-0000-0000-0000-0000000000a5"
+	container.SetMaxAgentContainers(t, 3)
+	b := newCeilingBench(t, agentA)
+
+	for _, id := range []string{"room-1", "room-2", "room-3"} {
+		require.NoError(t, b.report(agentA, running(id)))
+	}
+	require.NoError(t, b.svc.HandleAgentInventory(b.ctx, agentA, &agentpb.ContainerInventory{
+		Complete: true, Containers: []*agentpb.ContainerEvent{running("room-3")},
+	}, agentevent.Meta{ObservedAt: time.Now()}))
+
+	require.NoError(t, b.report(agentA, running("room-4")), "a host at its ceiling keeps its new containers")
+	require.NoError(t, b.report(agentA, running("room-5")))
+	live, archived := b.rows(agentA)
+	assert.Equal(t, 3, live)
+	assert.Zero(t, archived, "the oldest archived containers made room")
+	assert.Zero(t, strings.Count(b.logs.String(), "container ceiling"), "making room is not a refusal")
+
+	require.ErrorIs(t, b.report(agentA, running("room-6")), agentevent.ErrInvalid, "live containers alone at the ceiling are refused")
+	live, archived = b.rows(agentA)
+	assert.Equal(t, 3, live+archived)
+}
+
+func TestHandleAgentInventory_AcceptsNewContainersAtTheCeilingWhenArchivedOnesCanGo(t *testing.T) {
+	const agentA = "00000000-0000-0000-0000-0000000000a6"
+	container.SetMaxAgentContainers(t, 3)
+	b := newCeilingBench(t, agentA)
+	meta := agentevent.Meta{ObservedAt: time.Now()}
+
+	for _, id := range []string{"sync-1", "sync-2", "sync-3"} {
+		require.NoError(t, b.report(agentA, running(id)))
+	}
+	require.NoError(t, b.svc.HandleAgentInventory(b.ctx, agentA, &agentpb.ContainerInventory{
+		Complete: true, Containers: []*agentpb.ContainerEvent{running("sync-3")},
+	}, meta))
+
+	require.NoError(t, b.svc.HandleAgentInventory(b.ctx, agentA, &agentpb.ContainerInventory{
+		Complete: true, Containers: []*agentpb.ContainerEvent{running("sync-3"), running("sync-4")},
+	}, meta), "an inventory that succeeds is followed by the label sync of its containers")
+	live, _ := b.rows(agentA)
+	assert.Equal(t, 2, live)
+}

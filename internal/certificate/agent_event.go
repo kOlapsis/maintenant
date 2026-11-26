@@ -59,13 +59,13 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 }
 
 func (s *Service) reserveAgentLabelMonitor(ctx context.Context, agentID string) error {
-	return container.ReserveAgentRow(ctx, s, agentID, "certificate monitor", maxAgentLabelMonitors, s.logger, func(ctx context.Context) (int, error) {
+	return s.agentRows.Reserve(ctx, agentID, "certificate monitor", maxAgentLabelMonitors, s.logger, func(ctx context.Context) (int, error) {
 		held, err := s.store.ListMonitors(ctx, ListCertificatesOpts{Source: string(SourceLabel), AgentFilter: &agentID, IncludeInactive: true})
 		if err != nil {
 			return 0, fmt.Errorf("count agent cert monitors: %w", err)
 		}
 		return len(held), nil
-	})
+	}, nil)
 }
 
 // agentCertToRaw adapts a pushed CertificateInfo into a scan result, taking chain and hostname as valid when the agent does not report them.

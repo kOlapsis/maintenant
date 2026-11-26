@@ -45,29 +45,24 @@ const agentRowRecount = time.Minute
 
 var errAgentRowCeiling = fmt.Errorf("%w: row ceiling reached", agentevent.ErrInvalid)
 
-type agentRowKey struct {
-	owner   any
-	agentID string
-}
-
 type agentRowCount struct {
 	rows      int
 	countedAt time.Time
 	refused   bool
 }
 
-var (
-	agentRowsMu sync.Mutex
-	agentRows   = map[agentRowKey]*agentRowCount{}
-)
+// AgentRowBudget bounds the rows of one kind a service keeps for each agent; its zero value is ready to use.
+type AgentRowBudget struct {
+	mu     sync.Mutex
+	agents map[string]*agentRowCount
+}
 
-// ReserveAgentRow accounts for one more row owner is about to store for agentID, or refuses it with agentevent.ErrInvalid once the agent holds limit of them; count reads the stored number, at most once a minute per agent.
-func ReserveAgentRow(ctx context.Context, owner any, agentID, kind string, limit int, logger *slog.Logger, count func(context.Context) (int, error)) error {
-	agentRowsMu.Lock()
-	defer agentRowsMu.Unlock()
+// Reserve accounts for one more row about to be stored for agentID, or refuses it with agentevent.ErrInvalid once the agent holds limit of them; count reads the stored number, at most once a minute per agent, and makeRoom, when set, deletes rows the agent can lose and returns how many.
+func (b *AgentRowBudget) Reserve(ctx context.Context, agentID, kind string, limit int, logger *slog.Logger, count, makeRoom func(context.Context) (int, error)) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
-	key := agentRowKey{owner, agentID}
-	st := agentRows[key]
+	st := b.agents[agentID]
 	if st == nil || time.Since(st.countedAt) >= agentRowRecount {
 		rows, err := count(ctx)
 		if err != nil {
@@ -75,9 +70,20 @@ func ReserveAgentRow(ctx context.Context, owner any, agentID, kind string, limit
 		}
 		if st == nil {
 			st = &agentRowCount{}
-			agentRows[key] = st
+			if b.agents == nil {
+				b.agents = make(map[string]*agentRowCount)
+			}
+			b.agents[agentID] = st
 		}
 		st.rows, st.countedAt = rows, time.Now()
+	}
+
+	if st.rows >= limit && makeRoom != nil {
+		freed, err := makeRoom(ctx)
+		if err != nil {
+			return err
+		}
+		st.rows -= freed
 	}
 
 	if st.rows < limit {
@@ -93,13 +99,24 @@ func ReserveAgentRow(ctx context.Context, owner any, agentID, kind string, limit
 }
 
 func (s *Service) reserveAgentContainer(ctx context.Context, agentID string) error {
-	return ReserveAgentRow(ctx, s, agentID, "container", maxAgentContainers, s.logger, func(ctx context.Context) (int, error) {
+	count := func(ctx context.Context) (int, error) {
 		held, err := s.store.ListContainers(ctx, ListContainersOpts{IncludeArchived: true, IncludeIgnored: true, AgentFilter: &agentID})
 		if err != nil {
 			return 0, fmt.Errorf("agent event: count containers: %w", err)
 		}
 		return len(held), nil
-	})
+	}
+	makeRoom := func(ctx context.Context) (int, error) {
+		deleted, err := s.store.DeleteOldestArchivedContainers(ctx, agentID, max(1, maxAgentContainers/10))
+		if err != nil {
+			return 0, fmt.Errorf("agent event: make room for %s: %w", agentID, err)
+		}
+		if deleted > 0 {
+			s.logger.Info("agent event: oldest archived containers deleted to make room", "agent_id", agentID, "deleted", deleted)
+		}
+		return int(deleted), nil
+	}
+	return s.agentRows.Reserve(ctx, agentID, "container", maxAgentContainers, s.logger, count, makeRoom)
 }
 
 func checkLabelCount(ev *agentpb.ContainerEvent) error {
