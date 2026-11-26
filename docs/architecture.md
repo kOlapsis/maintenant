@@ -339,7 +339,7 @@ A background goroutine prunes old data. A pass runs at startup and then hourly (
 | Data | Kept |
 |------|------|
 | Container state transitions | 90 days, except the latest transition of each container, which is kept |
-| Archived containers | 30 days after archival, with their update, CVE, pin and risk history |
+| Archived containers | 30 days after archival, with their updates, CVEs, version pin, risk history and risk acknowledgments |
 | Endpoint check results | 30 days |
 | Inactive endpoints | 30 days |
 | Heartbeat pings and executions | 30 days |

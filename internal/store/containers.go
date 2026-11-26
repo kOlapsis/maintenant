@@ -174,30 +174,34 @@ func (s *ContainerStore) DeleteContainerByID(ctx context.Context, id string) err
 	// Look up the external_id for cleaning up tables keyed by it (soft refs,
 	// no FK). The FK-constrained children (transitions, snapshots, alert configs)
 	// are removed automatically by ON DELETE CASCADE.
-	var agentID, externalID string
-	err := s.db.QueryRowContext(ctx, `SELECT agent_id, external_id FROM containers WHERE id = ?`, id).Scan(&agentID, &externalID)
-	if err != nil {
-		return fmt.Errorf("get container external_id: %w", err)
-	}
-
-	for _, q := range []struct {
-		sql  string
-		desc string
-	}{
-		{`DELETE FROM image_updates WHERE agent_id = ? AND container_id = ?`, "image updates"},
-		{`DELETE FROM container_cves WHERE agent_id = ? AND container_id = ?`, "container cves"},
-		{`DELETE FROM version_pins WHERE agent_id = ? AND container_id = ?`, "version pins"},
-		{`DELETE FROM risk_score_history WHERE agent_id = ? AND container_id = ?`, "risk score history"},
-	} {
-		if _, err := s.writer.Exec(ctx, q.sql, agentID, externalID); err != nil {
-			return fmt.Errorf("delete container %s: %w", q.desc, err)
+	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		var agentID, externalID string
+		err := tx.QueryRowContext(ctx, `SELECT agent_id, external_id FROM containers WHERE id = ?`, id).Scan(&agentID, &externalID)
+		if err != nil {
+			return fmt.Errorf("get container external_id: %w", err)
 		}
-	}
 
-	if _, err := s.writer.Exec(ctx, `DELETE FROM containers WHERE id = ?`, id); err != nil {
-		return fmt.Errorf("delete container: %w", err)
-	}
-	return nil
+		for _, ref := range containerSoftRefs {
+			if _, err := tx.ExecContext(ctx,
+				`DELETE FROM `+ref.table+` WHERE agent_id = ? AND `+ref.column+` = ?`, agentID, externalID); err != nil {
+				return fmt.Errorf("delete container %s: %w", ref.table, err)
+			}
+		}
+
+		if _, err := tx.ExecContext(ctx, `DELETE FROM containers WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("delete container: %w", err)
+		}
+		return nil
+	})
+}
+
+var containerSoftRefs = []struct{ table, column string }{
+	{"image_updates", "container_id"},
+	{"container_cves", "container_id"},
+	{"version_pins", "container_id"},
+	{"risk_score_history", "container_id"},
+	{"cve_evaluations", "container_id"},
+	{"risk_acknowledgments", "container_external_id"},
 }
 
 // InsertTransition records a state transition.
@@ -348,36 +352,27 @@ func (s *ContainerStore) DeleteArchivedContainersBefore(ctx context.Context, bef
 	// Tables keyed by external_id have no FK to cascade through, so they must go
 	// first: once the container row is gone, nothing ties them back to anything
 	// and they stay in the database for good.
-	for _, q := range []struct {
-		sql  string
-		desc string
-	}{
-		{`DELETE FROM image_updates WHERE EXISTS (SELECT 1 FROM containers c
-			WHERE c.agent_id = image_updates.agent_id AND c.external_id = image_updates.container_id
-			AND c.archived=1 AND c.archived_at<? AND c.archived_at IS NOT NULL)`, "image updates"},
-		{`DELETE FROM container_cves WHERE EXISTS (SELECT 1 FROM containers c
-			WHERE c.agent_id = container_cves.agent_id AND c.external_id = container_cves.container_id
-			AND c.archived=1 AND c.archived_at<? AND c.archived_at IS NOT NULL)`, "container cves"},
-		{`DELETE FROM version_pins WHERE EXISTS (SELECT 1 FROM containers c
-			WHERE c.agent_id = version_pins.agent_id AND c.external_id = version_pins.container_id
-			AND c.archived=1 AND c.archived_at<? AND c.archived_at IS NOT NULL)`, "version pins"},
-		{`DELETE FROM risk_score_history WHERE EXISTS (SELECT 1 FROM containers c
-			WHERE c.agent_id = risk_score_history.agent_id AND c.external_id = risk_score_history.container_id
-			AND c.archived=1 AND c.archived_at<? AND c.archived_at IS NOT NULL)`, "risk score history"},
-	} {
-		if _, err := s.writer.Exec(ctx, q.sql, cutoff); err != nil {
-			return 0, fmt.Errorf("delete archived containers %s: %w", q.desc, err)
+	var deleted int64
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		for _, ref := range containerSoftRefs {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM `+ref.table+` WHERE EXISTS (SELECT 1 FROM containers c
+				WHERE c.agent_id = `+ref.table+`.agent_id AND c.external_id = `+ref.table+`.`+ref.column+`
+				AND c.archived=1 AND c.archived_at<? AND c.archived_at IS NOT NULL)`, cutoff); err != nil {
+				return fmt.Errorf("delete archived containers %s: %w", ref.table, err)
+			}
 		}
-	}
 
-	res, err := s.writer.Exec(ctx,
-		`DELETE FROM containers WHERE archived=1 AND archived_at<? AND archived_at IS NOT NULL`,
-		cutoff,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("delete archived containers: %w", err)
-	}
-	return res.RowsAffected, nil
+		res, err := tx.ExecContext(ctx,
+			`DELETE FROM containers WHERE archived=1 AND archived_at<? AND archived_at IS NOT NULL`,
+			cutoff,
+		)
+		if err != nil {
+			return fmt.Errorf("delete archived containers: %w", err)
+		}
+		deleted, err = res.RowsAffected()
+		return err
+	})
+	return deleted, err
 }
 
 // --- Column lists and scanners ---
