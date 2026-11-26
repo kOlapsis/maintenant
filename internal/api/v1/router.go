@@ -329,6 +329,7 @@ func NewRouter(d HandlerDeps) *Router {
 	// Alert engine endpoints
 	if d.AlertStore != nil {
 		ah := NewAlertHandler(d.AlertStore, d.ChannelStore, d.SilenceStore, d.Notifier, d.Broker, d.AllowPrivateWebhooks, d.Acknowledger)
+		ah.SetEscalationPolicies(d.EscalationSvc)
 		// Alert history
 		r.mux.HandleFunc("GET /api/v1/alerts", ah.HandleListAlerts)
 		r.mux.HandleFunc("GET /api/v1/alerts/active", ah.HandleGetActiveAlerts)

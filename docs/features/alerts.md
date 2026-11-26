@@ -129,7 +129,7 @@ A channel is a destination. maintenant delivers alerts to Discord, Telegram, ema
 
 A channel is returned with its `id`, these fields, `has_secret` (the secret itself is never returned), `suspended` and `required_edition`. `GET /api/v1/channels` adds `health`: `failing` when the last delivery through the channel failed, `healthy` otherwise.
 
-Updating a channel with `PUT` changes only the fields you send. A `secret` can be replaced but not cleared: delete the channel instead. Creating, updating, enabling or testing a channel of a type the running edition does not open answers `403 EDITION_REQUIRED`.
+Updating a channel with `PUT` changes only the fields you send. A `secret` can be replaced but not cleared: delete the channel instead. On Pro, deleting a channel that a level of an escalation policy still notifies answers `409 CHANNEL_IN_USE` with the names of those policies: remove the channel from them first. Creating, updating, enabling or testing a channel of a type the running edition does not open answers `403 EDITION_REQUIRED`.
 
 ### Discord
 

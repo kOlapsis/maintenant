@@ -10,9 +10,11 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/alert/escalation"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/ssrf"
@@ -28,6 +30,12 @@ type AlertHandler struct {
 	broker               *SSEBroker
 	allowPrivateWebhooks bool
 	acknowledger         alert.Acknowledger
+	policies             escalation.PolicyLister
+}
+
+// SetEscalationPolicies sets where the handler looks up the policies that use a channel.
+func (h *AlertHandler) SetEscalationPolicies(p escalation.PolicyLister) {
+	h.policies = p
 }
 
 // NewAlertHandler creates a new alert handler.
@@ -418,6 +426,16 @@ func (h *AlertHandler) HandleDeleteChannel(w http.ResponseWriter, r *http.Reques
 	}
 	if ch == nil {
 		WriteError(w, http.StatusNotFound, "NOT_FOUND", "channel not found")
+		return
+	}
+
+	inUse, err := escalation.PoliciesUsingChannel(r.Context(), h.policies, id)
+	if err != nil {
+		WriteStoreError(w, err, "Failed to list escalation policies")
+		return
+	}
+	if len(inUse) > 0 {
+		WriteError(w, http.StatusConflict, "CHANNEL_IN_USE", "channel is used by escalation policies: "+strings.Join(inUse, ", "))
 		return
 	}
 
