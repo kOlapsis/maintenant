@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/event"
 )
@@ -19,6 +21,7 @@ const (
 
 	alertTypeReplicaHealth = "replica_health"
 	alertTypeCrashLoop     = "crash_loop"
+	alertTypePodPending    = "pod_pending"
 	alertTypeNodeCondition = "node_condition"
 
 	entityWorkload = "workload"
@@ -60,6 +63,9 @@ type podAlertState struct {
 	restarts  []time.Time
 	alerted   bool
 	backoffAt time.Time // last check that saw the pod in CrashLoopBackOff
+
+	pendingAt      time.Time // first check of the current Pending spell
+	pendingAlerted bool
 }
 
 type nodeAlertState struct {
@@ -105,8 +111,17 @@ func (c *K8sAlertChecker) Resume(active []*alert.Alert) {
 		switch {
 		case a.AlertType == alertTypeReplicaHealth && a.EntityType == entityWorkload:
 			c.replicas[a.EntityID] = &replicaAlertState{firstSeen: now.Add(-defaultReplicaGracePeriod), severity: a.Severity}
-		case a.AlertType == alertTypeCrashLoop && a.EntityType == entityPod:
-			c.pods[a.EntityID] = &podAlertState{alerted: true}
+		case (a.AlertType == alertTypeCrashLoop || a.AlertType == alertTypePodPending) && a.EntityType == entityPod:
+			st := c.pods[a.EntityID]
+			if st == nil {
+				st = &podAlertState{}
+				c.pods[a.EntityID] = st
+			}
+			if a.AlertType == alertTypeCrashLoop {
+				st.alerted = true
+			} else {
+				st.pendingAlerted = true
+			}
 		case a.AlertType == alertTypeNodeCondition && a.EntityType == entityNode:
 			c.nodes[a.EntityID] = &nodeAlertState{severity: a.Severity}
 		}
@@ -215,12 +230,17 @@ func workloadDetails(wl K8sWorkload) map[string]any {
 }
 
 // checkPods raises a crash_loop alert for a pod in CrashLoopBackOff, or that
-// restarted defaultCrashLoopRestarts times within defaultCrashLoopWindow.
+// restarted defaultCrashLoopRestarts times within defaultCrashLoopWindow, and a
+// pod_pending alert for a pod no replica_health watches that stays Pending.
 func (c *K8sAlertChecker) checkPods(pods []K8sPod, workloads []K8sWorkload, now time.Time) {
 	ignoredWorkloads := make(map[string]bool)
+	replicated := make(map[string]bool)
 	for _, wl := range workloads {
 		if wl.Ignored {
 			ignoredWorkloads[wl.ID] = true
+		}
+		if wl.Kind != "Job" {
+			replicated[wl.ID] = true
 		}
 	}
 
@@ -262,6 +282,9 @@ func (c *K8sAlertChecker) checkPods(pods []K8sPod, workloads []K8sWorkload, now 
 			"node_name":     pod.NodeName,
 		}
 
+		pending := pod.Status == string(corev1.PodPending) && !crashLooping && !replicated[pod.WorkloadRef]
+		c.checkPending(pod, st, ignored, pending, details, now)
+
 		switch {
 		case ignored || !crashLooping:
 			if !st.alerted {
@@ -272,7 +295,7 @@ func (c *K8sAlertChecker) checkPods(pods []K8sPod, workloads []K8sWorkload, now 
 			if ignored {
 				msg = fmt.Sprintf("Pod %s is ignored", key)
 			}
-			c.emitPod(pod.Namespace, pod.Name, alert.Event{
+			c.emitPod(alertTypeCrashLoop, pod.Namespace, pod.Name, alert.Event{
 				Severity:  alert.SeverityInfo,
 				IsRecover: true,
 				Message:   msg,
@@ -284,7 +307,7 @@ func (c *K8sAlertChecker) checkPods(pods []K8sPod, workloads []K8sWorkload, now 
 			if pod.StatusReason != "CrashLoopBackOff" {
 				msg = fmt.Sprintf("Pod %s in crash loop: %d restarts in %s", key, len(st.restarts), defaultCrashLoopWindow)
 			}
-			c.emitPod(pod.Namespace, pod.Name, alert.Event{
+			c.emitPod(alertTypeCrashLoop, pod.Namespace, pod.Name, alert.Event{
 				Severity: alert.SeverityCritical,
 				Message:  msg,
 				Details:  details,
@@ -297,16 +320,49 @@ func (c *K8sAlertChecker) checkPods(pods []K8sPod, workloads []K8sWorkload, now 
 			continue
 		}
 		delete(c.pods, key)
-		if !st.alerted {
-			continue
-		}
 		namespace, name, _ := strings.Cut(key, "/")
-		c.emitPod(namespace, name, alert.Event{
+		gone := alert.Event{
 			Severity:  alert.SeverityInfo,
 			IsRecover: true,
 			Message:   fmt.Sprintf("Pod %s no longer exists", key),
-		}, now)
+		}
+		if st.alerted {
+			c.emitPod(alertTypeCrashLoop, namespace, name, gone, now)
+		}
+		if st.pendingAlerted {
+			c.emitPod(alertTypePodPending, namespace, name, gone, now)
+		}
 	}
+}
+
+// checkPending raises pod_pending once the pod has been pending for defaultReplicaGracePeriod, and resolves it when it no longer is or gets ignored.
+func (c *K8sAlertChecker) checkPending(pod K8sPod, st *podAlertState, ignored, pending bool, details map[string]any, now time.Time) {
+	key := pod.Namespace + "/" + pod.Name
+	if ignored || !pending {
+		st.pendingAt = time.Time{}
+		if !st.pendingAlerted {
+			return
+		}
+		st.pendingAlerted = false
+		msg := fmt.Sprintf("Pod %s is no longer pending", key)
+		if ignored {
+			msg = fmt.Sprintf("Pod %s is ignored", key)
+		}
+		c.emitPod(alertTypePodPending, pod.Namespace, pod.Name, alert.Event{Severity: alert.SeverityInfo, IsRecover: true, Message: msg, Details: details}, now)
+		return
+	}
+	if st.pendingAt.IsZero() {
+		st.pendingAt = now
+	}
+	if st.pendingAlerted || now.Sub(st.pendingAt) < defaultReplicaGracePeriod {
+		return
+	}
+	st.pendingAlerted = true
+	msg := fmt.Sprintf("Pod %s pending for %s", key, now.Sub(st.pendingAt).Truncate(time.Second))
+	if pod.StatusReason != "" {
+		msg += ": " + pod.StatusReason
+	}
+	c.emitPod(alertTypePodPending, pod.Namespace, pod.Name, alert.Event{Severity: alert.SeverityWarning, Message: msg, Details: details}, now)
 }
 
 // checkNodes raises one node_condition alert per node: critical while the node
@@ -385,9 +441,9 @@ func (c *K8sAlertChecker) emitWorkload(id, namespace, name string, evt alert.Eve
 	c.emit(evt, now, event.KubernetesWorkloadChanged, map[string]any{"id": id, "namespace": namespace, "name": name})
 }
 
-func (c *K8sAlertChecker) emitPod(namespace, name string, evt alert.Event, now time.Time) {
+func (c *K8sAlertChecker) emitPod(alertType, namespace, name string, evt alert.Event, now time.Time) {
 	key := namespace + "/" + name
-	evt.AlertType, evt.EntityType, evt.EntityID, evt.EntityName = alertTypeCrashLoop, entityPod, key, key
+	evt.AlertType, evt.EntityType, evt.EntityID, evt.EntityName = alertType, entityPod, key, key
 	c.emit(evt, now, event.KubernetesPodChanged, map[string]any{"namespace": namespace, "name": name})
 }
 

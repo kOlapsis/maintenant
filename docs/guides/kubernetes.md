@@ -199,14 +199,16 @@ The update command shown for a workload is `kubectl set image <kind>/<name> <con
 
 ## Alerts
 
-The server raises three Kubernetes alerts for the cluster it runs in or is pointed at. The cluster is evaluated every 30 seconds.
+The server raises four Kubernetes alerts for the cluster it runs in or is pointed at. The cluster is evaluated every 30 seconds.
 
 | Alert | Severity | Raised when | Resolved when |
 |-------|----------|-------------|---------------|
 | `replica_health` | Warning, Critical when no replica is ready | A Deployment, StatefulSet or DaemonSet has fewer ready replicas than desired for 5 minutes, or a Deployment's rollout has been past its progress deadline (`ProgressDeadlineExceeded`) for 5 minutes | All desired replicas are ready and no rollout is stuck, the workload is scaled to zero, ignored or deleted |
 | `crash_loop` | Critical | A pod is in `CrashLoopBackOff`, or has restarted 3 times within 10 minutes | The pod has not been in `CrashLoopBackOff` for 10 minutes and has restarted fewer than 3 times in the last 10 minutes, or it is ignored or deleted |
+| `pod_pending` | Warning | A pod that no Deployment, StatefulSet or DaemonSet owns (a bare pod, the pod of a Job) has been `Pending` for 5 minutes: it cannot be scheduled, or its image cannot be pulled | The pod leaves `Pending`, is ignored or deleted |
 | `node_condition` | Critical when the node is not Ready, Warning under memory, disk or PID pressure | A node reports one of those conditions | The conditions clear, or the node leaves the cluster |
 
+- The restarts and the `CrashLoopBackOff` of init containers count for `crash_loop` like those of the other containers; a pod whose init container crash-loops raises `crash_loop`, not `pod_pending`.
 - `replica_health` is per workload and escalates in place from Warning to Critical when the last ready replica is lost. A Job never raises it.
 - While a Deployment rollout is progressing, `replica_health` is neither raised nor resolved: the Deployment's own progress deadline (`progressDeadlineSeconds`, 10 minutes by default) decides when the rollout is stuck.
 - `crash_loop` is per pod.

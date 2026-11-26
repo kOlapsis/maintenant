@@ -611,6 +611,13 @@ func mapPod(pod *corev1.Pod) K8sPod {
 	var totalRestarts int32
 	containerStatuses := make([]K8sContainerStatus, 0, len(pod.Status.ContainerStatuses))
 
+	for _, cs := range pod.Status.InitContainerStatuses {
+		totalRestarts += cs.RestartCount
+		if w := cs.State.Waiting; w != nil && isPodBackOff(w.Reason) {
+			statusReason = w.Reason
+		}
+	}
+
 	for _, cs := range pod.Status.ContainerStatuses {
 		totalRestarts += cs.RestartCount
 
@@ -626,7 +633,7 @@ func mapPod(pod *corev1.Pod) K8sPod {
 		case cs.State.Waiting != nil:
 			state = "waiting"
 			stateReason = cs.State.Waiting.Reason
-			if stateReason == "CrashLoopBackOff" || stateReason == "ImagePullBackOff" || stateReason == "ErrImagePull" {
+			if isPodBackOff(stateReason) {
 				statusReason = stateReason
 			}
 		case cs.State.Terminated != nil:
@@ -670,6 +677,11 @@ func mapPod(pod *corev1.Pod) K8sPod {
 		Ignored:      cmodel.IgnoredByLabels(pod.Annotations),
 		CreatedAt:    pod.CreationTimestamp.Time,
 	}
+}
+
+// isPodBackOff reports whether a waiting reason means the kubelet keeps failing to run the container.
+func isPodBackOff(reason string) bool {
+	return reason == "CrashLoopBackOff" || reason == "ImagePullBackOff" || reason == "ErrImagePull"
 }
 
 // podWorkloadRef returns the owning workload ID for a pod, the Deployment for a
