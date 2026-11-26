@@ -79,3 +79,38 @@ func TestCollector_SamplesOnlyTheLocalRuntimeContainers(t *testing.T) {
 
 	assert.Equal(t, []string{"ext-local"}, rt.asked)
 }
+
+func TestCollector_DropsLatestSamplesOnceNothingRuns(t *testing.T) {
+	tests := []struct {
+		name string
+		stop func(t *testing.T, rt *statsRuntime, cstore *store.ContainerStore, c *container.Container)
+	}{
+		{"runtime disconnected", func(_ *testing.T, rt *statsRuntime, _ *store.ContainerStore, _ *container.Container) {
+			rt.mu.Lock()
+			defer rt.mu.Unlock()
+			rt.connected = false
+		}},
+		{"last container stopped", func(t *testing.T, _ *statsRuntime, cstore *store.ContainerStore, c *container.Container) {
+			c.State = container.StateExited
+			require.NoError(t, cstore.UpdateContainer(context.Background(), c))
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := storetest.Open(t, nil)
+			ctx := context.Background()
+			cstore := store.NewContainerStore(db)
+			c := seedRunningContainer(t, cstore, "ext-live", "")
+
+			rt := &statsRuntime{connected: true}
+			collector := newCollector(db, rt)
+			collector.Collect(ctx)
+			require.Contains(t, collector.GetAllLatest(), c.ID)
+
+			tt.stop(t, rt, cstore, c)
+			collector.Collect(ctx)
+
+			assert.Empty(t, collector.GetAllLatest())
+		})
+	}
+}
