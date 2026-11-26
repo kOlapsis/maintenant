@@ -105,7 +105,8 @@ type Service struct {
 
 	agentRows AgentRowBudget
 
-	localStarts sync.Map // external ID -> time.Time of the last start event
+	localStarts   sync.Map // external ID -> time.Time of the last start event
+	cleanRestarts sync.Map // external ID of a local container whose restart policy restarts a clean exit
 
 	localMu sync.Mutex // serializes local runtime events against Reconcile
 }
@@ -178,9 +179,15 @@ func (s *Service) processEvent(ctx context.Context, evt ContainerEvent) error {
 		if c != nil && c.State == StateCompleted {
 			return nil
 		}
+		if c != nil && c.State == StateRestarting { // stopped by hand: the restart policy will not start it again
+			return s.handleStateChange(ctx, evt, StateCompleted)
+		}
 		return s.handleStateChange(ctx, evt, StateExited)
 	case "die":
 		if evt.ExitCode != "" && IsCleanExit(parseExitCode(evt.ExitCode), evt.OOMKilled) {
+			if _, restarts := s.cleanRestarts.Load(evt.ExternalID); restarts && uid.Agent(evt.AgentID) == uid.LocalAgent {
+				return s.handleStateChange(ctx, evt, StateRestarting)
+			}
 			return s.handleStateChange(ctx, evt, StateCompleted)
 		}
 		return s.handleStateChange(ctx, evt, StateExited)
@@ -342,10 +349,9 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 	}
 
 	// Check restart threshold (T030)
-	// Trigger on any transition back to running from a stopped state, a clean exit included.
-	// Docker emits die→start (exited→running) during crash-loops; the
-	// "restarting" state only appears in static discovery snapshots.
-	if newState == StateRunning && (previousState == StateRestarting || previousState == StateExited || previousState == StateCompleted) && s.restartChecker != nil {
+	// Trigger on any transition back to running from a crash state, or from a clean exit the restart policy restarts.
+	// Docker emits die→start (exited→running) during crash-loops.
+	if newState == StateRunning && (previousState == StateRestarting || previousState == StateExited) && s.restartChecker != nil {
 		result, err := s.restartChecker.Check(ctx, c)
 		if err != nil {
 			s.logger.Error("restart check", "container_id", c.ID, "error", err)
@@ -400,6 +406,7 @@ func (s *Service) fetchExitSnippet(ctx context.Context, externalID string, exite
 
 func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) error {
 	s.localStarts.Delete(evt.ExternalID)
+	s.cleanRestarts.Delete(evt.ExternalID)
 	c, err := s.lookup(ctx, evt)
 	if err != nil {
 		s.logger.Error("get container for destroy", "external_id", shortID(evt.ExternalID), "error", err)
@@ -558,6 +565,11 @@ func (s *Service) reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 	currentByExternalID := make(map[string]*Container, len(current))
 	for _, c := range current {
 		currentByExternalID[c.ExternalID] = c
+		if c.RestartsOnCleanExit {
+			s.cleanRestarts.Store(c.ExternalID, struct{}{})
+		} else {
+			s.cleanRestarts.Delete(c.ExternalID)
+		}
 	}
 
 	// Scoped to the local runtime: discoverer only sees the server's own daemon,

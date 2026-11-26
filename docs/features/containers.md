@@ -24,7 +24,7 @@ When a new container starts, maintenant immediately begins tracking:
 | `running` | The container is up. |
 | `exited` | The container stopped with an exit code other than 0, 137 or 143, or with 137 after the out-of-memory killer stopped it. |
 | `completed` | The container stopped with exit code 0, 143 (`SIGTERM`) or 137 (`SIGKILL`, what `docker stop` falls back to) unless the out-of-memory killer sent the 137: a normal end, not a crash. |
-| `restarting` | The runtime reports the container as restarting. |
+| `restarting` | The runtime reports the container as restarting, or the container stopped with one of the clean exit codes above and its restart policy (`always`, `unless-stopped`) starts it again. A `docker stop` or `docker restart` makes it `completed`. |
 | `paused` | The container is paused. |
 | `created` | The container exists but never started. |
 | `dead` | The runtime gave up on the container. |
@@ -124,11 +124,12 @@ When a container becomes `unhealthy`, from `healthy` or from `starting` (a healt
 
 ## Restart Loop Detection
 
-maintenant counts how many times a container came back to `running` after being `exited`, `completed` or `restarting` during the last 10 minutes, so a container that exits cleanly and is started again in a loop counts too. When that count reaches the restart threshold, a `restart_loop` alert is raised.
+maintenant counts how many times a container came back to `running` after being `exited` or `restarting` during the last 10 minutes. When that count reaches the restart threshold, a `restart_loop` alert is raised.
 
 - **Threshold**: 3 restarts by default. Set it per container with `maintenant.alert.restart_threshold` (a positive integer; anything else is ignored).
 - **Severity**: Warning. The alert escalates in place to Critical when the count reaches three times the threshold (9 restarts with the default). `maintenant.alert.severity` has no effect on it.
-- **Counted**: every return to `running` after a stop, whatever the exit code: a `restart: always` container that exits with code 0 in a loop raises the alert, and so do three `docker restart` within 10 minutes. The first start of a container is not a restart.
+- **Counted**: a start after a crash, and a start after a clean exit when the restart policy (`always` or `unless-stopped`) restarted the container by itself: such a container is `restarting` in between, so one that exits with code 0 in a loop raises the alert.
+- **Not counted**: a start that follows a `completed` state, such as `docker restart`, a clean stop followed by a start, or a container a scheduler starts again. The first start of a container is not a restart either. A container reported by a remote agent counts its crashes only.
 - **Resolution**: automatic. A start that finds the count below the threshold resolves the alert, and while the alert is open maintenant re-checks the running container every minute, so it resolves on its own once the 10-minute window no longer holds enough restarts. A container that is stopped or archived is not re-checked.
 
 ```yaml

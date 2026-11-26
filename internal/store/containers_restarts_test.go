@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCountRestartsSince_CountsRestartsAfterACleanExit(t *testing.T) {
+func TestCountRestartsSince_CountsCrashesAndPolicyRestartsOnly(t *testing.T) {
 	db := openTestDB(t)
 	cs := NewContainerStore(db)
 	cid := seedHostContainer(t, cs, "ext-clean-loop", "")
@@ -24,5 +24,5 @@ func TestCountRestartsSince_CountsRestartsAfterACleanExit(t *testing.T) {
 
 	n, err := cs.CountRestartsSince(context.Background(), cid, now.Add(-10*time.Minute))
 	require.NoError(t, err)
-	assert.Equal(t, 3, n)
+	assert.Equal(t, 2, n, "a start after a clean exit is someone starting it again, a policy restart goes through restarting")
 }

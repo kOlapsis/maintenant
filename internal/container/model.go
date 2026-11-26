@@ -76,6 +76,8 @@ type Container struct {
 	SwarmServiceName   string         `json:"swarm_service_name,omitempty"`
 	SwarmNodeID        string         `json:"swarm_node_id,omitempty"`
 	SwarmTaskSlot      int            `json:"swarm_task_slot,omitempty"`
+
+	RestartsOnCleanExit bool `json:"-"` // read by discovery, never stored
 }
 
 // StateTransition records a container state change event.
