@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/mcp/oauth"
@@ -17,9 +16,9 @@ type MCPOAuthStoreImpl struct {
 	db     *Reader
 	writer *Writer
 
-	mu          sync.Mutex
-	fingerprint string // of the client secret in force, empty when none was bound
-	checked     bool   // fingerprint was compared with the recorded one
+	gate        chan struct{} // held while reading or changing the two fields below
+	fingerprint string        // of the client secret in force, empty when none was bound
+	checked     bool          // fingerprint was compared with the recorded one
 }
 
 // NewMCPOAuthStore creates a new SQLite-backed MCP OAuth store.
@@ -27,21 +26,26 @@ func NewMCPOAuthStore(d *DB) *MCPOAuthStoreImpl {
 	return &MCPOAuthStoreImpl{
 		db:     d.Reader(),
 		writer: d.Writer(),
+		gate:   make(chan struct{}, 1),
 	}
 }
 
 // BindClientSecret makes the store compare fingerprint with the one recorded in the database before it next serves or stores a code or a token, and revoke them all when it differs.
 func (s *MCPOAuthStoreImpl) BindClientSecret(fingerprint string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.gate <- struct{}{}
+	defer func() { <-s.gate }()
 	s.fingerprint = fingerprint
 	s.checked = false
 }
 
 // checkClientSecret runs on first use rather than in BindClientSecret: the HTTP server is built before the writer starts.
 func (s *MCPOAuthStoreImpl) checkClientSecret(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	select {
+	case s.gate <- struct{}{}:
+		defer func() { <-s.gate }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	if s.checked || s.fingerprint == "" {
 		return nil
 	}
