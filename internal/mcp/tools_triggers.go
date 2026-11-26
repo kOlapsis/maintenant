@@ -67,7 +67,7 @@ type getTriggerInput struct {
 type triggerInput struct {
 	Name             string   `json:"name" jsonschema:"Trigger name (1-120 chars)"`
 	FilterSeverities string   `json:"filter_severities" jsonschema:"CSV severity filter: info, warning, critical (e.g. 'critical,warning'). Empty matches everything."`
-	FilterSources    string   `json:"filter_sources" jsonschema:"CSV source filter (e.g. 'container,endpoint'). Empty matches everything."`
+	FilterSources    string   `json:"filter_sources" jsonschema:"CSV source filter: container, endpoint, heartbeat, certificate, resource, update, security, agent, host, swarm, kubernetes (e.g. 'container,endpoint'). Empty matches everything."`
 	FilterScopes     string   `json:"filter_scopes" jsonschema:"CSV scope filter of entity_type:entity_id pairs, as found on alerts from list_alerts (e.g. 'container:<entity_id>'). Needs the advanced filters capability. Empty matches everything."`
 	Enabled          *bool    `json:"enabled,omitempty" jsonschema:"Whether the trigger is active. Defaults to true on creation; omitted on update, the current value is kept."`
 	NotifyOnResolve  *bool    `json:"notify_on_resolve,omitempty" jsonschema:"Relay recovery (resolved) notifications, default true"`
@@ -117,7 +117,7 @@ func validateTriggerCommon(t *triggerInput) error {
 		}
 		seen[id] = true
 	}
-	return alert.ValidateSeverityFilter(t.FilterSeverities)
+	return alert.ValidateTriggerFilters(t.FilterSeverities, t.FilterSources, t.FilterScopes)
 }
 
 // --- handlers ---

@@ -7,7 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
@@ -22,7 +24,44 @@ const (
 	SourceSecurity    = "security"
 	SourceAgent       = "agent"
 	SourceHost        = "host"
+	SourceUpdate      = "update"
+	SourceSwarm       = "swarm"
+	SourceKubernetes  = "kubernetes"
 )
+
+var sources = []string{
+	SourceContainer, SourceEndpoint, SourceHeartbeat, SourceCertificate, SourceResource, SourceUpdate,
+	SourceSecurity, SourceAgent, SourceHost, SourceSwarm, SourceKubernetes,
+}
+
+// IsSource reports whether s is one of the sources an alert can carry.
+func IsSource(s string) bool {
+	return slices.Contains(sources, s)
+}
+
+var scopeEntityTypes = []string{
+	"container", "endpoint", "heartbeat", "certificate", "agent",
+	"swarm_service", "swarm_node", "workload", "pod", "node",
+}
+
+// ValidateTriggerFilters checks that the comma-separated filters of a trigger can match an alert.
+func ValidateTriggerFilters(severities, sourcesCSV, scopes string) error {
+	if err := ValidateSeverityFilter(severities); err != nil {
+		return err
+	}
+	for _, item := range splitCSV(sourcesCSV) {
+		if !IsSource(item) {
+			return fmt.Errorf("field=filter_sources: %q is not a source (%s)", item, strings.Join(sources, ", "))
+		}
+	}
+	for _, item := range splitCSV(scopes) {
+		entityType, id, _ := strings.Cut(item, ":")
+		if id == "" || !slices.Contains(scopeEntityTypes, entityType) {
+			return fmt.Errorf("field=filter_scopes: %q is not entity_type:entity_id (entity types: %s)", item, strings.Join(scopeEntityTypes, ", "))
+		}
+	}
+	return nil
+}
 
 // Security alert types.
 const (
