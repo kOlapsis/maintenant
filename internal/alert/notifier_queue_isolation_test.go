@@ -11,11 +11,62 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type hangingSender struct {
+	fakeSender
+	release chan struct{}
+}
+
+func (h *hangingSender) Send(ctx context.Context, _ *NotificationChannel, _ string, _ *Alert) error {
+	select {
+	case <-h.release:
+	case <-ctx.Done():
+	}
+	return nil
+}
+
+type countingSender struct {
+	fakeSender
+	sent atomic.Int32
+}
+
+func (c *countingSender) Send(context.Context, *NotificationChannel, string, *Alert) error {
+	c.sent.Add(1)
+	return nil
+}
+
+func TestNotifier_ADeadChannelDelaysOnlyItsOwnDeliveries(t *testing.T) {
+	n := NewNotifier(&deliveryRecorder{}, slog.New(slog.NewTextHandler(io.Discard, nil)), true)
+	dead := &hangingSender{release: make(chan struct{})}
+	live := &countingSender{}
+	n.RegisterChannel("dead", dead)
+	n.RegisterChannel("live", live)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		close(dead.release)
+		cancel()
+		_ = n.Wait(context.Background())
+	})
+	n.Start(ctx)
+
+	const alerts = 200
+	for i := range alerts {
+		a := &Alert{ID: fmt.Sprintf("alert-%03d", i), Status: StatusActive}
+		n.Enqueue(NotificationJob{Delivery: &NotificationDelivery{}, Channel: &NotificationChannel{ID: "dead-hook", Type: "dead"}, Alert: a})
+		n.Enqueue(NotificationJob{Delivery: &NotificationDelivery{}, Channel: &NotificationChannel{ID: "telegram", Type: "live"}, Alert: a})
+	}
+
+	assert.Eventually(t, func() bool { return live.sent.Load() == alerts }, 5*time.Second, 5*time.Millisecond,
+		"a channel that hangs must not hold back the notifications of another channel")
+	assert.Equal(t, int32(alerts), live.sent.Load())
+}
 
 func TestNotifier_ADeadWebhookReceiverDoesNotHoldBackAlerts(t *testing.T) {
 	release := make(chan struct{})

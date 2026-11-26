@@ -280,6 +280,47 @@ func TestDurableDelivery_AFullQueueLosesNothing(t *testing.T) {
 	assert.Equal(t, want, got, "every delivery is sent, once")
 }
 
+func TestDurableDelivery_ResumeSkipsAFullQueue(t *testing.T) {
+	f := newQueueFixture(t)
+	saturated := f.channel(t, "https://example.com/saturated")
+	other := f.channel(t, "https://example.com/other")
+	n := f.notifier()
+	for range 256 {
+		n.Enqueue(job(f.delivery(t, saturated, alert.EventSeverityRaised, alert.StatusActive), saturated))
+	}
+	f.delivery(t, other, alert.EventFired, alert.StatusActive)
+
+	n.Resume(f.ctx)
+	queued := 0
+	for _, id := range n.QueuedChannels() {
+		if id == other.ID {
+			queued++
+		}
+	}
+	assert.Equal(t, 1, queued, "a full queue must not keep another channel's due delivery out of its queue")
+}
+
+func TestNotifier_AnIdleOrDeletedChannelLeavesNoWorker(t *testing.T) {
+	f := newQueueFixture(t)
+	srv := newHookServer(t, always(http.StatusOK))
+	ch := f.channel(t, srv.URL)
+	n := f.notifier()
+	n.SetWorkerIdle(10 * time.Millisecond)
+	n.StartUntilCleanup(f.ctx, t)
+
+	for sent := 1; sent <= 2; sent++ {
+		n.Enqueue(job(f.delivery(t, ch, alert.EventSeverityRaised, alert.StatusActive), ch))
+		require.Eventually(t, func() bool { return f.countStatus(alert.DeliveryDelivered) == sent }, 10*time.Second, 5*time.Millisecond,
+			"delivery %d must go out, through a worker started again after the first one stopped", sent)
+		require.Eventually(t, func() bool { return n.ChannelQueues() == 0 }, 10*time.Second, 5*time.Millisecond,
+			"an idle channel must leave no queue nor worker")
+	}
+
+	require.NoError(t, f.channels.DeleteChannel(f.ctx, ch.ID))
+	n.Resume(f.ctx)
+	assert.Zero(t, n.ChannelQueues(), "a deleted channel must not get a queue again")
+}
+
 func TestDurableDelivery_TwoNotifiersSendEachAttemptOnce(t *testing.T) {
 	f := newQueueFixture(t)
 	srv := newHookServer(t, always(http.StatusOK))

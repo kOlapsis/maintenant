@@ -36,6 +36,7 @@ const (
 	resumeInterval  = 5 * time.Second
 	resumeBatch     = 100
 	recordTimeout   = 5 * time.Second
+	workerIdleAfter = time.Minute
 )
 
 var retryBackoffs = []time.Duration{
@@ -77,7 +78,10 @@ type WebhookPayload struct {
 
 // Notifier dispatches alert notifications with a bounded worker pool.
 type Notifier struct {
-	queues       [notifierWorkerCount]chan NotificationJob
+	queuesMu     sync.Mutex
+	queues       map[string]chan NotificationJob
+	runCtx       context.Context
+	stopped      bool
 	subQueues    [notifierWorkerCount]chan NotificationJob
 	channelStore ChannelStore
 	httpClient   *http.Client
@@ -93,6 +97,7 @@ type Notifier struct {
 	unsavedRetries []time.Duration // waits between the in-memory attempts of a job without a durable row
 	now            func() time.Time
 	resumeEvery    time.Duration
+	workerIdle     time.Duration
 	running        sync.WaitGroup
 }
 
@@ -122,6 +127,8 @@ func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bo
 		suspendedLogged: make(map[string]bool),
 		now:             time.Now,
 		resumeEvery:     resumeInterval,
+		workerIdle:      workerIdleAfter,
+		queues:          make(map[string]chan NotificationJob),
 	}
 	for _, opt := range opts {
 		opt(n)
@@ -131,8 +138,7 @@ func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bo
 		"webhook": n.webhook,
 		"discord": NewWebhookSender(client, formatDiscordPayload, logger),
 	}
-	for i := range n.queues {
-		n.queues[i] = make(chan NotificationJob, notifierChannelBuffer)
+	for i := range n.subQueues {
 		n.subQueues[i] = make(chan NotificationJob, notifierChannelBuffer)
 	}
 	return n
@@ -182,10 +188,24 @@ func (n *Notifier) SMTPConfigured() bool {
 
 // Start begins the worker pool. Call in a goroutine.
 func (n *Notifier) Start(ctx context.Context) {
-	n.logger.Info("alert notifier: started", "workers", notifierWorkerCount)
-	for i := range n.queues {
-		n.running.Add(2)
-		go n.worker(ctx, n.queues[i])
+	n.logger.Info("alert notifier: started", "subscription_workers", notifierWorkerCount)
+	// Held until no worker can be started any more, so that no Add runs at zero against Wait.
+	n.running.Add(1)
+	go func() {
+		defer n.running.Done()
+		<-ctx.Done()
+		n.queuesMu.Lock()
+		n.stopped = true
+		n.queuesMu.Unlock()
+	}()
+	n.queuesMu.Lock()
+	n.runCtx = ctx
+	for id, q := range n.queues {
+		n.startWorker(id, q)
+	}
+	n.queuesMu.Unlock()
+	for i := range n.subQueues {
+		n.running.Add(1)
 		go n.worker(ctx, n.subQueues[i])
 	}
 	if n.queue != nil {
@@ -209,7 +229,7 @@ func (n *Notifier) Wait(ctx context.Context) error {
 	}
 }
 
-// Enqueue adds a notification job to the queue of its stream, whose jobs one worker delivers in order.
+// Enqueue adds a notification job to the queue of its channel, or of its webhook subscription, whose jobs one worker delivers in order.
 func (n *Notifier) Enqueue(job NotificationJob) {
 	if n.offer(job) {
 		return
@@ -224,16 +244,71 @@ func (n *Notifier) Enqueue(job NotificationJob) {
 }
 
 func (n *Notifier) offer(job NotificationJob) bool {
-	queues := &n.queues
 	if job.Alert == nil {
-		queues = &n.subQueues
+		select {
+		case n.subQueues[streamOf(job)] <- job:
+			return true
+		default:
+			return false
+		}
+	}
+	n.queuesMu.Lock()
+	defer n.queuesMu.Unlock()
+	q, ok := n.queues[job.Channel.ID]
+	if !ok {
+		if n.stopped {
+			return false
+		}
+		q = make(chan NotificationJob, notifierChannelBuffer)
+		n.queues[job.Channel.ID] = q
+		if n.runCtx != nil {
+			n.startWorker(job.Channel.ID, q)
+		}
 	}
 	select {
-	case queues[streamOf(job)] <- job:
+	case q <- job:
 		return true
 	default:
 		return false
 	}
+}
+
+// startWorker starts the worker of a channel's queue; call it with queuesMu held, while the notifier runs.
+func (n *Notifier) startWorker(channelID string, jobs chan NotificationJob) {
+	n.running.Add(1)
+	go n.channelWorker(n.runCtx, channelID, jobs)
+}
+
+// channelWorker delivers a channel's jobs one at a time, and stops once the channel has had none for workerIdle.
+func (n *Notifier) channelWorker(ctx context.Context, channelID string, jobs chan NotificationJob) {
+	defer n.running.Done()
+	idle := time.NewTimer(n.workerIdle)
+	defer idle.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case job := <-jobs:
+			n.handle(ctx, job)
+			idle.Reset(n.workerIdle)
+		case <-idle.C:
+			if n.retire(channelID, jobs) {
+				return
+			}
+			idle.Reset(n.workerIdle)
+		}
+	}
+}
+
+// retire drops an empty queue, so that the channel's next job starts a new worker.
+func (n *Notifier) retire(channelID string, jobs chan NotificationJob) bool {
+	n.queuesMu.Lock()
+	defer n.queuesMu.Unlock()
+	if len(jobs) > 0 {
+		return false
+	}
+	delete(n.queues, channelID)
+	return true
 }
 
 // durable reports whether job's delivery is a row of the durable queue, which outlives the job.
@@ -255,7 +330,7 @@ func (n *Notifier) resumeLoop(ctx context.Context) {
 	}
 }
 
-// resume hands the due deliveries to the workers of their streams, until one of their queues is full.
+// resume hands the due deliveries to the workers of their channels, leaving those of a full queue for a later pass.
 func (n *Notifier) resume(ctx context.Context) {
 	due, err := n.queue.ListDueDeliveries(ctx, n.now(), resumeBatch)
 	if err != nil {
@@ -271,21 +346,14 @@ func (n *Notifier) resume(ctx context.Context) {
 		if ch == nil {
 			continue // deleted since the list was read, its deliveries with it
 		}
-		if !n.offer(NotificationJob{Delivery: d, Channel: ch, Alert: d.Payload}) {
-			return
-		}
+		n.offer(NotificationJob{Delivery: d, Channel: ch, Alert: d.Payload})
 	}
 }
 
-// streamOf picks the queue shared by an alert's notifications to one channel, or by a webhook subscription's
-// events, so a recovery never overtakes the alert it resolves.
+// streamOf picks the queue shared by a webhook subscription's events, so they reach it in order.
 func streamOf(job NotificationJob) uint32 {
 	h := fnv.New32a()
-	if job.Alert != nil {
-		_, _ = h.Write([]byte(job.Alert.ID + "\x00" + job.Channel.ID))
-	} else {
-		_, _ = h.Write([]byte(job.Channel.URL))
-	}
+	_, _ = h.Write([]byte(job.Channel.URL))
 	return h.Sum32() % notifierWorkerCount
 }
 
