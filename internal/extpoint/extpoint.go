@@ -159,6 +159,7 @@ type MultiHostDeps struct {
 // AgentSessions is the live registry of agents streaming to this server.
 type AgentSessions interface {
 	IsConnected(agentID string) bool
+	RuntimeUnreachable(agentID string) bool
 	Close(agentID, reason string)
 	HasCapability(agentID, capability string) bool
 	FetchLogs(ctx context.Context, agentID, externalID string, lines int, timestamps bool) ([]string, error)

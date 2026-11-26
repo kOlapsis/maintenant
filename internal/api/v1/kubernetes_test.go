@@ -182,7 +182,7 @@ func TestKubernetesHandler_Cluster_AggregatesFromStore(t *testing.T) {
 	assert.Equal(t, float64(1), podStatus["pending"])
 }
 
-type stubK8sSessions struct{ connected map[string]bool }
+type stubK8sSessions struct{ connected, unreachable map[string]bool }
 
 func (s stubK8sSessions) IsConnected(agentID string) bool { return s.connected[agentID] }
 
@@ -230,12 +230,7 @@ func TestKubernetesHandler_ListWorkloads_FlagsOfflineAgentStale(t *testing.T) {
 	assert.False(t, locStale, "local runtime is not governed by agent sessions")
 }
 
-type stubRuntimeSessions struct {
-	stubK8sSessions
-	unreachable map[string]bool
-}
-
-func (s stubRuntimeSessions) RuntimeUnreachable(agentID string) bool { return s.unreachable[agentID] }
+func (s stubK8sSessions) RuntimeUnreachable(agentID string) bool { return s.unreachable[agentID] }
 
 func TestKubernetesHandler_ListWorkloads_FlagsAnUnreachableRuntimeStale(t *testing.T) {
 	store := &fakeK8sStore{
@@ -247,9 +242,9 @@ func TestKubernetesHandler_ListWorkloads_FlagsAnUnreachableRuntimeStale(t *testi
 		},
 	}
 	h := NewKubernetesHandler(store, nil)
-	h.SetAgentSessions(stubRuntimeSessions{
-		stubK8sSessions: stubK8sSessions{connected: map[string]bool{"agent-ON": true, "agent-LOST": true}},
-		unreachable:     map[string]bool{"agent-LOST": true},
+	h.SetAgentSessions(stubK8sSessions{
+		connected:   map[string]bool{"agent-ON": true, "agent-LOST": true},
+		unreachable: map[string]bool{"agent-LOST": true},
 	})
 
 	mux := http.NewServeMux()
@@ -267,22 +262,29 @@ func TestKubernetesHandler_ListWorkloads_FlagsAnUnreachableRuntimeStale(t *testi
 	}
 
 	assert.Equal(t, true, byName["web"]["stale"], "a connected agent that lost its cluster no longer reports live state")
-	assert.Equal(t, true, byName["web"]["agent_offline"])
+	assert.Equal(t, true, byName["web"]["runtime_unreachable"])
+	_, offline := byName["web"]["agent_offline"]
+	assert.False(t, offline, "the agent is connected")
 	_, onStale := byName["api"]["stale"]
 	assert.False(t, onStale)
 }
 
-func TestContainerHandler_AgentOfflineCoversAnUnreachableRuntime(t *testing.T) {
+func TestContainerHandler_StaleCauseTellsAnUnreachableRuntimeFromAnOfflineAgent(t *testing.T) {
 	h := NewContainerHandler(nil, nil)
-	h.SetAgentSessions(stubRuntimeSessions{
-		stubK8sSessions: stubK8sSessions{connected: map[string]bool{"agent-ON": true, "agent-LOST": true}},
-		unreachable:     map[string]bool{"agent-LOST": true},
+	h.SetAgentSessions(stubK8sSessions{
+		connected:   map[string]bool{"agent-ON": true, "agent-LOST": true},
+		unreachable: map[string]bool{"agent-LOST": true, "agent-OFF": true},
 	})
 
-	assert.True(t, h.agentOffline("agent-LOST"))
-	assert.True(t, h.agentOffline("agent-OFF"))
-	assert.False(t, h.agentOffline("agent-ON"))
-	assert.False(t, h.agentOffline(uid.LocalAgent))
+	for agentID, want := range map[string][2]bool{
+		"agent-LOST":   {false, true},
+		"agent-OFF":    {true, false},
+		"agent-ON":     {false, false},
+		uid.LocalAgent: {false, false},
+	} {
+		offline, unreachable := h.agentStaleCause(agentID)
+		assert.Equal(t, want, [2]bool{offline, unreachable}, agentID)
+	}
 }
 
 type embeddedEOLTables struct{}

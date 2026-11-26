@@ -4,6 +4,7 @@
 -->
 
 <script setup lang="ts">
+import { staleShort, staleTitle } from '@/utils/staleCause'
 import { ref, computed } from 'vue'
 import { type K8sPod } from '@/services/kubernetesApi'
 import { timeAgo } from '@/utils/time'
@@ -127,9 +128,9 @@ function restartCountStyle(count: number): string {
               <span
                 v-if="pod.stale"
                 class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border text-mnt-sev-unknown bg-mnt-sev-unknown border-mnt-sev-unknown"
-                :title="`Agent offline · last known: ${pod.status}`"
+                :title="staleTitle(pod, pod.status)"
               >
-                offline
+                {{ staleShort(pod) }}
               </span>
               <span
                 v-else

@@ -35,6 +35,7 @@ export interface AgentAttribution {
   // below is the last-known value, not live. The UI degrades it to offline.
   stale?: boolean
   agent_offline?: boolean
+  runtime_unreachable?: boolean
 }
 
 export interface K8sWorkload extends AgentAttribution {
@@ -260,6 +261,7 @@ export interface K8sNodeResponse {
   created_at: string
   stale?: boolean
   agent_offline?: boolean
+  runtime_unreachable?: boolean
 }
 
 export interface K8sNodeListResponse {

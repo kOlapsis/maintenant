@@ -30,8 +30,9 @@ type certSessions struct {
 	selfSigned  bool
 }
 
-func (certSessions) IsConnected(string) bool { return false }
-func (certSessions) Close(string, string)    {}
+func (certSessions) IsConnected(string) bool        { return false }
+func (certSessions) RuntimeUnreachable(string) bool { return false }
+func (certSessions) Close(string, string)           {}
 func (s certSessions) GRPCServerCertificate() (string, bool) {
 	return s.fingerprint, s.selfSigned
 }

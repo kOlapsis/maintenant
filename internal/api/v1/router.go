@@ -34,6 +34,7 @@ import (
 // AgentSessions provides access to live agent stream state.
 type AgentSessions interface {
 	IsConnected(agentID string) bool
+	RuntimeUnreachable(agentID string) bool
 	Close(agentID, reason string)
 	GRPCServerCertificate() (fingerprint string, selfSigned bool)
 }

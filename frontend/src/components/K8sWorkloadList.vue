@@ -4,6 +4,7 @@
 -->
 
 <script setup lang="ts">
+import { staleShort, staleTitle } from '@/utils/staleCause'
 import { ref } from 'vue'
 import { type K8sWorkloadGroup, type K8sWorkload } from '@/services/kubernetesApi'
 import { timeAgo } from '@/utils/time'
@@ -165,9 +166,9 @@ function handleGroupsReady(groups: K8sWorkloadGroup[]) {
               <span
                 v-if="workload.stale"
                 class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0 text-mnt-sev-unknown bg-mnt-sev-unknown border-mnt-sev-unknown"
-                :title="`Agent offline · last known: ${workload.status}`"
+                :title="staleTitle(workload, workload.status)"
               >
-                offline
+                {{ staleShort(workload) }}
               </span>
               <span
                 v-else

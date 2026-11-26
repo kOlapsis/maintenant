@@ -23,6 +23,7 @@ import (
 type rejectingSessions map[string]uint64
 
 func (rejectingSessions) IsConnected(string) bool                { return true }
+func (rejectingSessions) RuntimeUnreachable(string) bool         { return false }
 func (rejectingSessions) Close(string, string)                   {}
 func (rejectingSessions) GRPCServerCertificate() (string, bool)  { return "", false }
 func (r rejectingSessions) RejectedEvents(agentID string) uint64 { return r[agentID] }

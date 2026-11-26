@@ -14,6 +14,7 @@ import { useHostLabel } from '@/composables/useHostLabel'
 import { useFleetRuntimes } from '@/composables/useFleetRuntimes'
 import { buildUnifiedAttention } from '@/composables/attentionAggregator'
 import { apiFetch } from '@/services/apiFetch'
+import { staleLabel } from '@/utils/staleCause'
 import { sseBus } from '@/services/sseBus'
 import type { Container } from '@/services/containerApi'
 import type { Endpoint } from '@/services/endpointApi'
@@ -47,7 +48,7 @@ export interface UnifiedMonitor {
 }
 
 function containerStatus(c: Container): { status: UnifiedStatus; label: string } {
-  if (c.stale) return { status: 'unknown', label: 'Agent offline' }
+  if (c.stale) return { status: 'unknown', label: staleLabel(c) }
   if (c.state === 'paused') return { status: 'paused', label: 'Paused' }
   if (c.state === 'completed') return { status: 'paused', label: 'Completed' }
   if (c.state === 'running') {
@@ -95,7 +96,7 @@ function certStatus(c: CertMonitor): { status: UnifiedStatus; label: string } {
 // "the service you monitor" — so it maps onto the same unified status set.
 function workloadStatus(w: K8sWorkload): { status: UnifiedStatus; label: string } {
   // The reporting agent is offline — its last-known status is no longer live.
-  if (w.stale) return { status: 'unknown', label: 'Agent offline' }
+  if (w.stale) return { status: 'unknown', label: staleLabel(w) }
   switch (w.status) {
     case 'healthy':
       return { status: 'ok', label: 'Healthy' }

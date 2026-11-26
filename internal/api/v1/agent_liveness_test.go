@@ -17,13 +17,17 @@ import (
 // kubernetes_test.go (same package).
 func TestContainerHandler_agentOffline(t *testing.T) {
 	h := &ContainerHandler{sessions: stubK8sSessions{connected: map[string]bool{"agent-ON": true}}}
+	agentOffline := func(h *ContainerHandler, agentID string) bool {
+		offline, _ := h.agentStaleCause(agentID)
+		return offline
+	}
 
-	assert.True(t, h.agentOffline("agent-OFF"), "remote agent with no stream is offline")
-	assert.False(t, h.agentOffline("agent-ON"), "connected agent is not offline")
-	assert.False(t, h.agentOffline(uid.LocalAgent), "local runtime is never agent-offline")
-	assert.False(t, h.agentOffline(""), "empty agent id is never offline")
+	assert.True(t, agentOffline(h, "agent-OFF"), "remote agent with no stream is offline")
+	assert.False(t, agentOffline(h, "agent-ON"), "connected agent is not offline")
+	assert.False(t, agentOffline(h, uid.LocalAgent), "local runtime is never agent-offline")
+	assert.False(t, agentOffline(h, ""), "empty agent id is never offline")
 
-	assert.False(t, (&ContainerHandler{}).agentOffline("agent-OFF"),
+	assert.False(t, agentOffline(&ContainerHandler{}, "agent-OFF"),
 		"without sessions wiring nothing is marked offline")
 }
 
