@@ -137,6 +137,7 @@ type dbHarness struct {
 	store    *flakyEscStore
 	alerts   *hookedAlerts
 	channels *flakyChannels
+	supp     *fakeSuppressor
 	runner   *Runner
 
 	clockMu sync.Mutex
@@ -156,6 +157,7 @@ func newDBHarness(t *testing.T, sender Sender) *dbHarness {
 		store:    &flakyEscStore{Store: escStore, DeliveryQueue: escStore},
 		alerts:   &hookedAlerts{AlertStoreImpl: store.NewAlertStore(db)},
 		channels: &flakyChannels{ChannelStore: store.NewChannelStore(db), getFails: map[string]int{}},
+		supp:     &fakeSuppressor{},
 		now:      time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC),
 	}
 	h.restart(sender)
@@ -165,14 +167,13 @@ func newDBHarness(t *testing.T, sender Sender) *dbHarness {
 // restart replaces the runner by a new one over the same database, as a process start does.
 func (h *dbHarness) restart(sender Sender) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	supp := &fakeSuppressor{}
 	h.runner = NewRunner(RunnerDeps{
 		Store:         h.store,
 		AlertStore:    h.alerts,
 		ChannelStore:  h.channels,
 		Notifier:      sender,
-		Suppressor:    supp,
-		Service:       NewService(h.store, h.channels, nil, supp, logger),
+		Suppressor:    h.supp,
+		Service:       NewService(h.store, h.channels, nil, h.supp, logger),
 		Logger:        logger,
 		Clock:         h.clock,
 		OrphanTimeout: time.Hour,
