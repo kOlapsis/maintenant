@@ -81,7 +81,6 @@ func (l *Limiter) Allow(ip string) bool {
 
 // Refund gives one token back to key, never above the burst.
 func (l *Limiter) Refund(key string) {
-	// An evicted bucket had already refilled to its burst.
 	val, known := l.visitors.Load(key)
 	if !known {
 		return

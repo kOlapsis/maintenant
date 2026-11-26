@@ -1219,12 +1219,11 @@ func (a *App) waitBackground(ctx context.Context) {
 		if m := a.swarmMgr.Load(); m != nil {
 			m.loops.Wait()
 		}
-		// Producers first: their alerts can still start a status page notification.
 		a.endpointSvc.Stop()
 		a.heartbeatSvc.Wait()
 		a.updateSvc.Wait()
 		a.alertEngine.Wait()
-		a.statusSvc.Wait()
+		a.statusSvc.Wait() // after every alert producer
 		a.subscriberSvc.Wait()
 		a.telemetrySvc.Wait()
 		close(stopped)
