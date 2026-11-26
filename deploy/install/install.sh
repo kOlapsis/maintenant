@@ -735,6 +735,14 @@ flag_to_env() {
 # Key-by-key merge into /etc/maintenant/maintenant.env: the keys passed as flags
 # are replaced or appended, every other line of the file is kept as it is.
 
+# systemd strips an unquoted value of its backslashes and outer whitespace.
+_env_quote() {
+    case "$1" in
+        *[!A-Za-z0-9._/:@%+,=-]*) printf '"%s"' "$(printf '%s' "$1" | sed 's/[\\"]/\\&/g')" ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
 merge_env_file() {
     ENV_FILE="$CONFIG_DIR/maintenant.env"
     NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -748,7 +756,7 @@ merge_env_file() {
         idx=$((idx + 1))
         [ -n "$flagname" ] || continue
         printf '%s=%s\n' "$(flag_to_env "$flagname")" \
-            "$(printf '%s\n' "$BINARY_FLAG_VALS" | sed -n "${idx}p")"
+            "$(_env_quote "$(printf '%s\n' "$BINARY_FLAG_VALS" | sed -n "${idx}p")")"
     done > "$TMPDIR_INSTALL/new_flags.env"
 
     if [ ! -f "$ENV_FILE" ]; then

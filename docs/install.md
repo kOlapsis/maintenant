@@ -230,6 +230,8 @@ sudo nano /etc/maintenant/maintenant.env
 sudo systemctl restart maintenant
 ```
 
+systemd removes the backslashes and the outer spaces of an unquoted value. The script therefore writes a value holding anything other than letters, digits and `. _ / : @ % + , = -` between double quotes, with `\` and `"` escaped: `MAINTENANT_SMTP_PASSWORD="pa\"ss\\word"`. Do the same when you add such a value by hand.
+
 Re-running the script with flags **merges** them into the existing file: only the keys you pass are replaced, or added when missing, and every other line is kept as it is, comments and extra variables such as `DOCKER_HOST` included. The script reports `N keys replaced, M keys added, other lines kept`. The file is untouched when you pass no configuration flag.
 
 The unit applies `ProtectSystem=strict`, `ProtectHome=true` and `PrivateTmp=true`: a file you point maintenant to (a CA bundle, a TLS key) must live outside `/home` and be readable by the `maintenant` user.
