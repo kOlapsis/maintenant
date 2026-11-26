@@ -6,7 +6,7 @@ Three options exist only as flags: `--copy-store-to` and `--yes` (copy an instal
 
 Conventions used below:
 
-- A boolean is true for `1`, `t`, `true`, `y`, `yes` or `on` (case-insensitive). `0`, `f`, `false`, `n`, `no`, `off` and an empty value are false. Any other value is also read as false, and the startup logs a warning naming the variable and the value. Three booleans close something when they are true, so an unrecognised value stops the startup instead of leaving it open: `MAINTENANT_MCP_READ_ONLY`, `MAINTENANT_DISABLE_TELEMETRY` and `MAINTENANT_DISABLE_OS_EOL_REFRESH`.- Durations use Go syntax: `30s`, `5m`, `24h`.
+- A boolean is true for `1`, `t`, `true`, `y`, `yes` or `on` (case-insensitive). `0`, `f`, `false`, `n`, `no`, `off` and an empty value are false. Any other value is also read as false, and the startup logs a warning naming the variable and the value. Three booleans close something when they are true, so an unrecognised value stops the startup instead of leaving it open: `MAINTENANT_MCP_READ_ONLY`, `MAINTENANT_DISABLE_TELEMETRY` and `MAINTENANT_DISABLE_OS_EOL_REFRESH`. Two variables follow a shorter rule: `MAINTENANT_CONTAINER` and `MAINTENANT_LABEL_ENDPOINTS_ALLOW_LINK_LOCAL` are true only for `1`, `true`, `yes` or `on`, and any other value is read as false without a warning.- Durations use Go syntax: `30s`, `5m`, `24h`.
 - A value that cannot be parsed falls back to the default. The settings that stop the startup on an invalid value say so in their row.
 
 ---
