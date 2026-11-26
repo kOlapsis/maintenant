@@ -91,6 +91,8 @@ serviceAccount:
 
 ## ClusterRole and ClusterRoleBinding for the ServiceAccount the pod runs as,
 ## created by the chart or yours. Set to false to manage the permissions yourself.
+## With serviceAccount.create=false the chart needs serviceAccount.name or
+## rbac.create=false: it never binds the namespace's default ServiceAccount.
 rbac:
   create: true
 

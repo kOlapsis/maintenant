@@ -481,7 +481,7 @@ The chart opens only the HTTP port. To enrol agents from other hosts with a serv
 | `extraEnv` | `[]` | Extra environment variables for the container |
 | `resources` | see values.yaml | CPU/memory requests and limits |
 | `serviceAccount.create`, `serviceAccount.name` | `true`, `""` | Create the ServiceAccount, or use your own |
-| `rbac.create` | `true` | Create the ClusterRole and bind it to the ServiceAccount the pod runs as, whether the chart created it or you named your own. Set `false` to manage the permissions yourself |
+| `rbac.create` | `true` | Create the ClusterRole and bind it to the ServiceAccount the pod runs as, whether the chart created it or you named your own. Set `false` to manage the permissions yourself. With `serviceAccount.create=false`, either name your ServiceAccount or set `rbac.create=false`: the chart refuses to render otherwise, because the role would go to the namespace's `default` ServiceAccount. If you already created a ClusterRole named like the release, set `rbac.create=false` |
 | `imagePullSecrets`, `podAnnotations`, `podLabels`, `nodeSelector`, `tolerations`, `affinity` | empty | Standard pod settings |
 
 ### Upgrade

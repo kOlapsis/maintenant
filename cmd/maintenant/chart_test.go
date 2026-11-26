@@ -52,3 +52,8 @@ func TestChartRBACFollowsRBACCreate(t *testing.T) {
 	assert.Contains(t, rbac, "{{- if .Values.rbac.create }}")
 	assert.Contains(t, rbac, `name: {{ include "maintenant.serviceAccountName" . }}`)
 }
+
+func TestChartNeverBindsTheDefaultServiceAccount(t *testing.T) {
+	assert.Contains(t, chartTemplate(t, "rbac.yaml"),
+		"{{- if and (not .Values.serviceAccount.create) (not .Values.serviceAccount.name) }}\n{{- fail ")
+}
