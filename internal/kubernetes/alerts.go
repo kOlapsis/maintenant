@@ -155,6 +155,9 @@ func (c *K8sAlertChecker) checkWorkloads(workloads []K8sWorkload, now time.Time)
 			}, now)
 			continue
 		}
+		if wl.Status == "progressing" {
+			continue
+		}
 
 		if st == nil {
 			c.replicas[wl.ID] = &replicaAlertState{firstSeen: now}

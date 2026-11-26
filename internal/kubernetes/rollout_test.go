@@ -53,3 +53,23 @@ func TestRollout_StuckWithNoReadyReplicaIsExited(t *testing.T) {
 	state, _ := deploymentState(rollout(0, 3, corev1.ConditionFalse, "ProgressDeadlineExceeded"))
 	assert.Equal(t, cmodel.StateExited, state)
 }
+
+func TestRollout_InProgressWithinItsDeadlineRaisesNothing(t *testing.T) {
+	wl := mapDeploymentWorkload(rollout(6, 8, corev1.ConditionTrue, "ReplicaSetUpdated"))
+	require.Equal(t, "progressing", wl.Status)
+
+	h := newCheckerHarness()
+	assert.Empty(t, h.check(TopologySnapshot{Workloads: []K8sWorkload{wl}}))
+	h.advance(2 * defaultReplicaGracePeriod)
+	assert.Empty(t, h.check(TopologySnapshot{Workloads: []K8sWorkload{wl}}))
+}
+
+func TestRollout_InProgressKeepsAnAlertAlreadyRaised(t *testing.T) {
+	h := newCheckerHarness()
+	h.check(TopologySnapshot{Workloads: []K8sWorkload{deployment(1, 3)}})
+	h.advance(defaultReplicaGracePeriod)
+	require.Len(t, h.check(TopologySnapshot{Workloads: []K8sWorkload{deployment(1, 3)}}), 1)
+
+	wl := mapDeploymentWorkload(rollout(1, 3, corev1.ConditionTrue, "ReplicaSetUpdated"))
+	assert.Empty(t, h.check(TopologySnapshot{Workloads: []K8sWorkload{wl}}), "a rollout is no recovery")
+}

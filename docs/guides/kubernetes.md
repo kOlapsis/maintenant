@@ -208,6 +208,7 @@ The server raises three Kubernetes alerts for the cluster it runs in or is point
 | `node_condition` | Critical when the node is not Ready, Warning under memory, disk or PID pressure | A node reports one of those conditions | The conditions clear, or the node leaves the cluster |
 
 - `replica_health` is per workload and escalates in place from Warning to Critical when the last ready replica is lost. A Job never raises it.
+- While a Deployment rollout is progressing, `replica_health` is neither raised nor resolved: the Deployment's own progress deadline (`progressDeadlineSeconds`, 10 minutes by default) decides when the rollout is stuck.
 - `crash_loop` is per pod.
 - `node_condition` is one alert per node, however many conditions it reports. A node whose Ready condition is `Unknown` counts as not Ready.
 - If the nodes cannot be listed (for instance an RBAC denial), no `node_condition` alert is raised or resolved.
