@@ -116,7 +116,9 @@ Health states:
 | `starting` | Container just started, health check not yet run |
 | none | No health check defined: the API returns `health_status: null` and `has_health_check: false` |
 
-When a container goes from `healthy` to `unhealthy`, maintenant raises a `health_unhealthy` alert at Warning severity through the [Alert Engine](alerts.md), and resolves it when the container is healthy again. A container that never became healthy (`starting` to `unhealthy`) does not raise it, and `maintenant.alert.severity` does not change its severity. The alert is named after the container, and so is the `container.health_changed` event, which carries `id`, `container_name`, `health_status`, `previous_health`, `timestamp` and `agent_id`.
+A bare Kubernetes pod reads the readiness of its containers instead: `healthy` when all are ready, `starting` while a container that is not ready yet has not passed its startup probe or is within its first readiness window (`initialDelaySeconds` + `periodSeconds` × `failureThreshold` after it started), `unhealthy` otherwise.
+
+When a container becomes `unhealthy`, from `healthy` or from `starting` (a health check that never passed), maintenant raises a `health_unhealthy` alert at Warning severity through the [Alert Engine](alerts.md), and resolves it when the container is healthy again. `maintenant.alert.severity` does not change its severity. The alert is named after the container, and so is the `container.health_changed` event, which carries `id`, `container_name`, `health_status`, `previous_health`, `timestamp` and `agent_id`.
 
 ---
 

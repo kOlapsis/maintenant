@@ -176,13 +176,7 @@ func podToEvent(action string, pod *corev1.Pod) runtime.RuntimeEvent {
 	state, errorDetail := podState(pod)
 	healthStatus := ""
 	if state == cmodel.StateRunning {
-		healthStatus = "healthy"
-		for _, cs := range pod.Status.ContainerStatuses {
-			if !cs.Ready {
-				healthStatus = "unhealthy"
-				break
-			}
-		}
+		healthStatus = podHealthString(pod, time.Now())
 	}
 
 	return runtime.RuntimeEvent{
@@ -224,8 +218,9 @@ func podUpdateEvents(oldPod, newPod *corev1.Pod) []runtime.RuntimeEvent {
 	}
 
 	// Check health change.
-	oldHealth := podHealthString(oldPod)
-	newHealth := podHealthString(newPod)
+	now := time.Now()
+	oldHealth := podHealthString(oldPod, now)
+	newHealth := podHealthString(newPod, now)
 	if oldHealth != newHealth && newHealth != "" {
 		events = append(events, runtime.RuntimeEvent{
 			Action:       "health_status",
@@ -240,19 +235,40 @@ func podUpdateEvents(oldPod, newPod *corev1.Pod) []runtime.RuntimeEvent {
 	return events
 }
 
-func podHealthString(pod *corev1.Pod) string {
-	if pod.Status.Phase != corev1.PodRunning {
+// podHealthString is the health of a running pod at now: starting while a container that is not ready yet is within its startup or first readiness window, unhealthy past it, healthy once every container is ready.
+func podHealthString(pod *corev1.Pod, now time.Time) string {
+	if pod.Status.Phase != corev1.PodRunning || len(pod.Status.ContainerStatuses) == 0 {
 		return ""
 	}
+	health := "healthy"
 	for _, cs := range pod.Status.ContainerStatuses {
-		if !cs.Ready {
+		switch {
+		case cs.Ready:
+		case containerStarting(pod, cs, now):
+			health = "starting"
+		default:
 			return "unhealthy"
 		}
 	}
-	if len(pod.Status.ContainerStatuses) > 0 {
-		return "healthy"
+	return health
+}
+
+// containerStarting reports whether a running container that is not ready may still be starting: its startup probe has not passed, or its readiness probe cannot have failed yet.
+func containerStarting(pod *corev1.Pod, cs corev1.ContainerStatus, now time.Time) bool {
+	if cs.State.Running == nil {
+		return false
 	}
-	return ""
+	if cs.Started != nil && !*cs.Started {
+		return true
+	}
+	for _, c := range pod.Spec.Containers {
+		if c.Name == cs.Name && c.ReadinessProbe != nil {
+			p := c.ReadinessProbe
+			window := time.Duration(p.InitialDelaySeconds+p.PeriodSeconds*p.FailureThreshold) * time.Second
+			return now.Sub(cs.State.Running.StartedAt.Time) < window
+		}
+	}
+	return false
 }
 
 func deploymentToEvent(action string, dep *appsv1.Deployment) runtime.RuntimeEvent {

@@ -178,6 +178,10 @@ func (r *Runtime) mapBarePod(pod *corev1.Pod, now time.Time) *cmodel.Container {
 		FirstSeenAt:        pod.CreationTimestamp.Time,
 		LastStateChangeAt:  now,
 	}
+	if h := podHealthString(pod, now); state == cmodel.StateRunning && h != "" {
+		hs := cmodel.HealthStatus(h)
+		cm.HealthStatus = &hs
+	}
 	r.applyAnnotations(cm, pod.Annotations)
 	return cm
 }

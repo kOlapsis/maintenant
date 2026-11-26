@@ -42,7 +42,7 @@ Removing the object an alert is about resolves the alert. A container labelled `
 ### Container alerts
 
 - **`restart_loop`** fires when a container comes back up and has restarted at least `maintenant.alert.restart_threshold` times (default 3) in the last 10 minutes.
-- **`health_unhealthy`** fires only when a container that was `healthy` becomes `unhealthy`. A container that goes from `starting` straight to `unhealthy` raises nothing.
+- **`health_unhealthy`** fires when a container becomes `unhealthy`, whether it was `healthy` or still `starting` (a health check that never passed). A container that is `starting` raises nothing.
 - **`maintenant.alert.severity`** sets the severity of `container_down` alone. The other container alerts keep the severities above.
 
 ### Container down
