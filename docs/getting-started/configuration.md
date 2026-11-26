@@ -1,6 +1,6 @@
 # Configuration
 
-maintenant is configured through environment variables, with no configuration file. Every variable has a matching command-line flag (the [flag table](../install.md#configuration-reference) maps one to the other). The precedence is CLI flag, then environment variable, then default. Command-line flags show up in the process list, so pass secrets (license key, SMTP password, MCP secret, enrollment token, database URL) as environment variables.
+maintenant is configured through environment variables, with no configuration file. Every variable has a matching command-line flag (the [flag table](../install.md#configuration-reference) maps one to the other). The precedence is CLI flag, then environment variable, then default. Command-line flags show up in the process list, so pass secrets (license key, SMTP password, MCP secret, enrollment token, database URL) as environment variables. In the container image, set the listen address and the agent data directory with `MAINTENANT_ADDR` and `MAINTENANT_DATA_DIR` rather than `--addr` and `--data-dir`: the image health check reads only the variables.
 
 Three options exist only as flags: `--copy-store-to` and `--yes` (copy an install into PostgreSQL, see [PostgreSQL storage](../guides/postgresql.md)) and `--mcp-stdio` (MCP over stdin and stdout, see [MCP Server](../features/mcp.md)). `maintenant --help` prints every flag with its environment variable and default.
 
