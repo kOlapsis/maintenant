@@ -194,7 +194,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
       })
     }
 
-    for (const e of endpoints.endpoints) {
+    for (const e of endpoints.endpoints.filter((ep) => ep.active)) {
       const s = endpointStatus(e)
       const epSparkline = sparklines.value[`endpoint:${e.id}`]
       result.push({
