@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"strings"
 	"syscall"
 	"unicode/utf8"
@@ -595,11 +594,9 @@ func endpointViews(eps []*endpoint.Endpoint) []endpointView {
 		for name := range ep.Config.Headers {
 			headers[name] = "***"
 		}
-		views[i] = endpointView{Endpoint: ep, Target: ep.Target, LastError: ep.LastError, Config: endpointConfigView{EndpointConfig: ep.Config, Headers: headers}}
-		if u, err := url.Parse(ep.Target); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
-			bare := (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path, RawPath: u.RawPath}).String()
-			views[i].Target = bare
-			views[i].LastError = strings.NewReplacer(ep.Target, bare, u.String(), bare, u.Redacted(), bare).Replace(ep.LastError)
+		views[i] = endpointView{
+			Endpoint: ep, Target: redact.URL(ep.Target), LastError: redact.Text(ep.LastError),
+			Config: endpointConfigView{EndpointConfig: ep.Config, Headers: headers},
 		}
 	}
 	return views

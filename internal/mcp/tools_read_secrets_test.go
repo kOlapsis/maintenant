@@ -78,26 +78,27 @@ func TestListEndpoints_MasksProbeHeaderValues(t *testing.T) {
 	assert.Equal(t, map[string]string{"Authorization": "***", "X-Trace": "***"}, rows[0].Config.Headers)
 }
 
-func TestEndpointViews_StripCredentialsFromTheTarget(t *testing.T) {
+func TestEndpointViews_CutTheTargetAfterTheHost(t *testing.T) {
 	views := endpointViews([]*endpoint.Endpoint{
 		{
-			Target:    "https://ops:hunter2@example.com/health?token=t0k3n",
-			LastError: `request failed: Get "https://ops:xxxxx@example.com/health?token=t0k3n": context deadline exceeded`,
+			Target:    "https://ops:hunter2@example.com:8443/hooks/S3CR3T?token=t0k3n",
+			LastError: `request failed: Get "https://ops:***@example.com:8443/hooks/S3CR3T?token=t0k3n": stopped after 3 redirects to https://sso.example.com/cb?code=C0DE`,
 		},
-		{Target: "db.internal:5432"},
+		{Target: "db.internal:5432", LastError: "tcp dial failed: dial tcp 10.0.0.7:5432: connect: connection refused"},
 	})
 	text, err := json.Marshal(views)
 	require.NoError(t, err)
 
-	assert.NotContains(t, string(text), "hunter2")
-	assert.NotContains(t, string(text), "t0k3n")
-	assert.NotContains(t, string(text), "ops")
+	for _, secret := range []string{"hunter2", "ops:", "S3CR3T", "t0k3n", "C0DE"} {
+		assert.NotContains(t, string(text), secret)
+	}
 	var rows []struct {
 		Target    string `json:"target"`
 		LastError string `json:"last_error"`
 	}
 	require.NoError(t, json.Unmarshal(text, &rows))
-	assert.Equal(t, "https://example.com/health", rows[0].Target)
-	assert.Equal(t, `request failed: Get "https://example.com/health": context deadline exceeded`, rows[0].LastError)
+	assert.Equal(t, "https://example.com:8443", rows[0].Target)
+	assert.Equal(t, `request failed: Get "https://example.com:8443": stopped after 3 redirects to https://sso.example.com`, rows[0].LastError)
 	assert.Equal(t, "db.internal:5432", rows[1].Target)
+	assert.Equal(t, "tcp dial failed: dial tcp 10.0.0.7:5432: connect: connection refused", rows[1].LastError)
 }

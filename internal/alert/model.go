@@ -8,10 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/redact"
 )
 
 // Alert sources.
@@ -348,8 +349,8 @@ func (c *NotificationChannel) Redact() {
 		b, _ := json.Marshal(headers)
 		c.Headers = string(b)
 	}
-	if u, err := url.Parse(c.URL); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
-		c.URL = u.Scheme + "://" + u.Host
+	if strings.Contains(c.URL, "://") {
+		c.URL = redact.URL(c.URL)
 		c.HasURLSecret = true
 	}
 }
