@@ -177,9 +177,13 @@ func (r *eventRecorder) broadcast(eventType string, data any) {
 }
 
 func (r *eventRecorder) components(eventType string) any {
+	return r.payload(eventType)["components"]
+}
+
+func (r *eventRecorder) payload(eventType string) map[string]any {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.events[eventType]["components"]
+	return r.events[eventType]
 }
 
 func TestMaintenance_PublicSurfacesNameOnlyVisibleComponents(t *testing.T) {

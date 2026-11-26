@@ -284,7 +284,8 @@ type ComponentData struct {
 	Monitors        []MonitorRef
 }
 
-func statusLabel(s string) string {
+// StatusLabel returns the public wording of a component status.
+func StatusLabel(s string) string {
 	switch s {
 	case StatusOperational:
 		return "Operational"
@@ -325,7 +326,7 @@ func (s *Service) GetPageData(ctx context.Context) (*PageData, error) {
 			ID:              c.ID,
 			DisplayName:     c.DisplayName,
 			EffectiveStatus: effective,
-			StatusLabel:     statusLabel(effective),
+			StatusLabel:     StatusLabel(effective),
 			Monitors:        s.componentMonitors(ctx, c),
 		})
 	}

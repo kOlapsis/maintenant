@@ -223,7 +223,8 @@ func TestService_HandleAlertEvent_CreatesAutoIncident(t *testing.T) {
 	assert.Equal(t, status.IncidentInvestigating, call.incident.Status)
 	assert.Contains(t, call.incident.Title, comp.DisplayName)
 	assert.Equal(t, []string{comp.ID}, call.componentIDs)
-	assert.Equal(t, evt.Message, call.initialMessage)
+	assert.Equal(t, "API Gateway - Major Outage", call.incident.Title)
+	assert.Equal(t, "Auto-detected: Major Outage", call.initialMessage)
 }
 
 func TestService_HandleAlertEvent_SeverityMapping(t *testing.T) {
@@ -315,7 +316,7 @@ func TestService_HandleAlertEvent_UpdatesExistingIncidentOnRepeat(t *testing.T) 
 	assert.Equal(t, existing.ID, upd.IncidentID)
 	assert.Equal(t, existing.Status, upd.Status)
 	assert.True(t, upd.IsAuto)
-	assert.Equal(t, evt.Message, upd.Message)
+	assert.Equal(t, "Auto-detected: Major Outage", upd.Message)
 }
 
 func TestService_HandleAlertEvent_HiddenComponentNeverFeedsAPublicIncident(t *testing.T) {

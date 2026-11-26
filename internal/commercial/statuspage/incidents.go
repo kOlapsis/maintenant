@@ -87,11 +87,14 @@ func (h *IncidentHandler) handleAlertForComponent(ctx context.Context, evt alert
 		return
 	}
 
+	label := status.StatusLabel(aggregateStatus)
+	message := "Auto-detected: " + label
+
 	if existing != nil {
 		upd := &status.IncidentUpdate{
 			IncidentID: existing.ID,
 			Status:     existing.Status,
-			Message:    evt.Message,
+			Message:    message,
 			IsAuto:     true,
 		}
 		if _, err := h.incidents.CreateUpdate(ctx, upd); err != nil {
@@ -100,7 +103,7 @@ func (h *IncidentHandler) handleAlertForComponent(ctx context.Context, evt alert
 		h.service.Broadcast(event.StatusIncidentUpdated, map[string]any{
 			"id":      existing.ID,
 			"status":  existing.Status,
-			"message": evt.Message,
+			"message": message,
 		})
 		return
 	}
@@ -114,11 +117,11 @@ func (h *IncidentHandler) handleAlertForComponent(ctx context.Context, evt alert
 	}
 
 	inc := &status.Incident{
-		Title:    comp.DisplayName + " - " + evt.Message,
+		Title:    comp.DisplayName + " - " + label,
 		Severity: severity,
 		Status:   status.IncidentInvestigating,
 	}
-	incID, err := h.incidents.CreateIncident(ctx, inc, []string{comp.ID}, evt.Message)
+	incID, err := h.incidents.CreateIncident(ctx, inc, []string{comp.ID}, message)
 	if err != nil {
 		h.logger.Error("failed to create auto incident", "error", err)
 		return
@@ -127,5 +130,5 @@ func (h *IncidentHandler) handleAlertForComponent(ctx context.Context, evt alert
 	h.logger.Info("status: auto-incident created", "incident_id", incID, "title", inc.Title)
 	inc.ID = incID
 	inc.Components = []status.IncidentCompRef{{ID: comp.ID, Name: comp.DisplayName, Visible: comp.Visible}}
-	h.service.AnnounceIncident(ctx, inc, evt.Message)
+	h.service.AnnounceIncident(ctx, inc, message)
 }
