@@ -248,7 +248,7 @@ curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
 
 - The data directory is the first of: `--data-dir`, `MAINTENANT_DATA_DIR` in the env file, the `MAINTENANT_DATA_DIR` environment variable of the script, `/var/lib/maintenant`. It must be an absolute path other than `/`.
 - The database is the first of: `--db`, `MAINTENANT_DB` in the env file, `./maintenant.db`. A relative path lands in the data directory; an absolute path can point anywhere.
-- The script creates both directories, owned by the service user with `0750`, and writes a unit with the matching `WorkingDirectory`, `ReadWritePaths`, `Environment=MAINTENANT_DATA_DIR`, `User`, `ExecStart` and `EnvironmentFile`.
+- The script creates both directories, owned by the service user with `0750`, and writes a unit with the matching `WorkingDirectory`, `ReadWritePaths`, `Environment=MAINTENANT_DATA_DIR`, `Environment=SQLITE_TMPDIR` (SQLite writes its temporary files in the data directory, because `/tmp` is often a small tmpfs), `User`, `ExecStart` and `EnvironmentFile`.
 - An existing directory that is not empty and belongs to another owner is refused (exit code 30): use a dedicated directory, or `chown` it to `maintenant` first.
 - The install, configuration, data and database directories accept only the characters `A-Z a-z 0-9 . _ / @ + -`; any other character exits with code 2.
 - `--uninstall --purge` removes the real data directory. A database directory outside it is kept, with a warning.

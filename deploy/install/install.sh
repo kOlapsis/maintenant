@@ -520,6 +520,7 @@ Type=simple
 User=$SERVICE_USER
 Group=$SERVICE_USER
 Environment=MAINTENANT_DATA_DIR=$DATA_DIR
+Environment=SQLITE_TMPDIR=$DATA_DIR
 EnvironmentFile=-$CONFIG_DIR/maintenant.env
 ExecStart=$INSTALL_DIR/maintenant
 WorkingDirectory=$DATA_DIR

@@ -183,12 +183,13 @@ render_for() {
     [[ "$output" == *"ReadWritePaths=/var/lib/maintenant /srv/maintenant-db"$'\n'* ]]
 }
 
-@test "unit: --data-dir moves the working directory, the writable path and MAINTENANT_DATA_DIR" {
+@test "unit: --data-dir moves the working directory, the writable path, MAINTENANT_DATA_DIR and SQLITE_TMPDIR" {
     render_for --data-dir /srv/maintenant/
     [ "$status" -eq 0 ]
     [[ "$output" == *"WorkingDirectory=/srv/maintenant"$'\n'* ]]
     [[ "$output" == *"ReadWritePaths=/srv/maintenant"$'\n'* ]]
     [[ "$output" == *"Environment=MAINTENANT_DATA_DIR=/srv/maintenant"$'\n'* ]]
+    [[ "$output" == *"Environment=SQLITE_TMPDIR=/srv/maintenant"$'\n'* ]]
 }
 
 @test "unit: a relative --db lives in the data dir" {

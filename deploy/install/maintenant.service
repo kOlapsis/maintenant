@@ -9,6 +9,7 @@ Type=simple
 User=maintenant
 Group=maintenant
 Environment=MAINTENANT_DATA_DIR=/var/lib/maintenant
+Environment=SQLITE_TMPDIR=/var/lib/maintenant
 EnvironmentFile=-/etc/maintenant/maintenant.env
 ExecStart=/usr/local/bin/maintenant
 WorkingDirectory=/var/lib/maintenant
