@@ -599,6 +599,17 @@ func (s *CertificateStore) CountActiveMonitors(ctx context.Context, sources ...c
 	return count, nil
 }
 
+// CountAgentLabelMonitors counts the label-declared monitors of agentID, inactive ones included.
+func (s *CertificateStore) CountAgentLabelMonitors(ctx context.Context, agentID string) (int, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM cert_monitors WHERE source = ? AND agent_id = ?`,
+		string(certificate.SourceLabel), uid.Agent(agentID)).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count agent label cert monitors: %w", err)
+	}
+	return count, nil
+}
+
 // CountLimitedMonitors counts active certificate monitors left out by the edition cap.
 func (s *CertificateStore) CountLimitedMonitors(ctx context.Context) (int, error) {
 	var count int
