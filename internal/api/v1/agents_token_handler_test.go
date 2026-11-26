@@ -21,6 +21,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/store/storetest"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // newTokenTestHandler wires an AgentHandler over a temp database, at an edition
@@ -120,4 +121,47 @@ func TestCreateEnrollmentToken_TokensAreDistinct(t *testing.T) {
 	assert.NotEqual(t, first["token_id"], second["token_id"])
 	assert.NotEqual(t, first["token_masked"], second["token_masked"],
 		"the stored prefix must still tell two tokens apart in the list")
+}
+
+func TestCreateEnrollmentToken_AHugeTTLIsCappedNotExpired(t *testing.T) {
+	h, _ := newTokenTestHandler(t)
+	rec := httptest.NewRecorder()
+	h.HandleCreateEnrollmentToken(rec, httptest.NewRequest(http.MethodPost, "/api/v1/agents/enrollment-tokens",
+		strings.NewReader(`{"ttl_hours":3000000}`)))
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+
+	var out struct {
+		ExpiresAt time.Time `json:"expires_at"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	assert.WithinDuration(t, time.Now().Add(168*time.Hour), out.ExpiresAt, time.Minute)
+}
+
+func TestRevokeAgent_ASecondRevocationChangesNothing(t *testing.T) {
+	h, agents := newTokenTestHandler(t)
+	h.broker = NewSSEBroker(h.logger)
+	events := make(chan SSEEvent, 4)
+	h.broker.AddObserver(events)
+	require.NoError(t, agents.Insert(context.Background(), &agent.Agent{
+		AgentID: "web-01", PublicKey: []byte("pubkeyplaceholder12345678901234"), Hostname: "web-01",
+		OSArch: "linux/amd64", DetectedRuntime: "docker", Status: "active", CreatedAt: time.Now(),
+	}))
+	revoke := func(id string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+id+"/revoke", nil)
+		req.SetPathValue("id", id)
+		h.HandleRevokeAgent(rec, req)
+		return rec
+	}
+
+	require.Equal(t, http.StatusOK, revoke("web-01").Code)
+	require.Len(t, events, 1)
+
+	second := revoke("web-01")
+	assert.Equal(t, http.StatusOK, second.Code, second.Body.String())
+	assert.Contains(t, second.Body.String(), `"status":"revoked"`)
+	assert.Len(t, events, 1, "nothing is announced twice")
+
+	assert.Equal(t, http.StatusNotFound, revoke(uid.LocalAgent).Code)
+	assert.Equal(t, http.StatusNotFound, revoke("unknown").Code)
 }

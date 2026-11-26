@@ -98,10 +98,7 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 
 	ttl := 24 * time.Hour
 	if body.TTLHours > 0 {
-		ttl = time.Duration(body.TTLHours) * time.Hour
-	}
-	if ttl > 168*time.Hour { // max 7 days
-		ttl = 168 * time.Hour
+		ttl = time.Duration(min(body.TTLHours, 168)) * time.Hour // max 7 days
 	}
 
 	// This response is the only place the cleartext ever exists: what gets
@@ -503,6 +500,10 @@ func (h *AgentHandler) HandleRevokeAgent(w http.ResponseWriter, r *http.Request)
 	agentID := r.PathValue("id")
 	if err := h.store.Revoke(r.Context(), agentID, "admin"); err != nil {
 		if errors.Is(err, agent.ErrAgentNotFound) {
+			if a, getErr := h.store.Get(r.Context(), agentID); getErr == nil && a.Status == "revoked" {
+				WriteJSON(w, http.StatusOK, AgentPayload(a, "disconnected", nil, h.eolTable()))
+				return
+			}
 			WriteError(w, http.StatusNotFound, "NOT_FOUND", "Agent not found")
 			return
 		}

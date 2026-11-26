@@ -196,11 +196,11 @@ func (s *AgentStore) ListAgentsForEOL(ctx context.Context) ([]agent.Agent, error
 	return agents, rows.Err()
 }
 
-// Revoke marks an agent as revoked.
+// Revoke marks an active agent as revoked, and reports ErrAgentNotFound for one that is unknown or already revoked.
 func (s *AgentStore) Revoke(ctx context.Context, agentID, revokedBy string) error {
 	res, err := s.writer.Exec(ctx,
 		`UPDATE agents SET status = 'revoked', revoked_at = ?, revoked_by = ?
-		WHERE id = ? AND id != ?`, time.Now().Unix(), revokedBy, agentID, uid.LocalAgent)
+		WHERE id = ? AND id != ? AND status != 'revoked'`, time.Now().Unix(), revokedBy, agentID, uid.LocalAgent)
 	if err != nil {
 		return fmt.Errorf("revoke agent: %w", err)
 	}

@@ -44,3 +44,25 @@ func TestAgentStore_LocalSentinelCannotBeChanged(t *testing.T) {
 		`SELECT COUNT(*) FROM containers WHERE agent_id = ?`, uid.LocalAgent).Scan(&n))
 	assert.Equal(t, 1, n, "local containers must survive")
 }
+
+func TestAgentStore_RevokeKeepsTheFirstRevocation(t *testing.T) {
+	db := openTestDB(t)
+	s := NewAgentStore(db)
+	ctx := context.Background()
+	require.NoError(t, s.Insert(ctx, &agent.Agent{
+		AgentID: "web-01", PublicKey: []byte("pubkeyplaceholder12345678901234"), Hostname: "web-01",
+		OSArch: "linux/amd64", DetectedRuntime: "docker", Status: "active", CreatedAt: time.Now(),
+	}))
+	require.NoError(t, s.Revoke(ctx, "web-01", "alice"))
+	_, err := db.Writer().Exec(ctx, `UPDATE agents SET revoked_at = 1000 WHERE id = 'web-01'`)
+	require.NoError(t, err)
+
+	assert.ErrorIs(t, s.Revoke(ctx, "web-01", "bob"), agent.ErrAgentNotFound)
+
+	got, err := s.Get(ctx, "web-01")
+	require.NoError(t, err)
+	require.NotNil(t, got.RevokedAt)
+	assert.EqualValues(t, 1000, got.RevokedAt.Unix())
+	require.NotNil(t, got.RevokedBy)
+	assert.Equal(t, "alice", *got.RevokedBy)
+}
