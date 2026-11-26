@@ -7,9 +7,14 @@ package channels
 import (
 	"bufio"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"fmt"
+	"math/big"
 	"mime"
 	"net"
 	"net/http/httptest"
@@ -339,6 +344,53 @@ func TestSMTPSender_LocalRelayWithAnUntrustedCertificateGetsTheMail(t *testing.T
 	case <-time.After(5 * time.Second):
 		t.Fatal("no mail delivered over TLS")
 	}
+}
+
+func unrelatedCA(t *testing.T) *x509.Certificate {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "company CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	require.NoError(t, err)
+	ca, err := x509.ParseCertificate(der)
+	require.NoError(t, err)
+	return ca
+}
+
+func TestSMTPSender_LocalRelayNotSignedByTheConfiguredCAGetsNothing(t *testing.T) {
+	cert, _ := borrowedCertificate(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+	delivered := make(chan string, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		serveOneMail(ln, cert, delivered)
+	}()
+
+	trusttest.Trust(t, unrelatedCA(t))
+	host, port, err := net.SplitHostPort(ln.Addr().String())
+	require.NoError(t, err)
+	sender := NewSMTPSender(SMTPConfig{Host: host, Port: port, Username: "maintenant", Password: "secret", From: "maintenant@example.com"})
+
+	// The relay answers 502 to AUTH: an attempted AUTH would surface as "smtp auth".
+	err = sender.Send(context.Background(), "ops@example.com", "disk full", "the disk is full")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "smtp starttls")
+	var unknown x509.UnknownAuthorityError
+	assert.ErrorAs(t, err, &unknown)
+	<-done
+	assert.Empty(t, delivered)
 }
 
 // hangingUpOnQuitRelay accepts messages in clear and closes the connection without answering QUIT.

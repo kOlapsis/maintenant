@@ -50,7 +50,7 @@ func (s *SMTPSender) Send(ctx context.Context, to, subject, textBody string) err
 	addr := net.JoinHostPort(s.cfg.Host, s.cfg.Port)
 	tlsCfg := trust.ClientTLSConfig()
 	tlsCfg.ServerName = s.cfg.Host
-	tlsCfg.InsecureSkipVerify = localHost(s.cfg.Host) // #nosec G402 -- local relay with a self-signed certificate
+	tlsCfg.InsecureSkipVerify = tlsCfg.RootCAs == nil && localHost(s.cfg.Host) // #nosec G402 -- local relay with a self-signed certificate
 
 	var conn net.Conn
 	var err error
