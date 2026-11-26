@@ -478,7 +478,7 @@ The chart opens only the HTTP port. To enrol agents from other hosts with a serv
 | `extraEnv` | `[]` | Extra environment variables for the container |
 | `resources` | see values.yaml | CPU/memory requests and limits |
 | `serviceAccount.create`, `serviceAccount.name` | `true`, `""` | Create the ServiceAccount, or use your own |
-| `rbac.create` | `true` | Create the ClusterRole and ClusterRoleBinding (with `serviceAccount.create`) |
+| `rbac.create` | `true` | Create the ClusterRole and bind it to the ServiceAccount the pod runs as, whether the chart created it or you named your own. Set `false` to manage the permissions yourself |
 | `imagePullSecrets`, `podAnnotations`, `podLabels`, `nodeSelector`, `tolerations`, `affinity` | empty | Standard pod settings |
 
 ### Upgrade

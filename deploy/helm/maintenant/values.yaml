@@ -89,7 +89,8 @@ serviceAccount:
   name: ""
   annotations: {}
 
-## ClusterRole & ClusterRoleBinding are always created when serviceAccount.create=true
+## ClusterRole and ClusterRoleBinding for the ServiceAccount the pod runs as,
+## created by the chart or yours. Set to false to manage the permissions yourself.
 rbac:
   create: true
 
