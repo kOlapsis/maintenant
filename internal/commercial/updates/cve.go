@@ -144,9 +144,10 @@ func (c *CVEClient) QueryCVEs(ctx context.Context, queries []ImageCVEQuery) (map
 		}
 		if fresh {
 			entries, err := c.store.GetCVECacheEntries(ctx, q.Ecosystem, q.PackageName, q.Version)
-			if err == nil {
-				results[q.ContainerID] = entries
+			if err != nil {
+				return results, fmt.Errorf("read cve cache: %w", err)
 			}
+			results[q.ContainerID] = entries
 			continue
 		}
 		uncached = append(uncached, q)
@@ -169,11 +170,12 @@ func (c *CVEClient) QueryCVEs(ctx context.Context, queries []ImageCVEQuery) (map
 		return results, err
 	}
 
+	if len(batchResp.Results) != len(uncached) {
+		return results, fmt.Errorf("osv answered %d of %d queries", len(batchResp.Results), len(uncached))
+	}
+
 	vulnIDs := make([][]string, len(uncached))
 	for i := range uncached {
-		if i >= len(batchResp.Results) {
-			break
-		}
 		ids, err := c.paginateResult(ctx, osvQueries[i], batchResp.Results[i])
 		if err != nil {
 			return results, err
@@ -230,7 +232,7 @@ func (c *CVEClient) paginateResult(ctx context.Context, q osvQuery, first osvBat
 		}
 		page++
 		if len(resp.Results) == 0 {
-			break
+			return ids, fmt.Errorf("osv answered page %d of %s with no result", page, q.Package.Name)
 		}
 		ids = append(ids, idsFromVulns(resp.Results[0].Vulns)...)
 		token = resp.Results[0].NextPageToken
