@@ -293,8 +293,8 @@ func createMaintenanceHandler(svc *Services) gomcp.ToolHandlerFor[createMaintena
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create maintenance: %w", err)
 		}
-		if page, ok := svc.IncidentAnnouncer.(interface{ InvalidatePublicSnapshot() }); ok {
-			page.InvalidatePublicSnapshot()
+		if svc.IncidentAnnouncer != nil {
+			svc.IncidentAnnouncer.InvalidatePublicSnapshot()
 		}
 		if created, _ := svc.Maintenance.GetMaintenance(ctx, id); created != nil {
 			mw = created
