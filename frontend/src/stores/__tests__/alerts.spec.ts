@@ -73,4 +73,47 @@ describe('alerts store', () => {
 
     expect(store.totalActiveCount).toBe(0)
   })
+
+  function emit(type: string, payload: unknown = {}) {
+    sse.get(type)!(new MessageEvent(type, { data: JSON.stringify(payload) }))
+  }
+
+  it('reloads the history with its filters when the stream reconnects', async () => {
+    api.listAlerts.mockResolvedValue({ alerts: [], has_more: false })
+    api.getActiveAlerts.mockResolvedValue({ critical: [], warning: [], info: [] })
+    const store = useAlertsStore()
+    store.connectSSE()
+    await store.fetchAlerts({ status: 'resolved', limit: 50 })
+
+    emit('sse.reconnected')
+
+    expect(api.listAlerts).toHaveBeenCalledTimes(2)
+    expect(api.listAlerts).toHaveBeenLastCalledWith({ status: 'resolved', limit: 50 })
+  })
+
+  it('keeps a new alert out of a history filtered on something else', async () => {
+    api.listAlerts.mockResolvedValue({ alerts: [alert('c1')], has_more: false })
+    const store = useAlertsStore()
+    store.connectSSE()
+    await store.fetchAlerts({ severity: 'critical', status: 'active' })
+
+    emit('alert.fired', alert('w1', { severity: 'warning' }))
+    emit('alert.silenced', alert('s1', { status: 'silenced' }))
+    emit('alert.fired', alert('c2'))
+
+    expect(store.alerts.map((a) => a.id)).toEqual(['c2', 'c1'])
+    expect(store.activeAlerts.warning.map((a) => a.id)).toEqual(['w1'])
+    expect(store.newAlertCount).toBe(2)
+  })
+
+  it('lists a silenced alert once', async () => {
+    api.listAlerts.mockResolvedValue({ alerts: [alert('a1')], has_more: false })
+    const store = useAlertsStore()
+    store.connectSSE()
+    await store.fetchAlerts()
+
+    emit('alert.silenced', alert('a1', { status: 'silenced' }))
+
+    expect(store.alerts.map((a) => [a.id, a.status])).toEqual([['a1', 'silenced']])
+  })
 })

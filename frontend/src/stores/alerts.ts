@@ -45,7 +45,17 @@ export const useAlertsStore = defineStore('alerts', () => {
 
   const activeSilenceCount = computed(() => silenceRules.value.filter((r) => r.is_active).length)
 
+  let historyFilters: ListAlertsParams | undefined
+
+  function inHistory(a: Alert): boolean {
+    const f = historyFilters
+    return (!f?.source || f.source === a.source) &&
+      (!f?.severity || f.severity === a.severity) &&
+      (!f?.status || f.status === a.status)
+  }
+
   async function fetchAlerts(params?: ListAlertsParams) {
+    if (!params?.before) historyFilters = params
     loading.value = true
     error.value = null
     try {
@@ -121,7 +131,7 @@ export const useAlertsStore = defineStore('alerts', () => {
     if (existingIdx >= 0) {
       alerts.value[existingIdx] = alert
     } else {
-      alerts.value = [alert, ...alerts.value]
+      if (inHistory(alert)) alerts.value = [alert, ...alerts.value]
       newAlertCount.value++
     }
     upsertActive(alert)
@@ -158,7 +168,8 @@ export const useAlertsStore = defineStore('alerts', () => {
     } catch {
       return
     }
-    alerts.value = [alert, ...alerts.value]
+    const rest = alerts.value.filter((a) => a.id !== alert.id)
+    alerts.value = inHistory(alert) ? [alert, ...rest] : rest
   }
 
   function onSilenceCreated(e: MessageEvent) {
@@ -185,6 +196,7 @@ export const useAlertsStore = defineStore('alerts', () => {
   }
 
   function onReconnected() {
+    fetchAlerts(historyFilters)
     fetchActiveAlerts()
     fetchSilenceRules()
   }
