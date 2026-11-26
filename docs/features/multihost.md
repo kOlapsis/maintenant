@@ -211,7 +211,7 @@ After authentication the agent collects and pushes events continuously:
 
 A Kubernetes agent sends the cluster topology, the host metrics of the node it runs on and the host operating system. Endpoint and certificate labels are read from Docker containers only.
 
-Endpoints are probed by the agent, from its own network, with the `timeout` and `interval` of their labels. A certificate scan reports the leaf certificate only: expiry alerts work, while the chain, hostname and OCSP checks do not run for certificates scanned by an agent.
+Endpoints are probed by the agent, from its own network, with the `timeout` and `interval` of their labels. A certificate scan checks the chain and the hostname on the agent and reports the leaf certificate with both results: expiry, chain and hostname alerts work, while OCSP is not checked for certificates scanned by an agent. An agent too old to report these results sends none, and the server then treats the chain and the hostname as valid.
 
 ### Trusting a private CA
 

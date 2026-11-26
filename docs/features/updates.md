@@ -23,7 +23,7 @@ It leaves out:
 
 - images built locally, which the runtime reports as never pulled from nor pushed to a registry, whatever their name;
 - containers with `maintenant.update.enabled: "false"` or a `maintenant.update.pin` label, pinned containers, and images matching an [exclusion](#update-exclusions);
-- images of a private registry or repository the credentials of maintenant do not open, and tags the registry does not know. These are skipped without an error.
+- images of a private registry or repository the credentials of maintenant do not open, and tags the registry does not know. These are skipped without an error, and a pending update already recorded for the container is kept.
 
 Images of Docker Hub's official library count: `nginx` and `redis:latest` are looked up as `library/nginx` and `library/redis`.
 
@@ -54,9 +54,9 @@ When the runtime cannot say what a container runs, the first scan stores the dig
 
 ### When an update goes away
 
-Each scan replaces the pending updates of the containers it covered. An update that a scan no longer finds is removed from the list and its [alert](#update-alerts) is resolved. This happens when the container is recreated on the new image, when its tag filter or labels change, when it is excluded or pinned, when the registry stops serving the image to maintenant (credentials refused, tag removed), and when its container is gone.
+Each scan replaces the pending updates of the containers it covered. An update that a scan no longer finds is removed from the list and its [alert](#update-alerts) is resolved. This happens when the container is recreated on the new image, when its tag filter or labels change, when it is excluded or pinned, and when its container is gone.
 
-A container whose check failed during the scan (a registry that is down, a timeout) is left out of that cleanup: it keeps its pending update and its alert until a scan checks it successfully.
+A container whose check failed during the scan (a registry that is down, a timeout), or whose image the registry would not show (credentials refused, access denied, unknown name or tag), is left out of that cleanup: it keeps its pending update and its alert until a scan checks it successfully.
 
 ---
 
@@ -90,7 +90,7 @@ maintenant queries the OCI (Docker) registry API:
 - **GitHub Container Registry (GHCR)**: `ghcr.io` images
 - **Self-hosted registries**: any OCI-compliant registry
 
-**Private registries.** maintenant authenticates with the Docker client configuration of its own process: the `config.json` in the directory named by `DOCKER_CONFIG`, or in `~/.docker`. In a container, mount it read-only and set `DOCKER_CONFIG`; the image has no credential helper, so the file must hold the credentials themselves. A registry that refuses the credentials is skipped quietly, like any image the credentials do not open. The credentials are looked up for the registry that is queried, so a mirror set with `maintenant.update.registry` needs its own entry. `MAINTENANT_CA_CERT` adds a private root certificate to the registry connections.
+**Private registries.** maintenant authenticates with the Docker client configuration of its own process: the `config.json` in the directory named by `DOCKER_CONFIG`, or in `~/.docker`. In a container, mount it read-only and set `DOCKER_CONFIG`; the image has no credential helper, so the file must hold the credentials themselves. A registry that refuses the credentials is skipped quietly, like any image the credentials do not open: nothing new is reported for its containers, and a pending update and its alert already recorded for them are kept until a scan can read the registry again. The credentials are looked up for the registry that is queried, so a mirror set with `maintenant.update.registry` needs its own entry. `MAINTENANT_CA_CERT` adds a private root certificate to the registry connections.
 
 **Errors.** A failure other than "unauthorized", "denied", unknown name or unknown manifest (a registry that is down, a timeout) counts as an error of the scan, reported in its `errors` count and logged as a warning. Such a container is checked again at the next scan.
 

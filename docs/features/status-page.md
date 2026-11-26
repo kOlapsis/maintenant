@@ -240,7 +240,7 @@ An Atom feed of the ongoing incidents and of those resolved in the last 30 days,
 
 A component with `auto_incident: true` opens incidents by itself from alerts, in every edition, as long as it is visible: a hidden component opens and updates no incident, although an incident opened while it was visible still resolves. Every alert event about one of the component's monitors (or about any monitor of the type, for a match-all component) is handled like this:
 
-- **A problem alert while the component is not operational** opens an incident titled `<component name> - <alert message>`, status `investigating`, with severity `critical` for a critical alert, `major` for a warning and `minor` otherwise. If an incident is already open for the component, the alert message is added to its timeline instead.
+- **A problem alert while the component is not operational** opens an incident titled `<component name> - <status label>` (for example `API Gateway - Major Outage`), status `investigating`, with severity `critical` for a critical alert, `major` for a warning and `minor` otherwise. Its first update reads `Auto-detected: <status label>`. If an incident is already open for the component, an update with the same wording is added to its timeline instead. The alert message, which can contain a monitored URL, is never published.
 - **A recovery while the component is operational again** adds a `resolved` update, "Auto-resolved: all monitors operational".
 - **A component with a status override is left alone**, which includes every component under an active maintenance window.
 
