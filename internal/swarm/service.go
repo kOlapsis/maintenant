@@ -51,14 +51,19 @@ func (sd *ServiceDiscovery) SetNetworkResolver(resolver NetworkResolver) {
 
 // DiscoverAll discovers all Swarm services and refreshes the service cache.
 func (sd *ServiceDiscovery) DiscoverAll(ctx context.Context) ([]*SwarmService, error) {
+	services, _, err := sd.discover(ctx)
+	return services, err
+}
+
+func (sd *ServiceDiscovery) discover(ctx context.Context) ([]*SwarmService, []swarm.Task, error) {
 	services, err := sd.client.ServiceList(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("discover services: %w", err)
+		return nil, nil, fmt.Errorf("discover services: %w", err)
 	}
 
 	tasks, err := sd.client.TaskList(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("discover tasks: %w", err)
+		return nil, nil, fmt.Errorf("discover tasks: %w", err)
 	}
 
 	runningByService := make(map[string]int)
@@ -87,7 +92,7 @@ func (sd *ServiceDiscovery) DiscoverAll(ctx context.Context) ([]*SwarmService, e
 
 	sd.logger.Info("discovered Swarm services", "services", len(services))
 
-	return swarmServices, nil
+	return swarmServices, tasks, nil
 }
 
 // GetService returns a cached Swarm service by ID.
@@ -179,34 +184,39 @@ func (sd *ServiceDiscovery) GetTasksForService(serviceID string) []*SwarmTask {
 
 	var result []*SwarmTask
 	for _, t := range allTasks {
-		if t.ServiceID != serviceID {
+		if t.ServiceID != serviceID || !isReportedTask(t) {
 			continue
 		}
-		if t.DesiredState != swarm.TaskStateRunning && t.DesiredState != swarm.TaskStateShutdown {
-			continue
-		}
-		st := &SwarmTask{
-			TaskID:       t.ID,
-			ServiceID:    t.ServiceID,
-			NodeID:       t.NodeID,
-			Slot:         t.Slot,
-			State:        string(t.Status.State),
-			DesiredState: string(t.DesiredState),
-			Timestamp:    t.Status.Timestamp,
-		}
-		if t.Status.ContainerStatus != nil {
-			st.ContainerID = t.Status.ContainerStatus.ContainerID
-			if t.Status.ContainerStatus.ExitCode != 0 {
-				code := t.Status.ContainerStatus.ExitCode
-				st.ExitCode = &code
-			}
-		}
-		if t.Status.Err != "" {
-			st.Error = t.Status.Err
-		}
-		result = append(result, st)
+		result = append(result, mapTask(t))
 	}
 	return result
+}
+
+func isReportedTask(t swarm.Task) bool {
+	return t.DesiredState == swarm.TaskStateRunning || t.DesiredState == swarm.TaskStateShutdown
+}
+
+func mapTask(t swarm.Task) *SwarmTask {
+	st := &SwarmTask{
+		TaskID:       t.ID,
+		ServiceID:    t.ServiceID,
+		NodeID:       t.NodeID,
+		Slot:         t.Slot,
+		State:        string(t.Status.State),
+		DesiredState: string(t.DesiredState),
+		Timestamp:    t.Status.Timestamp,
+	}
+	if t.Status.ContainerStatus != nil {
+		st.ContainerID = t.Status.ContainerStatus.ContainerID
+		if t.Status.ContainerStatus.ExitCode != 0 {
+			code := t.Status.ContainerStatus.ExitCode
+			st.ExitCode = &code
+		}
+	}
+	if t.Status.Err != "" {
+		st.Error = t.Status.Err
+	}
+	return st
 }
 
 func (sd *ServiceDiscovery) RemoveService(serviceID string) {
