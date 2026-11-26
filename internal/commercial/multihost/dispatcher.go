@@ -69,6 +69,12 @@ type KubernetesTopologyHandler interface {
 	HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.KubernetesTopology) error
 }
 
+// ContainerFollower applies the current state of an agent's containers to the monitors declared on them.
+type ContainerFollower interface {
+	HandleAgentContainerState(ctx context.Context, agentID string, ev *agentpb.ContainerEvent)
+	RetireAgentContainers(ctx context.Context, agentID string, live map[string]struct{})
+}
+
 // LabelSyncFunc provisions label-discovered endpoint/cert monitors for a remote
 // agent's container. Invoked for every container event so monitors track label
 // changes: created on first sight, deprovisioned when a label is removed. The
@@ -91,6 +97,8 @@ type DispatchDeps struct {
 	// LabelSync, if set, provisions endpoint/cert monitors from a container's
 	// labels after each container event. Optional (nil = no label discovery).
 	LabelSync LabelSyncFunc
+
+	ContainerFollower ContainerFollower
 }
 
 // Dispatcher routes AgentEvents to the appropriate domain handler.
@@ -277,6 +285,9 @@ func (d *Dispatcher) dispatchContainer(ctx context.Context, agentID string, ev *
 		}
 		d.deps.LabelSync(ctx, agentID, ev.GetName(), ev.GetContainerId(), labels)
 	}
+	if d.deps.ContainerFollower != nil && !meta.Replayed {
+		d.deps.ContainerFollower.HandleAgentContainerState(ctx, agentID, ev)
+	}
 	return nil
 }
 
@@ -290,6 +301,14 @@ func (d *Dispatcher) dispatchInventory(ctx context.Context, agentID string, ev *
 		for _, c := range ev.GetContainers() {
 			d.deps.LabelSync(ctx, agentID, c.GetName(), c.GetContainerId(), c.GetLabels())
 		}
+	}
+	if d.deps.ContainerFollower != nil && !meta.Replayed && (len(ev.GetContainers()) > 0 || ev.GetComplete()) {
+		live := make(map[string]struct{}, len(ev.GetContainers()))
+		for _, c := range ev.GetContainers() {
+			live[c.GetContainerId()] = struct{}{}
+			d.deps.ContainerFollower.HandleAgentContainerState(ctx, agentID, c)
+		}
+		d.deps.ContainerFollower.RetireAgentContainers(ctx, agentID, live)
 	}
 	return nil
 }

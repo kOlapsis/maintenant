@@ -84,6 +84,8 @@ type Service struct {
 
 	// manualChecks holds the endpoint ids with an on-demand check in flight.
 	manualChecks sync.Map
+
+	agentStopped sync.Map // agentContainerKey of the agent containers known as stopped
 }
 
 // NewService creates a new endpoint service with all dependencies.
@@ -496,21 +498,29 @@ func (s *Service) HandleContainerStop(ctx context.Context, externalID string) {
 	for _, ep := range endpoints {
 		s.logger.Debug("endpoint: pausing check for stopped container", "endpoint_id", ep.ID)
 		s.engine.RemoveEndpoint(ep.ID)
-		if err := s.store.UpdateCheckResult(ctx, ep.ID, StatusUnknown, ep.AlertState,
-			ep.ConsecutiveFailures, ep.ConsecutiveSuccesses,
-			0, nil, "container stopped"); err != nil {
-			s.logger.Error("set endpoint unknown on container stop", "endpoint_id", ep.ID, "error", err)
-		}
-		s.emitEvent(event.EndpointStatusChanged, map[string]interface{}{
-			"endpoint_id":     ep.ID,
-			"container_name":  ep.ContainerName,
-			"target":          ep.Target,
-			"previous_status": string(ep.Status),
-			"new_status":      string(StatusUnknown),
-			"error":           "container stopped",
-			"timestamp":       time.Now(),
-		})
+		s.setContainerStopped(ctx, ep)
 	}
+}
+
+func (s *Service) setContainerStopped(ctx context.Context, ep *Endpoint) {
+	if err := s.store.UpdateCheckResult(ctx, ep.ID, StatusUnknown, ep.AlertState,
+		ep.ConsecutiveFailures, ep.ConsecutiveSuccesses,
+		0, nil, "container stopped"); err != nil {
+		s.logger.Error("set endpoint unknown on container stop", "endpoint_id", ep.ID, "error", err)
+	}
+	data := map[string]interface{}{
+		"endpoint_id":     ep.ID,
+		"container_name":  ep.ContainerName,
+		"target":          ep.Target,
+		"previous_status": string(ep.Status),
+		"new_status":      string(StatusUnknown),
+		"error":           "container stopped",
+		"timestamp":       time.Now(),
+	}
+	if !probedLocally(ep.AgentID) {
+		data["agent_id"] = ep.AgentID
+	}
+	s.emitEvent(event.EndpointStatusChanged, data)
 }
 
 // HandleContainerStart re-syncs endpoint labels and resumes checks when a container starts.

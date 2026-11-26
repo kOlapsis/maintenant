@@ -8,7 +8,7 @@ Define HTTP or TCP checks directly as Docker labels: no config files, no UI clic
 
 ## How It Works
 
-maintenant reads endpoint definitions from Docker labels on your containers. When a container with endpoint labels starts, maintenant automatically begins monitoring those endpoints at the configured interval. A stopped container pauses its checks and its endpoints show `unknown` ("container stopped") until it starts again.
+maintenant reads endpoint definitions from Docker labels on your containers. When a container with endpoint labels starts, maintenant automatically begins monitoring those endpoints at the configured interval. A stopped container pauses its checks and its endpoints show `unknown` ("container stopped") until it starts again. The same applies to a container on a [remote agent](multihost.md), and the endpoints of a container that the agent no longer lists are removed.
 
 Each check records:
 
