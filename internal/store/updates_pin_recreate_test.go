@@ -28,23 +28,23 @@ func TestAdoptVersionPin_FollowsTheContainerThroughItsRecreation(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	pin, err := us.AdoptVersionPin(ctx, "", "ctr-old", "app-web-1")
+	pin, err := us.AdoptVersionPin(ctx, "", "ctr-old", "app-web-1", "nginx:1.25.3")
 	require.NoError(t, err)
 	require.NotNil(t, pin)
 
-	pin, err = us.AdoptVersionPin(ctx, "", "ctr-other", "app-api-1")
+	pin, err = us.AdoptVersionPin(ctx, "", "ctr-other", "app-api-1", "nginx:1.25.3")
 	require.NoError(t, err)
 	assert.Nil(t, pin, "another container is not pinned")
 
 	seedHostedContainer(t, cs, uid.LocalAgent, "ctr-twin", "app-web-1", "nginx:1.25.3")
-	pin, err = us.AdoptVersionPin(ctx, "", "ctr-twin", "app-web-1")
+	pin, err = us.AdoptVersionPin(ctx, "", "ctr-twin", "app-web-1", "nginx:1.25.3")
 	require.NoError(t, err)
 	assert.Nil(t, pin, "a pin stays with its container for as long as that container lives")
 
 	require.NoError(t, cs.ArchiveContainer(ctx, oldUID, time.Now()))
 	seedHostedContainer(t, cs, uid.LocalAgent, "ctr-new", "app-web-1", "nginx:1.25.3")
 
-	pin, err = us.AdoptVersionPin(ctx, "", "ctr-new", "app-web-1")
+	pin, err = us.AdoptVersionPin(ctx, "", "ctr-new", "app-web-1", "nginx:1.25.3")
 	require.NoError(t, err)
 	require.NotNil(t, pin, "the recreated container keeps the pin")
 	assert.Equal(t, "frozen", pin.Reason)

@@ -181,7 +181,7 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 	}
 
 	// Check version pins in store
-	pin, err := sc.store.AdoptVersionPin(ctx, c.AgentID, c.ExternalID, c.PinName())
+	pin, err := sc.store.AdoptVersionPin(ctx, c.AgentID, c.ExternalID, c.PinName(), c.Image)
 	if err != nil {
 		return nil, fmt.Errorf("read version pin: %w", err)
 	}

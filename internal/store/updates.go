@@ -609,26 +609,54 @@ func (s *UpdateStore) GetVersionPin(ctx context.Context, agentID, containerID st
 	return scanVersionPin(row)
 }
 
-// AdoptVersionPin returns the pin of a container, after moving to it the pin that a container of the same name left when it went away.
-func (s *UpdateStore) AdoptVersionPin(ctx context.Context, agentID, containerID, name string) (*update.VersionPin, error) {
+// AdoptVersionPin returns the pin of a container, after moving to it the pin that a container of the same name and image repository left when it went away.
+func (s *UpdateStore) AdoptVersionPin(ctx context.Context, agentID, containerID, name, image string) (*update.VersionPin, error) {
 	pin, err := s.GetVersionPin(ctx, agentID, containerID)
 	if err != nil || pin != nil || name == "" {
 		return pin, err
 	}
-	pin, err = scanVersionPin(s.db.QueryRowContext(ctx,
+	left, err := s.listVersionPins(ctx,
 		`SELECT `+versionPinColumns+`
 		FROM version_pins WHERE agent_id = ? AND container_name = ?
 			AND NOT EXISTS (SELECT 1 FROM containers c WHERE c.agent_id = version_pins.agent_id
 				AND c.external_id = version_pins.container_id AND c.archived = 0)
-		ORDER BY pinned_at DESC LIMIT 1`, uid.Agent(agentID), name))
-	if err != nil || pin == nil {
-		return nil, err
-	}
-	if _, err := s.writer.Exec(ctx, `UPDATE version_pins SET container_id = ? WHERE id = ?`, containerID, pin.ID); err != nil {
+		ORDER BY pinned_at DESC`, uid.Agent(agentID), name)
+	if err != nil {
 		return nil, fmt.Errorf("adopt version pin: %w", err)
 	}
-	pin.ContainerID = containerID
-	return pin, nil
+	for _, pin := range left {
+		if pinRepository(pin.Image) != pinRepository(image) {
+			continue
+		}
+		if _, err := s.writer.Exec(ctx, `UPDATE version_pins SET container_id = ? WHERE id = ?`, containerID, pin.ID); err != nil {
+			return nil, fmt.Errorf("adopt version pin: %w", err)
+		}
+		pin.ContainerID = containerID
+		return pin, nil
+	}
+	return nil, nil
+}
+
+func (s *UpdateStore) listVersionPins(ctx context.Context, query string, args ...any) ([]*update.VersionPin, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var pins []*update.VersionPin
+	for rows.Next() {
+		pin, err := scanVersionPin(rows)
+		if err != nil {
+			return nil, err
+		}
+		pins = append(pins, pin)
+	}
+	return pins, rows.Err()
+}
+
+func pinRepository(image string) string {
+	repo, _, _ := update.ParseImageRef(image)
+	return strings.TrimPrefix(repo, "library/")
 }
 
 func (s *UpdateStore) DeleteVersionPin(ctx context.Context, agentID, containerID string) error {

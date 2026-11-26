@@ -95,7 +95,7 @@ func (s *stubStore) InsertVersionPin(_ context.Context, _ *VersionPin) (string, 
 func (s *stubStore) GetVersionPin(_ context.Context, _, _ string) (*VersionPin, error) {
 	return nil, nil
 }
-func (s *stubStore) AdoptVersionPin(_ context.Context, _, _, _ string) (*VersionPin, error) {
+func (s *stubStore) AdoptVersionPin(_ context.Context, _, _, _, _ string) (*VersionPin, error) {
 	return nil, nil
 }
 func (s *stubStore) DeleteVersionPin(_ context.Context, _, _ string) error { return nil }

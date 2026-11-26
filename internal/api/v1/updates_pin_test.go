@@ -58,7 +58,7 @@ func TestHandlePinVersion_RecordsTheNameTheRecreatedContainerKeeps(t *testing.T)
 	h.HandlePinVersion(w, req)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
-	pin, err := updateStore.AdoptVersionPin(ctx, "", "task2", "shop_web")
+	pin, err := updateStore.AdoptVersionPin(ctx, "", "task2", "shop_web", "nginx:1.25.3")
 	require.NoError(t, err)
 	require.NotNil(t, pin, "the task that replaces a pinned one is pinned")
 	assert.Equal(t, "frozen", pin.Reason)

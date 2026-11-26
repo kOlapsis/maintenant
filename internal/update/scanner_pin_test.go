@@ -18,8 +18,8 @@ type pinByNameStore struct {
 	err   error
 }
 
-func (s *pinByNameStore) AdoptVersionPin(_ context.Context, _, _, name string) (*VersionPin, error) {
-	s.asked = append(s.asked, name)
+func (s *pinByNameStore) AdoptVersionPin(_ context.Context, _, _, name, image string) (*VersionPin, error) {
+	s.asked = append(s.asked, name+" "+image)
 	return nil, s.err
 }
 
@@ -33,7 +33,7 @@ func TestScanner_LooksThePinUpByTheNameThatSurvivesARecreation(t *testing.T) {
 	})
 
 	require.Empty(t, errs)
-	assert.Equal(t, []string{"app-web-1", "shop_web"}, store.asked)
+	assert.Equal(t, []string{"app-web-1 nginx:1.25.3", "shop_web nginx:1.25.3"}, store.asked)
 }
 
 func TestScanner_UnreadablePinIsAScanError(t *testing.T) {
