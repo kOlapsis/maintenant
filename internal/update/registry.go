@@ -6,6 +6,7 @@ package update
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"runtime"
 	"slices"
@@ -17,6 +18,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
+	"github.com/kolapsis/maintenant/internal/ssrf"
 	"github.com/kolapsis/maintenant/internal/trust"
 )
 
@@ -31,6 +33,9 @@ type RegistryClient struct {
 func NewRegistryClient() *RegistryClient {
 	t := trust.HTTPTransport()
 	t.ResponseHeaderTimeout = registryResponseHeaderTimeout
+	if !ssrf.ProbeGuardDisabled() {
+		t.DialContext = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: ssrf.ProbeControl}).DialContext
+	}
 	return &RegistryClient{transport: t}
 }
 
