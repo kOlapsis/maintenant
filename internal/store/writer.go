@@ -84,11 +84,13 @@ func NewWriter(db *sql.DB, dialect Dialect, logger *slog.Logger) *Writer {
 	}
 }
 
+// Start runs the writer goroutine until ctx ends, and lets a write already running then finish rather than cancelling it.
 func (w *Writer) Start(ctx context.Context) {
 	if w.dialect == DialectPostgres {
 		// Direct path: nothing to run in the background.
 		return
 	}
+	run := context.WithoutCancel(ctx)
 	go func() {
 		for {
 			select {
@@ -97,10 +99,10 @@ func (w *Writer) Start(ctx context.Context) {
 				return
 			case op := <-w.ch:
 				if op.Fn != nil {
-					op.Done <- w.runTx(ctx, op.Fn)
+					op.Done <- w.runTx(run, op.Fn)
 					continue
 				}
-				result, err := w.db.ExecContext(ctx, op.Query, op.Args...)
+				result, err := w.db.ExecContext(run, op.Query, op.Args...)
 				wr := WriteResult{Err: err}
 				if err == nil {
 					wr.RowsAffected, _ = result.RowsAffected()
@@ -109,6 +111,19 @@ func (w *Writer) Start(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// Wait blocks until the writer has returned from the write it was running when its context ended, or until ctx ends.
+func (w *Writer) Wait(ctx context.Context) error {
+	if w.dialect == DialectPostgres {
+		return nil
+	}
+	select {
+	case <-w.stopped:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (w *Writer) Exec(ctx context.Context, query string, args ...interface{}) (WriteResult, error) {

@@ -1193,6 +1193,9 @@ func (a *App) Shutdown() error {
 	_ = a.rt.Close()
 
 	a.stopWriter()
+	if err := a.db.Writer().Wait(shutdownCtx); err != nil {
+		a.logger.Warn("database writer still writing at shutdown, closing the database anyway")
+	}
 
 	// Drop this instance's row before closing: a clean restart must not see
 	// its own previous run as a peer until the stale purge catches up.
