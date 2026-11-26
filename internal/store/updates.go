@@ -609,17 +609,41 @@ func (s *UpdateStore) GetVersionPin(ctx context.Context, agentID, containerID st
 	return scanVersionPin(row)
 }
 
-// AdoptVersionPin returns the pin of a container, after moving to it the pin that a container of the same name and image repository left when it went away.
+const pinHolderGone = `NOT EXISTS (SELECT 1 FROM containers c WHERE c.agent_id = version_pins.agent_id
+	AND c.external_id = version_pins.container_id AND c.archived = 0)`
+
+// AdoptVersionPin returns the pin that holds a container back: its own, else one for the same image repository set on its Swarm service on any host or left on its host by a gone container of the same name, which then moves to it.
 func (s *UpdateStore) AdoptVersionPin(ctx context.Context, agentID, containerID, name, image string) (*update.VersionPin, error) {
 	pin, err := s.GetVersionPin(ctx, agentID, containerID)
-	if err != nil || pin != nil || name == "" {
+	if err != nil || pin != nil {
 		return pin, err
+	}
+	ofService, err := s.listVersionPins(ctx,
+		`SELECT `+versionPinColumns+`
+		FROM version_pins WHERE EXISTS (
+			SELECT 1 FROM containers holder JOIN containers task ON task.swarm_service_id = holder.swarm_service_id
+			WHERE holder.agent_id = version_pins.agent_id AND holder.external_id = version_pins.container_id
+				AND task.agent_id = ? AND task.external_id = ? AND task.swarm_service_id <> '')
+		ORDER BY pinned_at DESC`, uid.Agent(agentID), containerID)
+	if err != nil {
+		return nil, fmt.Errorf("adopt version pin: %w", err)
+	}
+	for _, pin := range ofService {
+		if pinRepository(pin.Image) != pinRepository(image) {
+			continue
+		}
+		if _, err := s.writer.Exec(ctx, `UPDATE version_pins SET agent_id = ?, container_id = ? WHERE id = ? AND `+pinHolderGone,
+			uid.Agent(agentID), containerID, pin.ID); err != nil {
+			return nil, fmt.Errorf("adopt version pin: %w", err)
+		}
+		return pin, nil
+	}
+	if name == "" {
+		return nil, nil
 	}
 	left, err := s.listVersionPins(ctx,
 		`SELECT `+versionPinColumns+`
-		FROM version_pins WHERE agent_id = ? AND container_name = ?
-			AND NOT EXISTS (SELECT 1 FROM containers c WHERE c.agent_id = version_pins.agent_id
-				AND c.external_id = version_pins.container_id AND c.archived = 0)
+		FROM version_pins WHERE agent_id = ? AND container_name = ? AND `+pinHolderGone+`
 		ORDER BY pinned_at DESC`, uid.Agent(agentID), name)
 	if err != nil {
 		return nil, fmt.Errorf("adopt version pin: %w", err)
