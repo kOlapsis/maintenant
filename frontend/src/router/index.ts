@@ -3,6 +3,7 @@
 
 import { createRouter, createWebHistory } from 'vue-router'
 import { buildRoutes } from './routes'
+import { reloadOnMissingChunk, routeLoaded } from './chunkReload'
 
 const isStatusSubdomain =
   document.querySelector('meta[name="maintenant-status"]')?.getAttribute('content') === 'true' ||
@@ -12,6 +13,11 @@ const isStatusSubdomain =
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: buildRoutes(isStatusSubdomain),
+})
+
+router.onError((error, to) => reloadOnMissingChunk(error, to.fullPath))
+router.afterEach((_to, _from, failure) => {
+  if (!failure) routeLoaded()
 })
 
 export default router
