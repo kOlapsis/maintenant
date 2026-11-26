@@ -6,6 +6,7 @@ package security
 import (
 	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 	"sync"
 )
@@ -26,12 +27,17 @@ type Deps struct {
 // Service manages in-memory security insight state and emits alerts/events on changes.
 type Service struct {
 	mu       sync.RWMutex
-	store    map[string][]Insight            // containerID → current insights
-	previous map[string]map[InsightType]bool // containerID → set of previously seen insight types
+	store    map[string][]Insight        // containerID → current insights
+	previous map[string]map[finding]bool // containerID → set of previously seen findings
 	logger   *slog.Logger
 
 	onAlert AlertCallback
 	onEvent EventCallback
+}
+
+type finding struct {
+	Type InsightType
+	Key  string
 }
 
 // NewService creates a new security insight service.
@@ -41,7 +47,7 @@ func NewService(d Deps) *Service {
 	}
 	return &Service{
 		store:    make(map[string][]Insight),
-		previous: make(map[string]map[InsightType]bool),
+		previous: make(map[string]map[finding]bool),
 		logger:   d.Logger,
 		onAlert:  d.AlertCallback,
 		onEvent:  d.EventCallback,
@@ -64,17 +70,16 @@ func (s *Service) UpdateContainer(containerID string, containerName string, newI
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	oldTypes := s.previous[containerID]
-	newTypes := make(map[InsightType]bool, len(newInsights))
+	oldFindings := s.previous[containerID]
+	newFindings := make(map[finding]bool, len(newInsights))
 	for _, i := range newInsights {
-		newTypes[i.Type] = true
+		newFindings[finding{i.Type, InsightFindingKey(i)}] = true
 	}
 
-	hadInsights := len(oldTypes) > 0
+	hadInsights := len(oldFindings) > 0
 	hasInsights := len(newInsights) > 0
 
-	// Determine if there's a material change
-	changed := s.hasChange(oldTypes, newTypes)
+	changed := !maps.Equal(oldFindings, newFindings)
 
 	// Update stores
 	if hasInsights {
@@ -83,7 +88,7 @@ func (s *Service) UpdateContainer(containerID string, containerName string, newI
 		delete(s.store, containerID)
 	}
 	if hasInsights {
-		s.previous[containerID] = newTypes
+		s.previous[containerID] = newFindings
 	} else {
 		delete(s.previous, containerID)
 	}
@@ -250,21 +255,4 @@ func FormatAlertMessage(insights []Insight) string {
 	}
 
 	return fmt.Sprintf("%d security issue(s) detected: %s", len(insights), strings.Join(titles, ", "))
-}
-
-func (s *Service) hasChange(old map[InsightType]bool, new map[InsightType]bool) bool {
-	if len(old) != len(new) {
-		return true
-	}
-	for t := range new {
-		if !old[t] {
-			return true
-		}
-	}
-	for t := range old {
-		if !new[t] {
-			return true
-		}
-	}
-	return false
 }

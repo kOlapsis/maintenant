@@ -131,6 +131,43 @@ func TestService_NewInsightAdded_TriggersUpdate(t *testing.T) {
 	assert.Equal(t, 2, alertCount) // Initial + Updated
 }
 
+func TestService_PortChangeWithinOneType_TriggersUpdate(t *testing.T) {
+	exposed := func(ports ...int) []Insight {
+		out := make([]Insight, 0, len(ports))
+		for _, p := range ports {
+			out = append(out, Insight{
+				Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: "c1", ContainerName: "test",
+				Details: map[string]any{"port": p, "protocol": "tcp"},
+			})
+		}
+		return out
+	}
+
+	tests := []struct {
+		name  string
+		after []Insight
+		want  int
+	}{
+		{"port added", exposed(8080, 9090), 2},
+		{"port swapped", exposed(9090), 2},
+		{"same port", exposed(8080), 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := NewService(Deps{Logger: testLogger()})
+			alerts, events := 0, 0
+			svc.SetAlertCallback(func(string, string, []Insight, bool) { alerts++ })
+			svc.SetEventCallback(func(string, any) { events++ })
+
+			svc.UpdateContainer("c1", "test", exposed(8080))
+			svc.UpdateContainer("c1", "test", tt.after)
+
+			assert.Equal(t, tt.want, alerts)
+			assert.Equal(t, tt.want, events)
+		})
+	}
+}
+
 func TestService_SSEEvents(t *testing.T) {
 	svc := NewService(Deps{Logger: testLogger()})
 
