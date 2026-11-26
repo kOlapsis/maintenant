@@ -12,6 +12,7 @@ import type { Alert } from '@/services/alertApi'
 import { humanizeAlertType } from '@/utils/alertLabels'
 import EscalationStatusBadge from '@/commercial/components/escalation/EscalationStatusBadge.vue'
 import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
+import ErrorState from '@/components/ui/ErrorState.vue'
 import { useEscalationApi } from '@/commercial/composables/useEscalationApi'
 import type { EscalationRun } from '@/commercial/types/escalation'
 
@@ -90,8 +91,14 @@ onMounted(() => {
 
 <template>
   <div>
+    <ErrorState
+      v-if="store.totalActiveCount === 0 && store.activeAlertsError"
+      title="Active alerts unavailable"
+      :message="store.activeAlertsError"
+    />
+
     <div
-      v-if="store.totalActiveCount === 0"
+      v-else-if="store.totalActiveCount === 0"
       class="rounded-lg border p-6 text-center"
       style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
     >

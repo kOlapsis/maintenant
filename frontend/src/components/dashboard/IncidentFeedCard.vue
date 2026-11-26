@@ -12,6 +12,7 @@ import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlid
 import { useEdition } from '@/composables/useEdition'
 import type { Alert } from '@/services/alertApi'
 import { timeAgo } from '@/utils/time'
+import ErrorState from '@/components/ui/ErrorState.vue'
 import { Activity, ChevronRight } from 'lucide-vue-next'
 
 const { hasFeature } = useEdition()
@@ -175,6 +176,12 @@ const formatRelativeTime = timeAgo
         <ChevronRight :size="13" class="text-mnt-muted group-hover:text-mnt-muted self-center shrink-0 transition-colors" />
       </div>
     </div>
+
+    <ErrorState
+      v-else-if="alertsStore.activeAlertsError"
+      title="Active alerts unavailable"
+      :message="alertsStore.activeAlertsError"
+    />
 
     <div v-else class="flex flex-col items-center justify-center py-10 gap-3">
       <div class="w-10 h-10 rounded-full bg-mnt-status-ok flex items-center justify-center">
