@@ -130,7 +130,7 @@ maintenant counts how many times a container came back to `running` after being 
 - **Severity**: Warning. The alert escalates in place to Critical when the count reaches three times the threshold (9 restarts with the default). `maintenant.alert.severity` has no effect on it.
 - **Counted**: a start after a crash, and a start after a clean exit when the restart policy (`always` or `unless-stopped`) restarted the container by itself: such a container is `restarting` in between, so one that exits with code 0 in a loop raises the alert.
 - **Not counted**: a start that follows a `completed` state, such as `docker restart`, a clean stop followed by a start, or a container a scheduler starts again. The first start of a container is not a restart either. A container reported by a remote agent counts its crashes only.
-- **Resolution**: automatic. A start that finds the count below the threshold resolves the alert, and while the alert is open maintenant re-checks the running container every minute, so it resolves on its own once the 10-minute window no longer holds enough restarts. A container that is stopped or archived is not re-checked.
+- **Resolution**: automatic. A start that finds the count below the threshold resolves the alert, and while the alert is open maintenant re-checks the running container every minute, so it resolves on its own once the 10-minute window no longer holds enough restarts. A container that ends `completed` has its alert resolved at the next minute check, and one that is removed has it resolved at once. A container that stays `exited` keeps it.
 
 ```yaml
 labels:

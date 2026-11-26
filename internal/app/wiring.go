@@ -168,12 +168,16 @@ func restartAlertEvent(ra *alert.RestartAlert) alert.Event {
 
 // restartRecoveryEvent resolves a container's restart_loop alert. Caller sets Timestamp.
 func restartRecoveryEvent(m map[string]any) alert.Event {
+	msg := fmt.Sprintf("Container %s restart rate returned to normal", toString(m["container_name"]))
+	if state, _ := m["state"].(container.ContainerState); state == container.StateCompleted {
+		msg = fmt.Sprintf("Container %s stopped cleanly, it no longer restarts", toString(m["container_name"]))
+	}
 	return alert.Event{
 		Source:     alert.SourceContainer,
 		AlertType:  restartLoopAlertType,
 		Severity:   alert.SeverityInfo,
 		IsRecover:  true,
-		Message:    fmt.Sprintf("Container %s restart rate returned to normal", toString(m["container_name"])),
+		Message:    msg,
 		EntityType: "container",
 		EntityID:   toString(m["container_id"]),
 		EntityName: toString(m["container_name"]),
