@@ -212,7 +212,7 @@ func (r *EcosystemResolver) resolveStatic(shortName string) *update.EcosystemRes
 
 // resolveRemoteLabels fetches OCI labels from a public registry.
 func (r *EcosystemResolver) resolveRemoteLabels(ctx context.Context, image, tag, shortName string) *update.EcosystemResult {
-	imageRef := image + ":" + tag
+	imageRef := remoteLabelRef(image, tag)
 	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -231,6 +231,17 @@ func (r *EcosystemResolver) resolveRemoteLabels(ctx context.Context, image, tag,
 		return nil
 	}
 	return result
+}
+
+func remoteLabelRef(image, tag string) string {
+	repo, parsedTag, _ := update.ParseImageRef(image)
+	if _, digest, pinned := strings.Cut(image, "@"); pinned {
+		return repo + "@" + digest
+	}
+	if tag == "" {
+		tag = parsedTag
+	}
+	return repo + ":" + tag
 }
 
 // resolveImageNameFallback uses the image short name as package name with
