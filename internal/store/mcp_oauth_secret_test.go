@@ -118,20 +118,45 @@ func TestMCPOAuth_ChangingTheClientSecretSignsEveryClientOut(t *testing.T) {
 	assert.ErrorIs(t, err, auth.ErrInvalidToken, "what was revoked stays revoked")
 }
 
-func TestMCPOAuth_FirstStartAfterTheUpgradeKeepsTheTokens(t *testing.T) {
+func applyMigration52(t *testing.T, db *DB, direction string) {
+	t.Helper()
+	matches, err := fs.Glob(migrationFS, "migrations/"+db.dialect.String()+"/52_*."+direction+".sql")
+	require.NoError(t, err)
+	require.Len(t, matches, 1)
+	sqlText, err := fs.ReadFile(migrationFS, matches[0])
+	require.NoError(t, err)
+	_, err = db.ReadDB().ExecContext(context.Background(), string(sqlText))
+	require.NoError(t, err, direction)
+}
+
+func TestMCPOAuth_TheUpgradeSignsEveryClientOutOnce(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
-	s := NewMCPOAuthStore(db)
-	require.NoError(t, s.StoreToken(ctx, &oauth.MCPOAuthToken{
+	applyMigration52(t, db, "down")
+
+	before := NewMCPOAuthStore(db)
+	require.NoError(t, before.StoreToken(ctx, &oauth.MCPOAuthToken{
 		TokenHash: oauth.HashToken("issued-before"), TokenType: "access", ClientID: "claude", Scope: "read",
-		ExpiresAt: time.Now().Add(time.Hour), FamilyID: "fam", CreatedAt: time.Now().Add(time.Hour),
+		ExpiresAt: time.Now().Add(time.Hour), FamilyID: "fam", CreatedAt: time.Now(),
+	}))
+	require.NoError(t, before.StoreCode(ctx, &oauth.MCPAuthCode{
+		CodeHash: oauth.HashToken("code-before"), ClientID: "claude", RedirectURI: "http://localhost:7777/cb",
+		CodeChallenge: "c", CodeChallengeMethod: "S256", Scope: "read",
+		ExpiresAt: time.Now().Add(time.Hour), CreatedAt: time.Now(),
 	}))
 
-	started := startOAuth(t, db, "secret-A")
-	_, err := started.verify(ctx, "issued-before", nil)
-	require.NoError(t, err)
-	_, err = startOAuth(t, db, "secret-B").verify(ctx, "issued-before", nil)
-	assert.ErrorIs(t, err, auth.ErrInvalidToken, "the secret it was first seen under is the one recorded")
+	applyMigration52(t, db, "up")
+
+	upgraded := startOAuth(t, db, "secret-A")
+	_, err := upgraded.verify(ctx, "issued-before", nil)
+	assert.ErrorIs(t, err, auth.ErrInvalidToken, "a token issued under a secret nobody recorded is not trusted")
+	_, err = upgraded.store.ConsumeCode(ctx, oauth.HashToken("code-before"))
+	assert.ErrorIs(t, err, oauth.ErrCodeUsed)
+
+	status, pair := upgraded.exchange(upgraded.code())
+	require.Equal(t, http.StatusOK, status, pair)
+	_, err = startOAuth(t, db, "secret-A").verify(ctx, pair["access_token"].(string), nil)
+	require.NoError(t, err, "a client that signed in again is not signed out by the next start")
 }
 
 func TestMigration52_DownAndUpRunWithARecordedFingerprint(t *testing.T) {
@@ -139,15 +164,8 @@ func TestMigration52_DownAndUpRunWithARecordedFingerprint(t *testing.T) {
 	ctx := context.Background()
 	startOAuth(t, db, "secret-A").code()
 
-	for _, direction := range []string{"down", "up"} {
-		matches, err := fs.Glob(migrationFS, "migrations/"+db.dialect.String()+"/52_*."+direction+".sql")
-		require.NoError(t, err)
-		require.Len(t, matches, 1)
-		sqlText, err := fs.ReadFile(migrationFS, matches[0])
-		require.NoError(t, err)
-		_, err = db.ReadDB().ExecContext(ctx, string(sqlText))
-		require.NoError(t, err, direction)
-	}
+	applyMigration52(t, db, "down")
+	applyMigration52(t, db, "up")
 
 	startOAuth(t, db, "secret-B").code()
 	var stored string
