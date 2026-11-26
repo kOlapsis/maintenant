@@ -124,6 +124,21 @@ var knownLabelKeys = map[string]struct{}{
 
 var knownLabelPrefixes = []string{"maintenant.endpoint.", UpdateLabelPrefix}
 
+var knownLabelValues = map[string]func(string) bool{
+	labelPBIgnore: func(v string) bool { return v == "true" || v == "1" || v == "false" || v == "0" },
+	labelPBSeverity: func(v string) bool {
+		switch AlertSeverity(v) {
+		case SeverityCritical, SeverityWarning, SeverityInfo:
+			return true
+		}
+		return false
+	},
+	labelPBThreshold: func(v string) bool {
+		n, err := strconv.Atoi(v)
+		return err == nil && n > 0
+	},
+}
+
 var unknownLabelsWarned sync.Map
 
 func isKnownLabel(key string) bool {
@@ -138,24 +153,36 @@ func isKnownLabel(key string) bool {
 	return false
 }
 
-// WarnUnknownLabels logs a warning for each unrecognised maintenant.* label on a container, once per container per process.
+// WarnUnknownLabels logs a warning for each unrecognised maintenant.* label on a container, and for each known one whose value cannot be used, once per container per process.
 func WarnUnknownLabels(containerID string, labels map[string]string, logger *slog.Logger) {
 	if _, done := unknownLabelsWarned.Load(containerID); done {
 		return
 	}
-	var unknown []string
+	var unknown, invalid []string
 	for _, key := range slices.Sorted(maps.Keys(labels)) {
-		if strings.HasPrefix(key, "maintenant.") && !isKnownLabel(key) {
+		if !strings.HasPrefix(key, "maintenant.") {
+			continue
+		}
+		if !isKnownLabel(key) {
 			unknown = append(unknown, key)
+		} else if valid, checked := knownLabelValues[key]; checked && !valid(labels[key]) {
+			invalid = append(invalid, key)
 		}
 	}
-	if len(unknown) == 0 {
+	if len(unknown)+len(invalid) == 0 {
 		return
 	}
 	if _, done := unknownLabelsWarned.LoadOrStore(containerID, struct{}{}); done {
 		return
 	}
+	who := shortID(containerID)
+	if strings.Contains(containerID, "/") { // a Kubernetes namespace/Kind/name, not a Docker ID
+		who = containerID
+	}
 	for _, key := range unknown {
-		logger.Warn("unknown maintenant.* label ignored", "container", shortID(containerID), "label", key)
+		logger.Warn("unknown maintenant.* label ignored", "container", who, "label", key)
+	}
+	for _, key := range invalid {
+		logger.Warn("maintenant.* label with an invalid value ignored", "container", who, "label", key, "value", labels[key])
 	}
 }

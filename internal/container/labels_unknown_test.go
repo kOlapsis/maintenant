@@ -115,7 +115,7 @@ func TestWarnUnknownLabels_KeepsQuietOnKnownLabels(t *testing.T) {
 
 	WarnUnknownLabels(extID("known-d"), labels, logger)
 
-	assert.Empty(t, warnLines(logs.String(), "maintenant."), "no known label may be reported as unknown:\n%s", logs.String())
+	assert.Empty(t, warnLines(logs.String(), "unknown maintenant.* label"), "no known label may be reported as unknown:\n%s", logs.String())
 }
 
 // FR-010, US4 scenario 2: a container reported by an agent is warned about once, however often it is reported.

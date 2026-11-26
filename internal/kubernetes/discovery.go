@@ -115,21 +115,21 @@ func (r *Runtime) discoverAll(ctx context.Context) ([]*cmodel.Container, error) 
 }
 
 func (r *Runtime) mapDeployment(dep *appsv1.Deployment, now time.Time) *cmodel.Container {
-	cm := controllerContainer("Deployment", dep.ObjectMeta, dep.Spec.Template.Spec.Containers, desiredReplicas(dep.Spec.Replicas), dep.Status.ReadyReplicas, now)
+	cm := r.controllerContainer("Deployment", dep.ObjectMeta, dep.Spec.Template.Spec.Containers, desiredReplicas(dep.Spec.Replicas), dep.Status.ReadyReplicas, now)
 	cm.State, cm.ErrorDetail = deploymentState(dep)
 	return cm
 }
 
 func (r *Runtime) mapStatefulSet(ss *appsv1.StatefulSet, now time.Time) *cmodel.Container {
-	return controllerContainer("StatefulSet", ss.ObjectMeta, ss.Spec.Template.Spec.Containers, desiredReplicas(ss.Spec.Replicas), ss.Status.ReadyReplicas, now)
+	return r.controllerContainer("StatefulSet", ss.ObjectMeta, ss.Spec.Template.Spec.Containers, desiredReplicas(ss.Spec.Replicas), ss.Status.ReadyReplicas, now)
 }
 
 func (r *Runtime) mapDaemonSet(ds *appsv1.DaemonSet, now time.Time) *cmodel.Container {
-	return controllerContainer("DaemonSet", ds.ObjectMeta, ds.Spec.Template.Spec.Containers, ds.Status.DesiredNumberScheduled, ds.Status.NumberReady, now)
+	return r.controllerContainer("DaemonSet", ds.ObjectMeta, ds.Spec.Template.Spec.Containers, ds.Status.DesiredNumberScheduled, ds.Status.NumberReady, now)
 }
 
 // controllerContainer maps a controller to a container, created while none of its desired pods is ready.
-func controllerContainer(kind string, meta metav1.ObjectMeta, containers []corev1.Container, desired, ready int32, now time.Time) *cmodel.Container {
+func (r *Runtime) controllerContainer(kind string, meta metav1.ObjectMeta, containers []corev1.Container, desired, ready int32, now time.Time) *cmodel.Container {
 	state := cmodel.StateRunning
 	if ready == 0 && desired > 0 {
 		state = cmodel.StateCreated
@@ -151,7 +151,7 @@ func controllerContainer(kind string, meta metav1.ObjectMeta, containers []corev
 		FirstSeenAt:        meta.CreationTimestamp.Time,
 		LastStateChangeAt:  now,
 	}
-	applyAnnotations(cm, meta.Annotations)
+	r.applyAnnotations(cm, meta.Annotations)
 	return cm
 }
 
@@ -178,7 +178,7 @@ func (r *Runtime) mapBarePod(pod *corev1.Pod, now time.Time) *cmodel.Container {
 		FirstSeenAt:        pod.CreationTimestamp.Time,
 		LastStateChangeAt:  now,
 	}
-	applyAnnotations(cm, pod.Annotations)
+	r.applyAnnotations(cm, pod.Annotations)
 	return cm
 }
 
@@ -279,8 +279,9 @@ func podContainers(pod *corev1.Pod) []corev1.Container {
 	return pod.Spec.Containers
 }
 
-// applyAnnotations reads maintenant.* annotations from K8s workloads.
-func applyAnnotations(cm *cmodel.Container, annotations map[string]string) {
+// applyAnnotations reads maintenant.* annotations from K8s workloads and warns about those it cannot use.
+func (r *Runtime) applyAnnotations(cm *cmodel.Container, annotations map[string]string) {
+	cmodel.WarnUnknownLabels(cm.ExternalID, annotations, r.logger)
 	if v, ok := annotations["maintenant.ignore"]; ok && (v == "true" || v == "1") {
 		cm.IsIgnored = true
 	}
