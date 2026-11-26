@@ -66,9 +66,11 @@ func TestNodeService_ALeaderlessSwarmRaisesTheQuorumAlert(t *testing.T) {
 	client.err = nil
 	client.nodes = []swarm.Node{managerNode("m1", swarm.NodeStateReady), managerNode("m2", swarm.NodeStateReady), managerNode("m3", swarm.NodeStateDown)}
 	require.NoError(t, ns.Reconcile(ctx))
-	recovered := sink.take()
-	require.Len(t, recovered, 1)
-	assert.True(t, recovered[0].IsRecover)
+	events := sink.take()
+	require.Len(t, events, 2)
+	assert.Equal(t, "node_down", events[0].AlertType, "m3 is down from the first time it is seen")
+	assert.Equal(t, "quorum_degraded", events[1].AlertType)
+	assert.True(t, events[1].IsRecover)
 }
 
 func TestNodeService_OtherNodeListErrorsRaiseNoQuorumAlert(t *testing.T) {

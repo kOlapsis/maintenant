@@ -146,6 +146,9 @@ func (ns *NodeService) Reconcile(ctx context.Context) error {
 		} else {
 			ns.logger.Info("new Swarm node discovered",
 				"node_id", nodeID, "hostname", hostname, "role", role, "status", status)
+			if nodeLost(status) {
+				ns.sendAlert(nodeDownAlert(newNode, "unknown"))
+			}
 		}
 		if existing == nil || existing.Role != role || existing.Hostname != hostname ||
 			existing.EngineVersion != engineVersion || existing.Address != address {
@@ -205,23 +208,8 @@ func (ns *NodeService) detectTransitions(old, current *SwarmNode) {
 	})
 
 	// Node went down or disconnected.
-	if statusChanged && old.Status == "ready" && (current.Status == "down" || current.Status == "disconnected") {
-		ns.sendAlert(alert.Event{
-			Source:     "swarm",
-			AlertType:  "node_down",
-			Severity:   alert.SeverityCritical,
-			Message:    fmt.Sprintf("Swarm node %s (%s) is %s", current.Hostname, current.Role, current.Status),
-			EntityType: "swarm_node",
-			EntityID:   current.NodeID,
-			EntityName: current.Hostname,
-			Details: map[string]any{
-				"node_id":    current.NodeID,
-				"role":       current.Role,
-				"old_status": old.Status,
-				"new_status": current.Status,
-			},
-			Timestamp: time.Now(),
-		})
+	if statusChanged && old.Status == "ready" && nodeLost(current.Status) {
+		ns.sendAlert(nodeDownAlert(current, old.Status))
 	}
 
 	// Node recovered.
@@ -342,6 +330,30 @@ func isLeaderless(err error) bool {
 func (ns *NodeService) emit(eventType string, data interface{}) {
 	if ns.callback != nil {
 		ns.callback(eventType, data)
+	}
+}
+
+func nodeLost(status string) bool {
+	return status == "down" || status == "disconnected"
+}
+
+// nodeDownAlert is the node_down alert of a node found down or disconnected after oldStatus.
+func nodeDownAlert(n *SwarmNode, oldStatus string) alert.Event {
+	return alert.Event{
+		Source:     "swarm",
+		AlertType:  "node_down",
+		Severity:   alert.SeverityCritical,
+		Message:    fmt.Sprintf("Swarm node %s (%s) is %s", n.Hostname, n.Role, n.Status),
+		EntityType: "swarm_node",
+		EntityID:   n.NodeID,
+		EntityName: n.Hostname,
+		Details: map[string]any{
+			"node_id":    n.NodeID,
+			"role":       n.Role,
+			"old_status": oldStatus,
+			"new_status": n.Status,
+		},
+		Timestamp: time.Now(),
 	}
 }
 
