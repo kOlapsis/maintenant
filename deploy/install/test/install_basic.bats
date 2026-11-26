@@ -203,25 +203,91 @@ run_script() {
     [ -z "$result" ]
 }
 
-@test "download_and_verify: cosign 2 skips verification instead of failing" {
+NO_COSIGN='command() { [ "$2" != cosign ] && builtin command "$@"; }'
+COSIGN_2="cosign() { echo '  GitVersion:    v2.4.1'; }; export -f cosign"
+COSIGN_3_BAD="cosign() { [ \"\$1\" = version ] && echo '  GitVersion:    v3.0.2'; }; export -f cosign"
+COSIGN_3_OK="cosign() { echo '  GitVersion:    v3.0.2'; }; export -f cosign"
+
+verify_then_summary() {
     FAKE_TMPDIR=$(mktemp -d)
     printf 'fakebinary' > "$FAKE_TMPDIR/maintenant-v1.0.0-linux-amd64"
     (cd "$FAKE_TMPDIR" && sha256sum maintenant-v1.0.0-linux-amd64 > SHA256SUMS)
+    touch "$FAKE_TMPDIR/SHA256SUMS.bundle"
+    setup_env="$1"
+    shift
 
     run bash -c "
         NO_COLOR=1; export NO_COLOR
-        cosign() { echo '  GitVersion:    v2.4.1'; }
-        export -f cosign
+        unset SKIP_COSIGN MAINTENANT_SKIP_COSIGN REQUIRE_COSIGN MAINTENANT_REQUIRE_COSIGN
+        $setup_env
         _INSTALL_SH_TESTING=1 . '$SCRIPT'
         VERSION=v1.0.0
         ARCH=amd64
-        GITHUB_REPO=kOlapsis/maintenant
+        CONFIG_DIR='$FAKE_TMPDIR/etc'
         fetch_url_to() { cp '$FAKE_TMPDIR/'\"\$(basename \"\$2\")\" \"\$2\" 2>/dev/null || true; }
+        parse_maintenant_flags $*
         download_and_verify
+        print_summary
     "
+    rm -rf "$FAKE_TMPDIR"
+}
+
+@test "cosign 2: installs, and the summary says the signature was not verified" {
+    verify_then_summary "$COSIGN_2"
     [ "$status" -eq 0 ]
     [[ "$output" == *"cosign 3 or later is required"* ]]
-    rm -rf "$FAKE_TMPDIR"
+    [[ "$output" == *"installed successfully"*"SIGNATURE NOT VERIFIED"* ]]
+    [[ "$output" == *"cosign verify-blob --bundle SHA256SUMS.bundle"* ]]
+    [[ "$output" == *"releases/download/v1.0.0/SHA256SUMS"* ]]
+    [[ "$output" == *"maintenant-v1.0.0-linux-amd64"* ]]
+    [[ "$output" == *"--require-cosign"* ]]
+}
+
+@test "no cosign: installs, and the summary says the signature was not verified" {
+    verify_then_summary "$NO_COSIGN"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"installed successfully"*"SIGNATURE NOT VERIFIED"*"cosign is not installed"* ]]
+    [[ "$output" == *"--require-cosign"* ]]
+}
+
+@test "--require-cosign: no cosign exits 22" {
+    verify_then_summary "$NO_COSIGN" --require-cosign
+    [ "$status" -eq 22 ]
+    [[ "$output" != *"installed successfully"* ]]
+}
+
+@test "--require-cosign: cosign 2 exits 22" {
+    verify_then_summary "$COSIGN_2" --require-cosign
+    [ "$status" -eq 22 ]
+}
+
+@test "MAINTENANT_REQUIRE_COSIGN behaves like --require-cosign" {
+    verify_then_summary "$NO_COSIGN; MAINTENANT_REQUIRE_COSIGN=1"
+    [ "$status" -eq 22 ]
+}
+
+@test "--require-cosign with --skip-cosign exits 2" {
+    verify_then_summary "$COSIGN_3_OK" --require-cosign --skip-cosign
+    [ "$status" -eq 2 ]
+}
+
+@test "cosign 3: a signature that does not verify exits 22 without any flag" {
+    verify_then_summary "$COSIGN_3_BAD"
+    [ "$status" -eq 22 ]
+}
+
+@test "cosign 3: a verified signature leaves no warning in the summary" {
+    verify_then_summary "$COSIGN_3_OK" --require-cosign
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"cosign signature verified"* ]]
+    [[ "$output" != *"SIGNATURE NOT VERIFIED"* ]]
+}
+
+@test "--skip-cosign: installs without cosign and keeps the summary plain" {
+    verify_then_summary "$NO_COSIGN" --skip-cosign
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"cosign verification skipped"* ]]
+    [[ "$output" != *"SIGNATURE NOT VERIFIED"* ]]
 }
 
 @test "GITHUB_REPO matches the repository spelling used in the certificate identity" {

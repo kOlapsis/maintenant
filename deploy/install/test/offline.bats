@@ -86,6 +86,19 @@ run_offline() {
     [ ! -e "$WORK/network.log" ]
 }
 
+@test "offline install: the summary says the signature was not verified" {
+    run_offline --binary "$WORK/media/maintenant-v1.2.3-linux-amd64" --sha256sums "$WORK/media/SHA256SUMS"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"installed successfully"*"SIGNATURE NOT VERIFIED"* ]]
+    [[ "$output" == *"releases/download/v1.2.3/SHA256SUMS"* ]]
+}
+
+@test "offline install: --require-cosign exits 22" {
+    run_offline --binary "$WORK/media/maintenant-v1.2.3-linux-amd64" --sha256sums "$WORK/media/SHA256SUMS" --require-cosign
+    [ "$status" -eq 22 ]
+    [ "$(cat "$WORK/bin/maintenant" 2>/dev/null)" != "maintenant binary" ]
+}
+
 @test "check_prereqs: an offline install needs neither curl nor wget" {
     run bash -c "
         id() { echo '0'; }

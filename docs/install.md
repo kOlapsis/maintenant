@@ -108,7 +108,7 @@ sudo bash install.sh \
 
 - `--sha256sums` checks the binary against a `SHA256SUMS` file. The binary can have any file name: it is matched by checksum against a `linux-<arch>` entry of the file, and the version shown in the summary comes from that entry. A checksum that matches nothing for this architecture exits with code 21.
 - Without `--sha256sums`, the script warns that the integrity of the binary is not checked and installs it, with the version `local`.
-- The cosign signature is never verified offline, and the script says so. To check it, verify `SHA256SUMS` with `SHA256SUMS.bundle` on the connected machine first, see [Manual verification](#manual-verification).
+- The cosign signature is never verified offline: the script says so, again in its final summary, and `--require-cosign` refuses an offline install. To check it, verify `SHA256SUMS` with `SHA256SUMS.bundle` on the connected machine first, see [Manual verification](#manual-verification).
 - Neither `curl` nor `wget` is required. Every other flag works as usual (`--no-service`, configuration flags).
 - A missing `--binary` file exits with code 2.
 
@@ -190,6 +190,7 @@ Run `maintenant --help` to see this list with descriptions at any time.
 | `--uninstall` | Remove the binary and the service. Keeps the data, the configuration and the user. |
 | `--purge` | With `--uninstall`: also remove the data, the configuration and the user. |
 | `--skip-cosign` | Skip the cosign signature check. The SHA256 check stays mandatory. |
+| `--require-cosign` | Stop with exit code 22 when the signature cannot be checked: `cosign` missing or older than 3, or an offline install. Cannot be combined with `--skip-cosign`. |
 | `--binary <path>` | Install this local binary instead of downloading one. |
 | `--sha256sums <path>` | With `--binary`: check it against this `SHA256SUMS` file. |
 | `--help`, `-h` | Print the usage and exit. |
@@ -201,6 +202,7 @@ Run `maintenant --help` to see this list with descriptions at any time.
 | `MAINTENANT_DATA_DIR` | `/var/lib/maintenant` | Data directory. |
 | `MAINTENANT_CONFIG_DIR` | `/etc/maintenant` | Configuration directory. |
 | `MAINTENANT_SKIP_COSIGN` | unset | Any non-empty value behaves like `--skip-cosign`. |
+| `MAINTENANT_REQUIRE_COSIGN` | unset | Any non-empty value behaves like `--require-cosign`. |
 | `NO_COLOR` | unset | Disable ANSI colors. |
 
 Because `sudo` does not pass the environment through, give these on the `sudo` command line, as in `sudo MAINTENANT_VERSION=v1.13.1 bash`.
@@ -318,9 +320,15 @@ disk always names the script that produced it.
 2. Verifies the binary against its SHA256 checksum: **mandatory**, exits code 21 on mismatch.
 3. If `cosign` 3 or later is in `$PATH` and `--skip-cosign` is not set, verifies the `SHA256SUMS` signature from the bundle against the Sigstore transparency log, asserting that the signature was produced by the official `release.yml` workflow on the correct tag.
 
-**cosign 3 is required.** `sign-blob` dropped `--output-signature` and `--output-certificate`, so a release carries a bundle and nothing else, and reading that bundle needs a 3.x binary. An older cosign is treated like an absent one: the script says so and continues, rather than reporting a signature failure that would say nothing about the signature.
+**cosign 3 is required.** `sign-blob` dropped `--output-signature` and `--output-certificate`, so a release carries a bundle and nothing else, and reading that bundle needs a 3.x binary. An older cosign is treated like an absent one.
 
-The cosign check is **best-effort**: if `cosign` is absent, the script warns and continues. Install it for full supply-chain protection:
+The binary and `SHA256SUMS` come from the same release, so the checksum alone only proves that the download is intact. The signature is what proves who built it.
+
+- With `cosign` 3 or later, a signature that does not verify stops the install with exit code 22.
+- Without it, the script installs on the checksum alone. It warns when it skips the check and again after the final summary, under `SIGNATURE NOT VERIFIED`, with the commands that verify the installed binary afterwards.
+- With `--require-cosign`, the script stops with exit code 22 instead of warning.
+
+To have the signature checked, install cosign first, in a directory that `sudo` keeps in its `PATH` such as `/usr/local/bin`:
 
 ```bash
 # Install cosign (see https://docs.sigstore.dev/cosign/system_config/installation/)
@@ -362,12 +370,12 @@ gh attestation verify --owner kOlapsis maintenant-${VERSION}-linux-${ARCH}
 |---|---|
 | `0` | Success, or `--help` |
 | `1` | Unexpected failure, for example `useradd` failing |
-| `2` | Invalid argument: unknown flag, missing or empty value, bad boolean, unsupported character in a path, `--sha256sums` without `--binary`, or a `--binary` or `--sha256sums` file that does not exist |
+| `2` | Invalid argument: unknown flag, missing or empty value, bad boolean, unsupported character in a path, `--sha256sums` without `--binary`, `--skip-cosign` with `--require-cosign`, or a `--binary` or `--sha256sums` file that does not exist |
 | `10` | Unsupported OS or architecture |
 | `11` | Not running as root |
 | `12` | Missing required tool: `curl` or `wget` (unless `--binary`), `install`, `useradd`, or `systemctl` (unless `--no-service`) |
 | `20` | Release not found, release without standalone binaries, or download failure |
 | `21` | SHA256 checksum mismatch, or (offline) no matching `linux-<arch>` entry in `SHA256SUMS` |
-| `22` | cosign signature invalid |
+| `22` | cosign signature invalid, or signature not checkable with `--require-cosign` |
 | `30` | Filesystem error, including a non-empty directory owned by someone else, at install or at `--purge` |
 | `31` | systemd failure: a `systemctl` command failed, or the service stopped or was restarted within 5 seconds of its start |

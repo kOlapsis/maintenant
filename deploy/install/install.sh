@@ -17,6 +17,8 @@ SERVICE_FILE="${SERVICE_FILE:-/etc/systemd/system/maintenant.service}"
 # only fails at verification.
 GITHUB_REPO="kOlapsis/maintenant"
 GITHUB_API="https://api.github.com"
+COSIGN_IDENTITY="^https://github\\.com/$GITHUB_REPO/\\.github/workflows/release\\.yml@refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+\$"
+SIGNATURE_UNVERIFIED=""
 SCRIPT_VERSION="__GIT_SHA__"
 NL='
 '
@@ -79,6 +81,8 @@ Script flags:
   --uninstall           Remove Maintenant (keeps data and user by default)
   --purge               With --uninstall: also remove data dir, config, user
   --skip-cosign         Skip cosign signature check (SHA256 still required)
+  --require-cosign      Stop when the cosign signature cannot be checked
+                        (cosign missing or older than 3, or offline install)
   --binary <path>       Install this local binary instead of downloading one
                         (offline install: no network access at all)
   --sha256sums <path>   With --binary: check it against this SHA256SUMS file
@@ -163,6 +167,7 @@ Environment variables:
   MAINTENANT_INSTALL_DIR   Binary install path (default: /usr/local/bin)
   MAINTENANT_DATA_DIR      Data directory (default: /var/lib/maintenant)
   MAINTENANT_CONFIG_DIR    Config directory (default: /etc/maintenant)
+  MAINTENANT_REQUIRE_COSIGN  Any non-empty value behaves like --require-cosign
   NO_COLOR                 Disable ANSI colors
 
 EOF
@@ -287,6 +292,12 @@ _cosign_major() {
         | head -n 1
 }
 
+_signature_unverified() {
+    [ -z "${REQUIRE_COSIGN:-}" ] || abort "$1: the release signature cannot be checked (--require-cosign)" 22
+    SIGNATURE_UNVERIFIED="$1"
+    log_warn "$1: the release signature is NOT verified, installing on the SHA256 check alone"
+}
+
 download_and_verify() {
     TMPDIR_INSTALL=$(mktemp -d)
     ASSET_NAME="maintenant-${VERSION}-linux-${ARCH}"
@@ -305,19 +316,16 @@ download_and_verify() {
     if [ -n "${SKIP_COSIGN:-}" ]; then
         log_warn "cosign verification skipped (--skip-cosign)"
     elif ! command -v cosign >/dev/null 2>&1; then
-        log_warn "cosign not found — skipping signature verification (install cosign 3 for supply-chain protection)"
+        _signature_unverified "cosign is not installed, or not on root's PATH"
     elif COSIGN_MAJOR=$(_cosign_major); [ -z "$COSIGN_MAJOR" ] || [ "$COSIGN_MAJOR" -lt 3 ]; then
-        # Not treated as a verification failure: a 2.x binary cannot read the
-        # bundle at all, and an unreadable version string says nothing about
-        # the signature either.
-        log_warn "cosign 3 or later is required to read the release bundle — skipping signature verification"
+        _signature_unverified "cosign 3 or later is required to read the release bundle"
     else
         fetch_url_to "$BASE_URL/SHA256SUMS.bundle" "$TMPDIR_INSTALL/SHA256SUMS.bundle" \
             || abort "Failed to download SHA256SUMS.bundle" 20
         log_step "Verifying cosign signature..."
         if ! cosign verify-blob \
             --bundle "$TMPDIR_INSTALL/SHA256SUMS.bundle" \
-            --certificate-identity-regexp "^https://github\\.com/$GITHUB_REPO/\\.github/workflows/release\\.yml@refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+\$" \
+            --certificate-identity-regexp "$COSIGN_IDENTITY" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             "$TMPDIR_INSTALL/SHA256SUMS"; then
             abort "cosign signature verification failed" 22
@@ -338,6 +346,7 @@ use_local_binary() {
 
     if [ -z "${LOCAL_SUMS:-}" ]; then
         log_warn "No --sha256sums given: the integrity of $LOCAL_BINARY is not checked"
+        _signature_unverified "offline install without --sha256sums"
         return
     fi
     [ -f "$LOCAL_SUMS" ] || abort "SHA256SUMS file not found: $LOCAL_SUMS" 2
@@ -359,7 +368,7 @@ use_local_binary() {
     VERSION="${MATCHED_ASSET#maintenant-}"
     VERSION="${VERSION%-linux-"$ARCH"}"
     log_info "Checksum matches $MATCHED_ASSET"
-    log_warn "Offline install: the cosign signature of $LOCAL_SUMS is not verified"
+    _signature_unverified "offline install, the signature of $LOCAL_SUMS is not checked"
 }
 
 # ── ensure_user ───────────────────────────────────────────────────────────────
@@ -605,11 +614,32 @@ print_summary() {
   ╚══════════════════════════════════════════════════════╝
 
 EOF
+    [ -n "$SIGNATURE_UNVERIFIED" ] || return 0
+    log_warn "SIGNATURE NOT VERIFIED: $SIGNATURE_UNVERIFIED."
+    log_warn "The checksum only proves the binary matches the file published next to it."
+    if [ "$VERSION" = local ]; then
+        log_warn "To verify a binary by hand: https://docs.maintenant.dev/install/#manual-verification"
+    else
+        release_url="https://github.com/$GITHUB_REPO/releases/download/$VERSION"
+        cat >&2 <<EOF
+  To verify the installed binary, with cosign 3 or later:
+
+    cd "\$(mktemp -d)"
+    curl -fsSLO $release_url/SHA256SUMS -O $release_url/SHA256SUMS.bundle
+    cosign verify-blob --bundle SHA256SUMS.bundle \\
+      --certificate-identity-regexp '$COSIGN_IDENTITY' \\
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+    grep "\$(sha256sum $INSTALL_DIR/maintenant | cut -d ' ' -f 1)  maintenant-$VERSION-linux-$ARCH" SHA256SUMS
+
+  The binary is the signed one when cosign prints "Verified OK" and grep prints a line.
+EOF
+    fi
+    log_warn "To make the installer stop instead of warning: --require-cosign"
 }
 
 # ── parse_maintenant_flags ────────────────────────────────────────────────────
 # Separates script-own flags from binary configuration flags.
-# Sets: NO_SERVICE, DO_UNINSTALL, DO_PURGE, SKIP_COSIGN, LOCAL_BINARY, LOCAL_SUMS
+# Sets: NO_SERVICE, DO_UNINSTALL, DO_PURGE, SKIP_COSIGN, REQUIRE_COSIGN, LOCAL_BINARY, LOCAL_SUMS
 # Populates: BINARY_FLAG_KEYS / BINARY_FLAG_VALS, two parallel line lists
 
 BINARY_FLAG_KEYS=""
@@ -660,6 +690,7 @@ parse_maintenant_flags() {
     # Kept from the environment when already set: MAINTENANT_SKIP_COSIGN and the
     # test harness both drive it that way.
     SKIP_COSIGN="${SKIP_COSIGN:-${MAINTENANT_SKIP_COSIGN:-}}"
+    REQUIRE_COSIGN="${REQUIRE_COSIGN:-${MAINTENANT_REQUIRE_COSIGN:-}}"
     LOCAL_BINARY=""
     LOCAL_SUMS=""
     BINARY_FLAG_KEYS=""
@@ -671,6 +702,7 @@ parse_maintenant_flags() {
             --uninstall)     DO_UNINSTALL=1; shift ;;
             --purge)         DO_PURGE=1; shift ;;
             --skip-cosign)   SKIP_COSIGN=1; shift ;;
+            --require-cosign) REQUIRE_COSIGN=1; shift ;;
             --help|-h)       usage; exit 0 ;;
             --*)
                 FLAG="${1#--}"
@@ -720,6 +752,7 @@ parse_maintenant_flags() {
     done
 
     [ -z "$LOCAL_SUMS" ] || [ -n "$LOCAL_BINARY" ] || abort "--sha256sums requires --binary" 2
+    [ -z "$SKIP_COSIGN" ] || [ -z "$REQUIRE_COSIGN" ] || abort "--skip-cosign and --require-cosign contradict each other" 2
 }
 
 # ── flag_to_env ───────────────────────────────────────────────────────────────
