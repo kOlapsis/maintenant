@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -865,6 +866,20 @@ func (a *App) warnDefaultAllowedHosts() {
 		"hosts", slices.Sorted(maps.Keys(a.cfg.AllowedHostSet())))
 }
 
+// warnMissingTrustedProxies warns when a public https URL is configured without any trusted proxy.
+func (a *App) warnMissingTrustedProxies() {
+	if proxies, _ := a.cfg.ParseTrustedProxies(); len(proxies) > 0 {
+		return
+	}
+	for _, u := range []string{a.cfg.BaseURL, a.cfg.StatusURL} {
+		if strings.HasPrefix(strings.ToLower(u), "https://") {
+			a.logger.Warn("MAINTENANT_TRUSTED_PROXIES is not set while the public URL is https: behind a reverse proxy, all visitors share one rate limit",
+				"url", u)
+			return
+		}
+	}
+}
+
 // Start begins all background services and the HTTP server.
 // It blocks until ctx is canceled, then performs a graceful shutdown.
 func (a *App) Start(ctx context.Context) error {
@@ -885,6 +900,7 @@ func (a *App) Start(ctx context.Context) error {
 		defer func() { _ = ln.Close() }()
 		httpLn = ln
 		a.warnDefaultAllowedHosts()
+		a.warnMissingTrustedProxies()
 	}
 
 	// Derived so an early return (e.g. a failed gRPC listener below) cancels every
