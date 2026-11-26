@@ -32,8 +32,10 @@ const (
 )
 
 var (
-	checkRetryMin = time.Minute
-	checkRetryMax = time.Hour
+	checkRetryMin   = time.Minute
+	checkRetryMax   = time.Hour
+	observeInterval = 10 * time.Minute
+	wallClock       = time.Now
 )
 
 // State is the licence status the manager maintains.
@@ -60,8 +62,8 @@ type Manager struct {
 	buildDate      time.Time
 	buildDateKnown bool
 
-	signedTime     time.Time
-	signedTimeSeen time.Time
+	floor     time.Time
+	floorSeen time.Time
 
 	callbacksMu sync.Mutex
 	callbacks   []EditionChangeCallback
@@ -122,11 +124,18 @@ func (m *Manager) Start(ctx context.Context) {
 
 // loadCache populates state from the disk cache, if a valid one exists.
 func (m *Manager) loadCache(ctx context.Context) {
-	cached, err := readCache(m.dataDir, m.publicKey)
+	cached, observedAt, err := readCache(m.dataDir, m.publicKey)
 	if err != nil || cached == nil {
 		return
 	}
-	m.recordSignedTime(cached.VerifiedAt)
+	m.raiseFloor(cached.VerifiedAt)
+	m.raiseFloor(observedAt)
+	if latest, clock := m.now(), wallClock(); latest.Sub(clock) > time.Minute {
+		m.logger.Warn("this host's clock reads earlier than a time this instance has already seen, the offline grace and the expiry are counted from that time",
+			"clock", clock,
+			"latest_seen", latest,
+		)
+	}
 	if fallback := offlineFallback(cached.VerifiedAt, cached.ExpiresAt, m.now()); fallback != nil {
 		m.logger.Warn("cached license no longer grants an edition",
 			"status", fallback.Status,
@@ -144,10 +153,17 @@ func (m *Manager) loadCache(ctx context.Context) {
 	)
 }
 
-// Stop stops the background ticker and waits for it and for the edition change callbacks in flight.
+// Stop stops the background ticker, waits for it and for the edition change callbacks in flight, then records the latest observed time.
 func (m *Manager) Stop() {
 	close(m.stop)
 	m.running.Wait()
+	m.recordObserved()
+}
+
+func (m *Manager) recordObserved() {
+	if err := touchCache(m.dataDir, m.now()); err != nil {
+		m.logger.Error("failed to record the latest observed time in the license cache", "error", err)
+	}
 }
 
 // State returns the current license state (thread-safe).
@@ -211,23 +227,27 @@ func (m *Manager) setStateAndNotify(ctx context.Context, newState *State) {
 
 func (m *Manager) ticker(ctx context.Context, ok bool) {
 	backoff := retry.New(checkRetryMin, checkRetryMax, 0.25)
-	t := time.NewTimer(checkInterval)
-	defer t.Stop()
-	for {
-		wait := checkInterval
+	next := func(ok bool) time.Duration {
 		if ok {
 			backoff.Reset()
-		} else {
-			wait = backoff.Next()
+			return checkInterval
 		}
-		t.Reset(wait)
+		return backoff.Next()
+	}
+	t := time.NewTimer(next(ok))
+	defer t.Stop()
+	observe := time.NewTicker(observeInterval)
+	defer observe.Stop()
+	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-m.stop:
 			return
+		case <-observe.C:
+			m.recordObserved()
 		case <-t.C:
-			ok = m.check(ctx)
+			t.Reset(next(m.check(ctx)))
 		}
 	}
 }
@@ -256,25 +276,31 @@ func (m *Manager) check(ctx context.Context) bool {
 		return false
 	}
 
-	skew := m.now().Sub(payload.VerifiedAt)
-	if (payload.Status == "active" || payload.Status == "grace") && (skew > maxClockSkew || skew < -maxClockSkew) {
-		err := fmt.Errorf("license answer verified at %s is more than a day away from this host's clock", payload.VerifiedAt.Format(time.RFC3339))
-		m.logger.Error("license answer ignored, check this host's clock", "error", err)
-		m.handleNetworkError(ctx, err)
-		return false
+	if now := m.now(); (payload.Status == "active" || payload.Status == "grace") && !withinSkew(now, payload.VerifiedAt) {
+		if !withinSkew(wallClock(), payload.VerifiedAt) || !payload.VerifiedAt.After(m.State().VerifiedAt) {
+			err := fmt.Errorf("license answer verified at %s is more than a day away from this host's clock", payload.VerifiedAt.Format(time.RFC3339))
+			m.logger.Error("license answer ignored, check this host's clock", "error", err)
+			m.handleNetworkError(ctx, err)
+			return false
+		}
+		m.logger.Warn("the latest time this instance had seen is ahead of the license server and of this host's clock, going back to the server's time",
+			"latest_seen", now,
+			"verified_at", payload.VerifiedAt,
+		)
+		m.floor, m.floorSeen = payload.VerifiedAt, time.Now()
 	}
 
 	switch payload.Status {
 	case "active":
 		m.applyPayload(ctx, payload)
-		if err := writeCache(m.dataDir, resp); err != nil {
+		if err := writeCache(m.dataDir, resp, m.now()); err != nil {
 			m.logger.Error("failed to write license cache", "error", err)
 		}
 		m.logger.Info("license verified", "plan", payload.Plan, "expires_at", payload.ExpiresAt)
 
 	case "grace":
 		m.applyPayload(ctx, payload)
-		if err := writeCache(m.dataDir, resp); err != nil {
+		if err := writeCache(m.dataDir, resp, m.now()); err != nil {
 			m.logger.Error("failed to write license cache", "error", err)
 		}
 		m.logger.Warn("license in grace period",
@@ -364,25 +390,30 @@ func (m *Manager) applyPayload(ctx context.Context, payload *LicensePayload) {
 		VerifiedAt: payload.VerifiedAt,
 		ExpiresAt:  payload.ExpiresAt,
 	}
-	m.recordSignedTime(payload.VerifiedAt)
+	m.raiseFloor(payload.VerifiedAt)
 	m.enforceUpdateWindow(state, payload, m.now())
 	m.setStateAndNotify(ctx, state)
 }
 
-// recordSignedTime keeps the latest server time a verified payload carried, with the local monotonic reading taken when it was seen.
-func (m *Manager) recordSignedTime(t time.Time) {
-	if m.signedTimeSeen.IsZero() || t.After(m.signedTime.Add(time.Since(m.signedTimeSeen))) {
-		m.signedTime, m.signedTimeSeen = t, time.Now()
+// raiseFloor keeps t as the earliest time now may read, with the local monotonic reading taken when it was seen, unless the floor is already later.
+func (m *Manager) raiseFloor(t time.Time) {
+	if !t.IsZero() && (m.floorSeen.IsZero() || t.After(m.floor.Add(time.Since(m.floorSeen)))) {
+		m.floor, m.floorSeen = t, time.Now()
 	}
 }
 
-// now reads the wall clock, but never earlier than the latest signed server time plus the monotonic time elapsed since it was seen.
+func withinSkew(clock, verifiedAt time.Time) bool {
+	d := clock.Sub(verifiedAt)
+	return d <= maxClockSkew && d >= -maxClockSkew
+}
+
+// now reads the wall clock, but never earlier than the floor plus the monotonic time elapsed since it was set.
 func (m *Manager) now() time.Time {
-	now := time.Now()
-	if m.signedTimeSeen.IsZero() {
+	now := wallClock()
+	if m.floorSeen.IsZero() {
 		return now
 	}
-	if floor := m.signedTime.Add(time.Since(m.signedTimeSeen)); floor.After(now) {
+	if floor := m.floor.Add(time.Since(m.floorSeen)); floor.After(now) {
 		return floor
 	}
 	return now
@@ -524,7 +555,7 @@ func (m *Manager) handleNetworkError(ctx context.Context, err error) {
 // network does, and an operator who updates then unplugs keeps the edition until
 // the next restart.
 func (m *Manager) replayUpdateWindow(state *State) {
-	cached, err := readCache(m.dataDir, m.publicKey)
+	cached, _, err := readCache(m.dataDir, m.publicKey)
 	if err != nil || cached == nil {
 		return
 	}

@@ -281,7 +281,7 @@ func TestManager_CacheLoadOnConstruction(t *testing.T) {
 		VerifiedAt: time.Now(),
 	}
 	signed := signPayload(t, priv, payload)
-	require.NoError(t, writeCache(dir, &signed))
+	require.NoError(t, writeCache(dir, &signed, time.Now()))
 
 	// Create manager with a server that's always down
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

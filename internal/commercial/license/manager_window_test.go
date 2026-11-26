@@ -327,7 +327,7 @@ func TestManager_OfflineWithoutAWindowIsUnchanged(t *testing.T) {
 		"expires_at":  time.Now().Add(365 * 24 * time.Hour).UTC().Format(time.RFC3339),
 		"verified_at": time.Now().Add(-10 * 24 * time.Hour).UTC().Format(time.RFC3339),
 	})
-	require.NoError(t, writeCache(m.dataDir, &signed))
+	require.NoError(t, writeCache(m.dataDir, &signed, time.Now()))
 	m.loadCache(context.Background())
 	require.Equal(t, extension.Pro, m.State().Edition)
 

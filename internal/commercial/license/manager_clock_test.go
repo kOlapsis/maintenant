@@ -57,7 +57,7 @@ func TestManager_ClockSetBackBeforeTheLastCheckDoesNotReviveALapsedCache(t *test
 	lapsed.VerifiedAt = time.Now().Add(30 * 24 * time.Hour)
 	lapsed.ExpiresAt = time.Now().Add(10 * 24 * time.Hour)
 	signed := signPayload(t, priv, lapsed)
-	require.NoError(t, writeCache(m.dataDir, &signed))
+	require.NoError(t, writeCache(m.dataDir, &signed, time.Now()))
 
 	m.loadCache(context.Background())
 
@@ -71,7 +71,7 @@ func TestManager_ClockSetBackWhileRunningDoesNotExtendTheOfflineGrace(t *testing
 		w.WriteHeader(http.StatusBadGateway)
 	}, pub, priv)
 	// 61 days ran on the monotonic clock while the wall clock was set back to the time of the check.
-	m.signedTimeSeen = m.signedTimeSeen.Add(-61 * 24 * time.Hour)
+	m.floorSeen = m.floorSeen.Add(-61 * 24 * time.Hour)
 
 	m.check(context.Background())
 

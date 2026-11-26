@@ -91,7 +91,7 @@ func TestManager_ExpiryPassedDuringAnOutageKeepsTheCache(t *testing.T) {
 			lapsed.VerifiedAt = time.Now().Add(-2 * 24 * time.Hour)
 			lapsed.ExpiresAt = time.Now().Add(-time.Hour)
 			signed := signPayload(t, priv, lapsed)
-			require.NoError(t, writeCache(m.dataDir, &signed))
+			require.NoError(t, writeCache(m.dataDir, &signed, time.Now()))
 			load(m, &lapsed)
 
 			m.check(context.Background())
@@ -117,7 +117,7 @@ func TestManager_CacheOlderThanTheOfflineGraceGrantsNothingAtLoad(t *testing.T) 
 	stale := proPayload()
 	stale.VerifiedAt = time.Now().Add(-61 * 24 * time.Hour)
 	signed := signPayload(t, priv, stale)
-	require.NoError(t, writeCache(m.dataDir, &signed))
+	require.NoError(t, writeCache(m.dataDir, &signed, time.Now()))
 
 	m.loadCache(context.Background())
 	assert.Equal(t, extension.Community, m.Edition())
