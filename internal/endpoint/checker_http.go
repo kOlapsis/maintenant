@@ -98,7 +98,7 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 		result.TLSPeerCertificates = state.PeerCertificates
 		result.TLSOCSPResponse = state.OCSPResponse
 
-		// Headers and URL credentials never reach a peer whose certificate was rejected.
+		// Headers, URL credentials and query strings never reach a peer whose certificate was rejected.
 		if carriesSecret(ep) {
 			result.Success = true
 			result.ErrorMessage = reason
@@ -172,10 +172,10 @@ func probeGuard(ep *Endpoint) func(string, string, syscall.RawConn) error {
 	return ssrf.ProbeControl
 }
 
-// carriesSecret reports whether the request of ep holds custom headers or credentials in its URL.
+// carriesSecret reports whether the request of ep holds custom headers, credentials in its URL or a query string.
 func carriesSecret(ep *Endpoint) bool {
 	u, err := url.Parse(ep.Target)
-	return err != nil || u.User != nil || len(ep.Config.Headers) > 0
+	return err != nil || u.User != nil || u.RawQuery != "" || len(ep.Config.Headers) > 0
 }
 
 // newHTTPClient builds the probe client. skipVerify is the per-endpoint

@@ -134,14 +134,26 @@ func TestCheckHTTP_UntrustedCertificate_TransportFailureKeepsURLSecretsOut(t *te
 	}))
 	defer srv.Close()
 
-	result := CheckHTTP(context.Background(), httpEndpoint(srv.URL+"/probe/s3cret-path?token=s3cret-query"), nil)
+	result := CheckHTTP(context.Background(), httpEndpoint(srv.URL+"/probe/s3cret-path"), nil)
 
 	assert.False(t, result.Success)
 	assert.Nil(t, result.HTTPStatus)
 	assert.Contains(t, result.ErrorMessage, "request failed")
 	assert.Contains(t, result.ErrorMessage, "unknown authority")
 	assert.NotContains(t, result.ErrorMessage, "s3cret")
-	assert.NotContains(t, result.ErrorMessage, "token")
+}
+
+func TestCheckHTTP_UntrustedCertificate_QueryStringIsNeverSent(t *testing.T) {
+	srv, callCount, _ := recordingServer(t)
+
+	result := CheckHTTP(context.Background(), httpEndpoint(srv.URL+"/health?token=abc"), nil)
+
+	assert.Equal(t, 0, callCount())
+	assert.True(t, result.Success)
+	assert.True(t, result.Degraded)
+	assert.Nil(t, result.HTTPStatus)
+	assert.Contains(t, result.ErrorMessage, "unknown authority")
+	assert.NotEmpty(t, result.TLSPeerCertificates)
 }
 
 func TestCheckHTTP_UntrustedCertificate_CredentialsInURLAreNeverSent(t *testing.T) {

@@ -266,7 +266,7 @@ The `kubeconfig` and `error` fields name the file and the failure. If you want D
 
 ## An HTTPS host shows as down (or degraded) with "unknown authority"
 
-The host is answering; maintenant just refuses to trust the certificate it presents. Since it is reachable, it is reported as **degraded** rather than down, as long as the application answers with an expected status (see [Untrusted certificates](features/certificates.md#untrusted-certificates-are-degraded-not-down)).
+The host is answering; maintenant just refuses to trust the certificate it presents. Since it is reachable, it is reported as **degraded** rather than down, as long as the application answers with an expected status; an endpoint with custom headers, or with credentials or a query string in its URL, is judged on its TLS answer only (see [Untrusted certificates](features/certificates.md#untrusted-certificates-are-degraded-not-down)).
 
 If the certificate comes from your own PKI, trust the root instead of disabling verification:
 

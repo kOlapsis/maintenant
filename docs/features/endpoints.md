@@ -16,7 +16,7 @@ Each check records:
 - **Status**: `up`, `down`, `degraded` or `unknown`, based on the HTTP status code or the TCP connection
 - **Uptime history**: daily uptime percentages and sparkline charts
 
-An endpoint is `degraded` when the host answers with an expected status but its TLS certificate is not trusted (an endpoint with custom headers is then judged on its TLS answer only, see [Untrusted certificates](certificates.md#untrusted-certificates-are-degraded-not-down)), and `unknown` until its first check.
+An endpoint is `degraded` when the host answers with an expected status but its TLS certificate is not trusted (an endpoint with custom headers, or with credentials or a query string in its URL, is then judged on its TLS answer only, see [Untrusted certificates](certificates.md#untrusted-certificates-are-degraded-not-down)), and `unknown` until its first check.
 
 When the container behind a label-discovered endpoint disappears, or the label is removed, the endpoint
 is **retired**: checks stop and it leaves the list. Retirement happens on the
