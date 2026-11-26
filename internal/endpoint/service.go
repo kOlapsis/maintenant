@@ -30,6 +30,8 @@ var (
 	ErrCheckInProgress = errors.New("a check is already running for this endpoint")
 )
 
+const manualCheckRecordTimeout = 10 * time.Second
+
 // LicenseChecker determines license-gated capabilities for endpoints.
 type LicenseChecker interface {
 	CanCreateEndpoint(currentCount int) bool
@@ -341,6 +343,9 @@ func (s *Service) CheckNow(ctx context.Context, endpointID string) (*Endpoint, e
 	}
 	defer s.manualChecks.Delete(endpointID)
 
+	// The probe is bounded by the endpoint's own timeout, not by the request.
+	ctx = context.WithoutCancel(ctx)
+
 	var result CheckResult
 	switch ep.EndpointType {
 	case TypeHTTP:
@@ -353,9 +358,11 @@ func (s *Service) CheckNow(ctx context.Context, endpointID string) (*Endpoint, e
 
 	s.logger.Info("endpoint: on-demand check", "endpoint_id", endpointID,
 		"target", ep.Target, "success", result.Success)
-	s.ProcessCheckResult(ctx, endpointID, result)
+	recordCtx, cancel := context.WithTimeout(ctx, manualCheckRecordTimeout)
+	defer cancel()
+	s.ProcessCheckResult(recordCtx, endpointID, result)
 
-	return s.store.GetEndpointByID(ctx, endpointID)
+	return s.store.GetEndpointByID(recordCtx, endpointID)
 }
 
 // ProcessCheckResult handles a check result: updates the endpoint state and persists the result.
