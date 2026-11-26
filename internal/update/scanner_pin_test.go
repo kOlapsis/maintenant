@@ -36,6 +36,12 @@ func TestScanner_LooksThePinUpByTheNameThatSurvivesARecreation(t *testing.T) {
 	assert.Equal(t, []string{"app-web-1 nginx:1.25.3", "shop_web nginx:1.25.3"}, store.asked)
 }
 
+func TestPinName_KubernetesWorkloadIsNeverFollowedByItsName(t *testing.T) {
+	workload := ContainerInfo{ExternalID: "staging/Deployment/api", Name: "api", RuntimeType: "kubernetes"}
+	assert.Empty(t, workload.PinName(), "two namespaces can run a workload under the same name")
+	assert.Equal(t, "api", ContainerInfo{Name: "api", RuntimeType: "docker"}.PinName())
+}
+
 func TestScanner_UnreadablePinIsAScanError(t *testing.T) {
 	store := &pinByNameStore{stubStore: &stubStore{}, err: errors.New("database is locked")}
 	reg := &stubRegistry{tags: map[string][]string{"library/nginx": {"1.25.3", "1.27.0"}}}

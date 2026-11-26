@@ -36,8 +36,11 @@ type ContainerInfo struct {
 	Platform           string   // "os/arch" of the host running the container, empty when unknown
 }
 
-// PinName returns the name a pin follows when the container is recreated: the Swarm service of a task, else the container name.
+// PinName returns the name a pin follows when the container is recreated: the Swarm service of a task, else the container name, and none for a Kubernetes workload, whose ID is stable.
 func (c ContainerInfo) PinName() string {
+	if c.RuntimeType == "kubernetes" {
+		return ""
+	}
 	if c.SwarmService != "" {
 		return c.SwarmService
 	}
