@@ -899,8 +899,6 @@ func (a *App) Start(ctx context.Context) error {
 	a.stopWriter = stopWriter
 	a.db.StartWriter(writerCtx)
 
-	// Registered after the writer starts: on SQLite every write goes through it.
-	a.startInstanceHeartbeat(ctx)
 	a.startStorageSupervisor(ctx)
 
 	if a.licenseMgr != nil {
@@ -911,6 +909,9 @@ func (a *App) Start(ctx context.Context) error {
 	if err := a.enforceModeGate(); err != nil {
 		return err
 	}
+
+	// Registered after the writer starts: on SQLite every write goes through it.
+	a.startInstanceHeartbeat(ctx)
 
 	a.alertEngine.Start(ctx)
 	if a.escalationRun != nil {
@@ -969,6 +970,8 @@ func (a *App) Start(ctx context.Context) error {
 	a.startRuntimeSupervisor(ctx)
 
 	if err := a.startAgentServer(ctx); err != nil {
+		cancel()
+		_ = a.Shutdown()
 		return err
 	}
 
