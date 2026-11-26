@@ -112,7 +112,7 @@ func (h *PostureHandler) HandleListContainerPostures(w http.ResponseWriter, r *h
 	offset := 0
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			limit = n
+			limit = min(n, maxListLimit)
 		}
 	}
 	if v := r.URL.Query().Get("offset"); v != "" {
