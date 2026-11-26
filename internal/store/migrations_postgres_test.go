@@ -119,35 +119,36 @@ func TestMigratePostgres_ConcurrentCatchUp(t *testing.T) {
 		"ALTER TABLE containers ADD COLUMN swarm_service_mode TEXT NOT NULL DEFAULT '', ADD COLUMN swarm_desired_replicas INTEGER NOT NULL DEFAULT 0", // 37
 		"ALTER TABLE status_components DROP COLUMN override_before_maintenance",                                                                       // 38
 		"ALTER TABLE escalation_deliveries DROP CONSTRAINT escalation_deliveries_status_check, ADD CONSTRAINT escalation_deliveries_status_check CHECK(status IN ('pending','sent','failed','abandoned','skipped_maintenance'))", // 38
-		"DROP TABLE heartbeat_pauses",                                                                             // 39
-		"DROP INDEX idx_heartbeat_status_deadline",                                                                // 39
-		"ALTER TABLE heartbeats ADD COLUMN active INTEGER NOT NULL DEFAULT 1",                                     // 39
-		"CREATE INDEX idx_heartbeat_status_deadline ON heartbeats(status, next_deadline_at) WHERE active=1",       // 39
-		"CREATE INDEX idx_heartbeat_active ON heartbeats(active)",                                                 // 39
-		"ALTER TABLE alerts DROP COLUMN agent_id",                                                                 // 40
-		"DROP INDEX uq_image_updates_agent_name_image_tag",                                                        // 41
-		"ALTER TABLE image_updates DROP COLUMN agent_id",                                                          // 41
-		"CREATE UNIQUE INDEX uq_image_updates_name_image_tag ON image_updates(container_name, image, latest_tag)", // 41
-		"DROP INDEX uq_heartbeats_ping_token",                                                                     // 42
-		"ALTER TABLE heartbeats DROP COLUMN ping_token",                                                           // 42
-		"ALTER TABLE status_component_monitors DROP COLUMN label",                                                 // 43
-		"ALTER TABLE endpoints DROP COLUMN grandfathered, DROP COLUMN limited",                                    // 44
-		"ALTER TABLE cert_monitors DROP COLUMN grandfathered, DROP COLUMN limited, DROP COLUMN inactive_since",    // 44
-		"DROP INDEX idx_alerts_resolved_by_id",                                                                    // 45
-		"DROP INDEX uq_version_pins_agent_container",                                                              // 46
-		"ALTER TABLE version_pins DROP COLUMN agent_id",                                                           // 46
-		"CREATE UNIQUE INDEX uq_version_pins_container ON version_pins(container_id)",                             // 46
-		"DROP INDEX uq_container_cves_agent",                                                                      // 46
-		"ALTER TABLE container_cves DROP COLUMN agent_id",                                                         // 46
-		"CREATE UNIQUE INDEX uq_container_cves ON container_cves(container_id, cve_id)",                           // 46
-		"ALTER TABLE risk_score_history DROP COLUMN agent_id",                                                     // 46
-		"ALTER TABLE risk_acknowledgments DROP COLUMN agent_id",                                                   // 46
-		"ALTER TABLE risk_acknowledgments ADD UNIQUE (container_external_id, finding_type, finding_key)",          // 46
-		"ALTER TABLE digest_baselines DROP COLUMN agent_id, ADD PRIMARY KEY (container_id)",                       // 46
-		"DROP INDEX idx_deliveries_due",                                                                           // 47
-		"ALTER TABLE notification_deliveries DROP COLUMN event_type, DROP COLUMN payload",                         // 47
-		"ALTER TABLE notification_deliveries DROP COLUMN next_attempt_at",                                         // 47
-		"ALTER TABLE image_updates DROP COLUMN major_tag",                                                         // 48
+		"DROP TABLE heartbeat_pauses",                                                                                 // 39
+		"DROP INDEX idx_heartbeat_status_deadline",                                                                    // 39
+		"ALTER TABLE heartbeats ADD COLUMN active INTEGER NOT NULL DEFAULT 1",                                         // 39
+		"CREATE INDEX idx_heartbeat_status_deadline ON heartbeats(status, next_deadline_at) WHERE active=1",           // 39
+		"CREATE INDEX idx_heartbeat_active ON heartbeats(active)",                                                     // 39
+		"ALTER TABLE alerts DROP COLUMN agent_id",                                                                     // 40
+		"DROP INDEX uq_image_updates_agent_name_image_tag",                                                            // 41
+		"ALTER TABLE image_updates DROP COLUMN agent_id",                                                              // 41
+		"CREATE UNIQUE INDEX uq_image_updates_name_image_tag ON image_updates(container_name, image, latest_tag)",     // 41
+		"DROP INDEX uq_heartbeats_ping_token",                                                                         // 42
+		"ALTER TABLE heartbeats DROP COLUMN ping_token",                                                               // 42
+		"ALTER TABLE status_component_monitors DROP COLUMN label",                                                     // 43
+		"ALTER TABLE endpoints DROP COLUMN grandfathered, DROP COLUMN limited",                                        // 44
+		"ALTER TABLE cert_monitors DROP COLUMN grandfathered, DROP COLUMN limited, DROP COLUMN inactive_since",        // 44
+		"DROP INDEX idx_alerts_resolved_by_id",                                                                        // 45
+		"DROP INDEX uq_version_pins_agent_container",                                                                  // 46
+		"ALTER TABLE version_pins DROP COLUMN agent_id",                                                               // 46
+		"CREATE UNIQUE INDEX uq_version_pins_container ON version_pins(container_id)",                                 // 46
+		"DROP INDEX uq_container_cves_agent",                                                                          // 46
+		"ALTER TABLE container_cves DROP COLUMN agent_id",                                                             // 46
+		"CREATE UNIQUE INDEX uq_container_cves ON container_cves(container_id, cve_id)",                               // 46
+		"ALTER TABLE risk_score_history DROP COLUMN agent_id",                                                         // 46
+		"ALTER TABLE risk_acknowledgments DROP COLUMN agent_id",                                                       // 46
+		"ALTER TABLE risk_acknowledgments ADD UNIQUE (container_external_id, finding_type, finding_key)",              // 46
+		"ALTER TABLE digest_baselines DROP COLUMN agent_id, ADD PRIMARY KEY (container_id)",                           // 46
+		"DROP INDEX idx_deliveries_due",                                                                               // 47
+		"ALTER TABLE notification_deliveries DROP COLUMN event_type, DROP COLUMN payload",                             // 47
+		"ALTER TABLE notification_deliveries DROP COLUMN next_attempt_at",                                             // 47
+		"ALTER TABLE image_updates DROP COLUMN major_tag",                                                             // 48
+		"ALTER TABLE escalation_deliveries DROP COLUMN attempts, DROP COLUMN next_attempt_at, DROP COLUMN created_at", // 50
 	} {
 		_, err = db.ReadDB().Exec(undo)
 		require.NoError(t, err, undo)

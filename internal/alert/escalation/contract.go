@@ -76,6 +76,17 @@ type Store interface {
 	SelectOrphanPendingDeliveries(ctx context.Context, before time.Time) ([]*Delivery, error)
 }
 
+// DeliveryQueue is the durable queue of escalation deliveries waiting for an attempt.
+type DeliveryQueue interface {
+	// SelectDueDeliveries lists the pending deliveries whose next attempt is due at now.
+	SelectDueDeliveries(ctx context.Context, now time.Time) ([]*Delivery, error)
+	// ClaimDelivery takes the attempt of d due at d.NextAttemptAt, started at at and held until until, and reports
+	// false when d has moved on or, for a level, its run is neither active nor exhausted or its alert no longer active and unacknowledged.
+	ClaimDelivery(ctx context.Context, d *Delivery, at, until time.Time) (bool, error)
+	// SettleDelivery records the outcome of the attempt claimed until claim, and reports false when that claim no longer holds.
+	SettleDelivery(ctx context.Context, d *Delivery, claim time.Time) (bool, error)
+}
+
 // Run statuses (mirror the SQL CHECK constraint on escalation_runs).
 const (
 	RunStatusActive                  = "active"
