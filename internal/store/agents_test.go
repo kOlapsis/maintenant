@@ -175,12 +175,29 @@ func TestEnrollAtomic_SameAgentAndKeyMayRepeatItsEnrollment(t *testing.T) {
 		tokenFor(cleartext, time.Now().UTC(), time.Now().UTC().Add(time.Hour))))
 	require.NoError(t, store.EnrollAtomic(ctx, 1, cleartext, enrollAgentRecord("agent-retry")))
 
-	require.NoError(t, store.EnrollAtomic(ctx, 1, cleartext, enrollAgentRecord("agent-retry")),
-		"the agent whose answer was lost enrols again, even with the cap it filled itself")
+	require.ErrorIs(t, store.EnrollAtomic(ctx, 1, cleartext, enrollAgentRecord("agent-retry")), agent.ErrAlreadyEnrolled,
+		"the agent whose answer was lost is recognised, even with the cap it filled itself")
 
 	active, _, err := store.CountByStatus(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 1, active)
+}
+
+func TestEnrollAtomic_ARevokedAgentCannotRepeatItsEnrollment(t *testing.T) {
+	store := NewAgentStore(openTestDB(t))
+	ctx := context.Background()
+
+	const cleartext = "mnt_enr_revokedretry"
+	require.NoError(t, store.InsertToken(ctx,
+		tokenFor(cleartext, time.Now().UTC(), time.Now().UTC().Add(time.Hour))))
+	require.NoError(t, store.EnrollAtomic(ctx, -1, cleartext, enrollAgentRecord("agent-revoked")))
+	require.NoError(t, store.Revoke(ctx, "agent-revoked", "admin"))
+
+	assert.ErrorIs(t, store.EnrollAtomic(ctx, -1, cleartext, enrollAgentRecord("agent-revoked")), agent.ErrTokenAlreadyConsumed)
+
+	stored, err := store.Get(ctx, "agent-revoked")
+	require.NoError(t, err)
+	assert.Equal(t, "revoked", stored.Status)
 }
 
 func TestEnrollAtomic_ConsumedTokenStaysRefusedForAnotherKeyOrAgent(t *testing.T) {

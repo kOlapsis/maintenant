@@ -304,8 +304,9 @@ func (s *AgentStore) TokenExists(ctx context.Context, tokenHash string) (bool, e
 // the token consume, and the insert run in one writer-goroutine transaction, no
 // two concurrent enrollments can both pass the cap check and over-fill it. A
 // limit < 0 means unlimited; the local sentinel is never counted. Returns
-// ErrHostLimitReached, ErrTokenNotFound, ErrTokenAlreadyConsumed, or
-// ErrTokenExpired.
+// ErrHostLimitReached, ErrTokenNotFound, ErrTokenAlreadyConsumed,
+// ErrTokenExpired, or ErrAlreadyEnrolled when the same active agent repeats
+// the enrollment that consumed the token.
 func (s *AgentStore) EnrollAtomic(ctx context.Context, limit int, tokenCleartext string, a *agent.Agent) error {
 	var err error
 	// A concurrent read can make SQLite refuse the write upgrade once (BUSY_SNAPSHOT); retrying the whole transaction is its documented remedy.
@@ -324,8 +325,12 @@ func (s *AgentStore) enrollTx(ctx context.Context, limit int, tokenCleartext str
 		}
 		// The client sends the cleartext; the row is found by its hash.
 		tokenHash := agent.HashToken(tokenCleartext)
-		if enrolled, err := alreadyEnrolled(ctx, tx, tokenHash, a); err != nil || enrolled {
+		enrolled, err := alreadyEnrolled(ctx, tx, tokenHash, a)
+		if err != nil {
 			return err
+		}
+		if enrolled {
+			return agent.ErrAlreadyEnrolled
 		}
 		if limit >= 0 {
 			var active int
@@ -370,13 +375,13 @@ func (s *AgentStore) enrollTx(ctx context.Context, limit int, tokenCleartext str
 	})
 }
 
-// alreadyEnrolled reports whether this token was consumed by this same agent with this same public key.
+// alreadyEnrolled reports whether this token was consumed by this same agent, still active, with this same public key.
 func alreadyEnrolled(ctx context.Context, tx *Tx, tokenHash string, a *agent.Agent) (bool, error) {
 	var storedKey []byte
 	err := tx.QueryRowContext(ctx,
 		`SELECT a.public_key FROM enrollment_tokens t
 		JOIN agents a ON a.id = t.consumed_by_agent_id
-		WHERE t.token_hash = ? AND t.consumed_by_agent_id = ?`, tokenHash, a.AgentID,
+		WHERE t.token_hash = ? AND t.consumed_by_agent_id = ? AND a.status = 'active'`, tokenHash, a.AgentID,
 	).Scan(&storedKey)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil

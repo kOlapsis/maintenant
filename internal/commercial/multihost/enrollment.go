@@ -137,8 +137,11 @@ func (impl *ingestImpl) RegisterAgent(ctx context.Context, req *agentpb.Register
 	// and inserts in a single write transaction, which is what makes concurrent
 	// enrollment unable to exceed the cap.
 	hostLimit := extension.Limit(extension.ResourceAgentHosts)
+	repeated := false
 	if err := impl.deps.AgentStore.EnrollAtomic(ctx, hostLimit, req.GetEnrollmentToken(), a); err != nil {
 		switch {
+		case errors.Is(err, agent.ErrAlreadyEnrolled):
+			repeated = true
 		case errors.Is(err, agent.ErrHostLimitReached):
 			// Capacity, not authentication — the code stays distinct from the
 			// token failures below (FR-027).
@@ -156,21 +159,23 @@ func (impl *ingestImpl) RegisterAgent(ctx context.Context, req *agentpb.Register
 		}
 	}
 
-	logger.Info("agent.registered",
-		"agent_id", a.AgentID,
-		"hostname", a.Hostname,
-		"label", a.Label,
-		"runtime", a.DetectedRuntime,
-		"version", a.AgentVersion,
-	)
+	if !repeated {
+		logger.Info("agent.registered",
+			"agent_id", a.AgentID,
+			"hostname", a.Hostname,
+			"label", a.Label,
+			"runtime", a.DetectedRuntime,
+			"version", a.AgentVersion,
+		)
 
-	impl.deps.Broadcaster.BroadcastEvent(event.AgentCreated, map[string]any{
-		"agent_id": a.AgentID,
-		"hostname": a.Hostname,
-		"label":    a.Label,
-		"runtime":  a.DetectedRuntime,
-		"status":   a.Status,
-	})
+		impl.deps.Broadcaster.BroadcastEvent(event.AgentCreated, map[string]any{
+			"agent_id": a.AgentID,
+			"hostname": a.Hostname,
+			"label":    a.Label,
+			"runtime":  a.DetectedRuntime,
+			"status":   a.Status,
+		})
+	}
 
 	return &agentpb.RegisterResponse{
 		ServerTime: timestamppb.New(now),
