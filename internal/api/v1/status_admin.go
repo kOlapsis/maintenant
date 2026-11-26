@@ -4,6 +4,7 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -696,6 +697,8 @@ func (h *StatusAdminHandler) HandleListSubscribers(w http.ResponseWriter, r *htt
 
 // --- SMTP ---
 
+const smtpTestTimeout = 8 * time.Second // must stay under the 10 s request limit
+
 // HandleTestSmtp sends a test email to the given address through the SMTP server of the environment.
 func (h *StatusAdminHandler) HandleTestSmtp(w http.ResponseWriter, r *http.Request) {
 	if h.mailer == nil {
@@ -714,7 +717,9 @@ func (h *StatusAdminHandler) HandleTestSmtp(w http.ResponseWriter, r *http.Reque
 		WriteError(w, http.StatusBadRequest, "validation", "to must be a valid email address")
 		return
 	}
-	if err := h.mailer.Send(r.Context(), addr.Address, "maintenant SMTP test",
+	ctx, cancel := context.WithTimeout(r.Context(), smtpTestTimeout)
+	defer cancel()
+	if err := h.mailer.Send(ctx, addr.Address, "maintenant SMTP test",
 		"This is a test email from the maintenant status page.\n\n"+
 			"If you received it, subscription confirmations and incident notifications can be delivered.\n"); err != nil {
 		WriteError(w, http.StatusBadGateway, "smtp_failed", err.Error())
