@@ -34,14 +34,14 @@ func NewSwarmNodeStore(d *DB) *SwarmNodeStore {
 // UpsertNode inserts or updates a swarm node. Its id is derived deterministically
 // from (agent_id, node_id) so the agent and server mint the same id.
 func (s *SwarmNodeStore) UpsertNode(ctx context.Context, node *swarm.SwarmNode) error {
+	node.AgentID = uid.Agent(node.AgentID)
+	node.ID = uid.SwarmNode(node.AgentID, node.NodeID)
 	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
 		return upsertSwarmNode(ctx, tx, node)
 	})
 }
 
 func upsertSwarmNode(ctx context.Context, tx *Tx, node *swarm.SwarmNode) error {
-	node.AgentID = uid.Agent(node.AgentID)
-	node.ID = uid.SwarmNode(node.AgentID, node.NodeID)
 	_, err := tx.ExecContext(ctx,
 		`INSERT INTO swarm_nodes (id, agent_id, node_id, hostname, role, status, availability,
 			engine_version, address, task_count, first_seen_at, last_seen_at, last_status_change_at)
@@ -76,13 +76,16 @@ func upsertSwarmNode(ctx context.Context, tx *Tx, node *swarm.SwarmNode) error {
 func (s *SwarmNodeStore) ReplaceNodesForAgent(ctx context.Context, agentID string, nodes []*swarm.SwarmNode) error {
 	agentID = uid.Agent(agentID)
 	keep := make([]string, 0, len(nodes))
+	for _, n := range nodes {
+		n.AgentID = agentID
+		n.ID = uid.SwarmNode(agentID, n.NodeID)
+		keep = append(keep, n.ID)
+	}
 	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
 		for _, n := range nodes {
-			n.AgentID = agentID
 			if err := upsertSwarmNode(ctx, tx, n); err != nil {
 				return err
 			}
-			keep = append(keep, uid.SwarmNode(agentID, n.NodeID))
 		}
 		return deleteNotInForAgent(ctx, tx, "swarm_nodes", agentID, keep)
 	})

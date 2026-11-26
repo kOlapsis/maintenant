@@ -235,7 +235,10 @@ func (s *ContainerStore) DeleteOldestArchivedContainers(ctx context.Context, age
 		}
 		return nil
 	})
-	return deleted, err
+	if err != nil {
+		return 0, err
+	}
+	return deleted, nil
 }
 
 var containerSoftRefs = []struct{ table, column string }{
@@ -384,7 +387,10 @@ func (s *ContainerStore) DeleteArchivedContainersBefore(ctx context.Context, bef
 		deleted, err = res.RowsAffected()
 		return err
 	})
-	return deleted, err
+	if err != nil {
+		return 0, err
+	}
+	return deleted, nil
 }
 
 // --- Column lists and scanners ---
