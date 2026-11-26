@@ -53,6 +53,9 @@ const riskLevel = computed(() => {
   return 'low'
 })
 
+const unorderedTag = computed(() =>
+  detail.value?.update_type === 'digest_only' && !/^v?\d/.test(detail.value.current_tag))
+
 // Alerte update active de ce conteneur : même nom et même hôte (deux hôtes peuvent porter le même nom).
 const updateAlert = computed<Alert | undefined>(() => {
   const d = detail.value
@@ -177,6 +180,9 @@ onMounted(loadDetail)
           <Pin :size="8" class="inline mr-0.5" /> Pinned
         </span>
       </div>
+      <p v-if="unorderedTag" class="mt-2 text-xs text-mnt-muted break-all" data-testid="update-unordered-tag">
+        <span class="font-mono">{{ detail.current_tag }}</span> is not a version number: a newer version is never looked up, only a new image published under this tag is reported.
+      </p>
       <p v-if="detail.pinned && detail.pin_reason" class="mt-2 text-xs text-mnt-muted italic">
         {{ detail.pin_reason }}
       </p>

@@ -29,13 +29,13 @@ Images of Docker Hub's official library count: `nginx` and `redis:latest` are lo
 
 ### Fixed version tags
 
-For a tag written `major.minor.patch`, maintenant picks the highest newer version in the repository's tag list that has the same variant suffix (`-alpine`, `-bookworm`, `-slim-bookworm`, and the other [known variants](#default-behavior)). Pre-releases and tags without dots (build numbers) are ignored. The update is classified `major`, `minor` or `patch` by the first component that changed. The digest of the running image plays no part: a republished `1.25.3` is not reported.
+For a tag written `major.minor.patch`, maintenant picks the highest newer version in the repository's tag list that has the same variant suffix (`-alpine`, `-bookworm`, `-slim-bookworm`, and the other [known variants](#default-behavior)). Pre-releases and tags without dots (build numbers) are ignored. The update is classified `major`, `minor` or `patch` by the first component that changed. A fourth numeric part (`4.0.8.1874`) is read as a build of the patch: `4.0.8.1900` is a newer `patch`, and `4.0.9` is newer than both. The digest of the running image plays no part: a republished `1.25.3` is not reported.
 
 When a newer version exists both inside the current major version and in a later major version, the update reported is the one inside the current major version, and the later major version is shown next to it (`major_tag` in the API). A container on `postgres:18.7` with `18.8` and `19.0` published is reported as `18.7 → 18.8`, with `19.0` as the next major. The same holds for a floating tag republished under the same name: the new digest is the update reported and the later major version comes with it. With `maintenant.update.track` set to `minor`, `patch` or `digest`, no next major is reported.
 
 ### Floating tags and digests
 
-A tag is floating when it is not a version (`latest`, `lts`, `stable`) or when it is a partial version (`v3`, `1.2`, `16-bookworm`), which the registry keeps pointing at the newest release of that line. A container on `traefik:v3` already runs whatever `v3` resolves to, so `v3.7.10` is not an update. A newer tag written the same way (`v4`) still is, and is reported as a major update.
+A tag is floating when it is not a version (`latest`, `lts`, `stable`) or when it is a partial version (`v3`, `1.2`, `16-bookworm`), which the registry keeps pointing at the newest release of that line. A container on `traefik:v3` already runs whatever `v3` resolves to, so `v3.7.10` is not an update. A newer tag written the same way (`v4`) still is, and is reported as a major update. A tag that does not start with a version number, such as `latest` or a dated release name, is never compared with other tags: the detail panel of its update says so.
 
 For a floating tag, maintenant reports a `digest_only` update for as long as the container does not run what the tag points at now. A multi-platform tag counts as matching when the container runs the digest of the index or of any of its platform manifests.
 
