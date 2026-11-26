@@ -145,17 +145,18 @@ func (s *PersonalizationStoreImpl) ListFooterLinks(ctx context.Context) ([]statu
 
 func (s *PersonalizationStoreImpl) CreateFooterLink(ctx context.Context, label, url string) (status.FooterLink, error) {
 	now := time.Now().Unix()
-	var maxPos sql.NullInt64
-	_ = s.db.QueryRowContext(ctx, `SELECT MAX(position) FROM status_page_footer_links`).Scan(&maxPos)
-	pos := 0
-	if maxPos.Valid {
-		pos = int(maxPos.Int64) + 1
-	}
-
 	id := uid.New()
-	_, err := s.writer.Exec(ctx,
-		`INSERT INTO status_page_footer_links (id, position, label, url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		id, pos, label, url, now, now)
+	var pos int
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		var err error
+		if pos, err = nextPosition(ctx, tx, "status_page_footer_links"); err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx,
+			`INSERT INTO status_page_footer_links (id, position, label, url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+			id, pos, label, url, now, now)
+		return err
+	})
 	if err != nil {
 		return status.FooterLink{}, fmt.Errorf("create footer link: %w", err)
 	}
@@ -203,6 +204,17 @@ func (s *PersonalizationStoreImpl) ReorderFooterLinks(ctx context.Context, ids [
 	return s.ListFooterLinks(ctx)
 }
 
+func nextPosition(ctx context.Context, tx *Tx, table string) (int, error) {
+	if err := tx.Serialize(ctx, table); err != nil {
+		return 0, err
+	}
+	var pos int
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(position), -1) + 1 FROM `+table).Scan(&pos); err != nil {
+		return 0, fmt.Errorf("next position in %s: %w", table, err)
+	}
+	return pos, nil
+}
+
 func (s *PersonalizationStoreImpl) reorder(ctx context.Context, table, what string, ids []string) error {
 	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
 		seen := make(map[string]struct{}, len(ids))
@@ -239,17 +251,18 @@ func (s *PersonalizationStoreImpl) ListFAQItems(ctx context.Context) ([]status.F
 
 func (s *PersonalizationStoreImpl) CreateFAQItem(ctx context.Context, question, answerMD, answerHTML string) (status.FAQItem, error) {
 	now := time.Now().Unix()
-	var maxPos sql.NullInt64
-	_ = s.db.QueryRowContext(ctx, `SELECT MAX(position) FROM status_page_faq_items`).Scan(&maxPos)
-	pos := 0
-	if maxPos.Valid {
-		pos = int(maxPos.Int64) + 1
-	}
-
 	id := uid.New()
-	_, err := s.writer.Exec(ctx,
-		`INSERT INTO status_page_faq_items (id, position, question, answer_md, answer_html, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, pos, question, answerMD, answerHTML, now, now)
+	var pos int
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		var err error
+		if pos, err = nextPosition(ctx, tx, "status_page_faq_items"); err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx,
+			`INSERT INTO status_page_faq_items (id, position, question, answer_md, answer_html, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			id, pos, question, answerMD, answerHTML, now, now)
+		return err
+	})
 	if err != nil {
 		return status.FAQItem{}, fmt.Errorf("create faq item: %w", err)
 	}

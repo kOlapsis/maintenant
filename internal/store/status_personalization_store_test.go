@@ -5,6 +5,8 @@ package store
 
 import (
 	"context"
+	"sort"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -31,6 +33,48 @@ func faqItemOrder(t *testing.T, s *PersonalizationStoreImpl) map[string]int {
 		got[it.ID] = it.Position
 	}
 	return got
+}
+
+func TestPersonalizationStore_ConcurrentCreationsTakeDistinctPositions(t *testing.T) {
+	const n = 16
+	ctx := context.Background()
+	s := NewPersonalizationStore(openTestDB(t))
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2*n)
+	for i := 0; i < n; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_, err := s.CreateFooterLink(ctx, "link", "https://example.com")
+			errs <- err
+		}()
+		go func() {
+			defer wg.Done()
+			_, err := s.CreateFAQItem(ctx, "question", "answer", "<p>answer</p>")
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	want := make([]int, n)
+	for i := range want {
+		want[i] = i
+	}
+	positions := func(order map[string]int) []int {
+		got := make([]int, 0, len(order))
+		for _, pos := range order {
+			got = append(got, pos)
+		}
+		sort.Ints(got)
+		return got
+	}
+	assert.Equal(t, want, positions(footerLinkOrder(t, s)))
+	assert.Equal(t, want, positions(faqItemOrder(t, s)))
 }
 
 func TestPersonalizationStore_ReorderFooterLinksAppliesNothingOnFailure(t *testing.T) {
