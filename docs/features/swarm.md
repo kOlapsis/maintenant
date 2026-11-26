@@ -181,7 +181,7 @@ All Swarm routes are read-only and open in every edition. Except where noted, th
 | `GET` | `/api/v1/swarm/services/{serviceID}` | Service detail with its tasks. `404 SWARM_SERVICE_NOT_FOUND` if unknown. |
 | `GET` | `/api/v1/swarm/tasks` | List tasks. `?service=`, `?node=` and `?state=` filter them. |
 | `GET` | `/api/v1/swarm/nodes` | List nodes with role, status and task count, plus manager and worker counts. |
-| `GET` | `/api/v1/swarm/nodes/{nodeID}` | Node detail with the tasks running on it (from the server's own cluster). `404 SWARM_NODE_NOT_FOUND` if unknown. |
+| `GET` | `/api/v1/swarm/nodes/{nodeID}` | Node detail with the tasks running on it: live for a node of the server's own cluster, as last reported by its agent for a remote node. `404 SWARM_NODE_NOT_FOUND` if unknown. |
 | `GET` | `/api/v1/swarm/services/{serviceID}/update-status` | Rolling update progress. Server's own cluster only. |
 | `GET` | `/api/v1/swarm/services/{serviceID}/resources` | CPU, memory and network of each running task. The values are `null` for a task that does not run on the node where maintenant runs. Server's own cluster only. |
 | `GET` | `/api/v1/swarm/dashboard` | Cluster summary with nodes, services and crash-loop state. Server's own cluster only. |

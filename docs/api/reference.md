@@ -379,7 +379,7 @@ All routes are open in every edition. Services, tasks and nodes are read from th
 | `GET` | `/api/v1/swarm/services/{serviceID}/resources` | Per-task CPU, memory and network (live) |
 | `GET` | `/api/v1/swarm/tasks` | List tasks (`?service=`, `?node=`, `?state=`, `?agent_id=`) |
 | `GET` | `/api/v1/swarm/nodes` | List nodes (`?agent_id=`) |
-| `GET` | `/api/v1/swarm/nodes/{nodeID}` | Node with its tasks (live) |
+| `GET` | `/api/v1/swarm/nodes/{nodeID}` | Node with its tasks (live for a local node, from the store for a node of a remote agent) |
 | `GET` | `/api/v1/swarm/dashboard` | Cluster, node and service summary (live) |
 | `GET` | `/api/v1/swarm/cluster` | Cluster health and counts (live) |
 
