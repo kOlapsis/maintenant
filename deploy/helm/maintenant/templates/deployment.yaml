@@ -34,6 +34,8 @@ spec:
         runAsUser: 65534
         runAsGroup: 65534
         fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: maintenant
           image: {{ include "maintenant.image" . }}

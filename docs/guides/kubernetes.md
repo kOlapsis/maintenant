@@ -107,6 +107,8 @@ securityContext:
   runAsUser: 65534       # nobody
   runAsGroup: 65534
   fsGroup: 65534
+  seccompProfile:
+    type: RuntimeDefault
 containers:
   - securityContext:
       allowPrivilegeEscalation: false
@@ -115,7 +117,7 @@ containers:
         drop: ["ALL"]
 ```
 
-The container runs as `nobody` (uid 65534) with an immutable root filesystem and all Linux capabilities dropped. `fsGroup` makes the data volume writable for that user. Because the pod already starts as a non-root user, the image entrypoint runs the binary as it is: it does not change ownership of the volume nor look for a Docker socket. A `/tmp` emptyDir is mounted because the root filesystem is read-only. The database and SQLite's temporary files live on the `/data` volume.
+The container runs as `nobody` (uid 65534) with an immutable root filesystem and all Linux capabilities dropped. `fsGroup` makes the data volume writable for that user. With the runtime's default seccomp profile, the pod is accepted in a namespace that enforces the `restricted` Pod Security level. Because the pod already starts as a non-root user, the image entrypoint runs the binary as it is: it does not change ownership of the volume nor look for a Docker socket. A `/tmp` emptyDir is mounted because the root filesystem is read-only. The database and SQLite's temporary files live on the `/data` volume.
 
 This mirrors the Docker Compose hardening (`read_only: true`, `no-new-privileges`, non-root user). See [Security](../security.md) for the full container security reference.
 
