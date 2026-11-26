@@ -77,6 +77,7 @@ func (n *Notifier) drain() []NotificationJob {
 			select {
 			case job := <-q:
 				out = append(out, job)
+				delete(n.queued, job.Delivery.ID)
 			default:
 				drained = true
 			}

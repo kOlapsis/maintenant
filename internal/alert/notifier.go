@@ -80,6 +80,7 @@ type WebhookPayload struct {
 type Notifier struct {
 	queuesMu     sync.Mutex
 	queues       map[string]chan NotificationJob
+	queued       map[string]bool // delivery ids waiting in a channel queue
 	runCtx       context.Context
 	stopped      bool
 	subQueues    [notifierWorkerCount]chan NotificationJob
@@ -129,6 +130,7 @@ func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bo
 		resumeEvery:     resumeInterval,
 		workerIdle:      workerIdleAfter,
 		queues:          make(map[string]chan NotificationJob),
+		queued:          make(map[string]bool),
 	}
 	for _, opt := range opts {
 		opt(n)
@@ -254,6 +256,9 @@ func (n *Notifier) offer(job NotificationJob) bool {
 	}
 	n.queuesMu.Lock()
 	defer n.queuesMu.Unlock()
+	if n.durable(job) && n.queued[job.Delivery.ID] {
+		return true
+	}
 	q, ok := n.queues[job.Channel.ID]
 	if !ok {
 		if n.stopped {
@@ -267,10 +272,19 @@ func (n *Notifier) offer(job NotificationJob) bool {
 	}
 	select {
 	case q <- job:
+		if n.durable(job) {
+			n.queued[job.Delivery.ID] = true
+		}
 		return true
 	default:
 		return false
 	}
+}
+
+func (n *Notifier) unqueue(job NotificationJob) {
+	n.queuesMu.Lock()
+	defer n.queuesMu.Unlock()
+	delete(n.queued, job.Delivery.ID)
 }
 
 // startWorker starts the worker of a channel's queue; call it with queuesMu held, while the notifier runs.
@@ -289,6 +303,7 @@ func (n *Notifier) channelWorker(ctx context.Context, channelID string, jobs cha
 		case <-ctx.Done():
 			return
 		case job := <-jobs:
+			n.unqueue(job)
 			n.handle(ctx, job)
 			idle.Reset(n.workerIdle)
 		case <-idle.C:
