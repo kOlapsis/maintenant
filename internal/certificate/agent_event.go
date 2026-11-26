@@ -52,17 +52,15 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	return err
 }
 
-// agentCertToRaw adapts a pushed CertificateInfo into the raw scan-result shape
-// the local pipeline expects. The agent reports the leaf certificate only (no
-// full chain or OCSP validation); chain and hostname are treated as acceptable
-// because the agent could not have read the cert without a successful handshake.
+// agentCertToRaw adapts a pushed CertificateInfo into a scan result, taking chain and hostname as valid when the agent does not report them.
 func agentCertToRaw(ev *agentpb.CertificateInfo) *CheckCertificateResult {
 	raw := &CheckCertificateResult{
 		SubjectCN:     ev.GetSubjectCn(),
 		IssuerCN:      ev.GetIssuerCn(),
 		SANs:          ev.GetSanDns(),
-		ChainValid:    true,
-		HostnameMatch: true,
+		ChainValid:    ev.ChainValid == nil || ev.GetChainValid(),
+		ChainError:    ev.GetChainError(),
+		HostnameMatch: ev.HostnameMatch == nil || ev.GetHostnameMatch(),
 	}
 	if nb := ev.GetNotBefore(); nb != nil {
 		raw.NotBefore = nb.AsTime()

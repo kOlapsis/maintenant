@@ -222,6 +222,10 @@ func certEvent(agentID, host string, port int, scan *certificate.CheckCertificat
 		SubjectCn: scan.SubjectCN,
 		IssuerCn:  scan.IssuerCN,
 		SanDns:    scan.SANs,
+
+		ChainValid:    &scan.ChainValid,
+		ChainError:    scan.ChainError,
+		HostnameMatch: &scan.HostnameMatch,
 	}
 	if !scan.NotBefore.IsZero() {
 		info.NotBefore = timestamppb.New(scan.NotBefore)

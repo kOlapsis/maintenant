@@ -372,6 +372,9 @@ message CertificateInfo {
   google.protobuf.Timestamp not_after  = 6;
   bytes  fingerprint_sha256 = 7;
   repeated string san_dns = 8;
+  optional bool chain_valid    = 9;   // absent from an agent that does not report its validation
+  string        chain_error    = 10;
+  optional bool hostname_match = 11;
 }
 
 // ----- Swarm topology -------------------------------------------------------

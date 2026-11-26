@@ -2235,6 +2235,9 @@ type CertificateInfo struct {
 	NotAfter          *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=not_after,json=notAfter,proto3" json:"not_after,omitempty"`
 	FingerprintSha256 []byte                 `protobuf:"bytes,7,opt,name=fingerprint_sha256,json=fingerprintSha256,proto3" json:"fingerprint_sha256,omitempty"`
 	SanDns            []string               `protobuf:"bytes,8,rep,name=san_dns,json=sanDns,proto3" json:"san_dns,omitempty"`
+	ChainValid        *bool                  `protobuf:"varint,9,opt,name=chain_valid,json=chainValid,proto3,oneof" json:"chain_valid,omitempty"` // absent from an agent that does not report its validation
+	ChainError        string                 `protobuf:"bytes,10,opt,name=chain_error,json=chainError,proto3" json:"chain_error,omitempty"`
+	HostnameMatch     *bool                  `protobuf:"varint,11,opt,name=hostname_match,json=hostnameMatch,proto3,oneof" json:"hostname_match,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -2323,6 +2326,27 @@ func (x *CertificateInfo) GetSanDns() []string {
 		return x.SanDns
 	}
 	return nil
+}
+
+func (x *CertificateInfo) GetChainValid() bool {
+	if x != nil && x.ChainValid != nil {
+		return *x.ChainValid
+	}
+	return false
+}
+
+func (x *CertificateInfo) GetChainError() string {
+	if x != nil {
+		return x.ChainError
+	}
+	return ""
+}
+
+func (x *CertificateInfo) GetHostnameMatch() bool {
+	if x != nil && x.HostnameMatch != nil {
+		return *x.HostnameMatch
+	}
+	return false
 }
 
 type SwarmTopology struct {
@@ -3548,7 +3572,7 @@ const file_proto_ingest_proto_rawDesc = "" +
 	"\x10disk_write_bytes\x18\b \x01(\x04R\x0ediskWriteBytes\x121\n" +
 	"\x15host_disk_total_bytes\x18\t \x01(\x04R\x12hostDiskTotalBytes\x12/\n" +
 	"\x14host_disk_used_bytes\x18\n" +
-	" \x01(\x04R\x11hostDiskUsedBytes\"\xb1\x02\n" +
+	" \x01(\x04R\x11hostDiskUsedBytes\"\xc7\x03\n" +
 	"\x0fCertificateInfo\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\rR\x04port\x12\x1d\n" +
@@ -3559,7 +3583,15 @@ const file_proto_ingest_proto_rawDesc = "" +
 	"not_before\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tnotBefore\x127\n" +
 	"\tnot_after\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\bnotAfter\x12-\n" +
 	"\x12fingerprint_sha256\x18\a \x01(\fR\x11fingerprintSha256\x12\x17\n" +
-	"\asan_dns\x18\b \x03(\tR\x06sanDns\"\xc3\x01\n" +
+	"\asan_dns\x18\b \x03(\tR\x06sanDns\x12$\n" +
+	"\vchain_valid\x18\t \x01(\bH\x00R\n" +
+	"chainValid\x88\x01\x01\x12\x1f\n" +
+	"\vchain_error\x18\n" +
+	" \x01(\tR\n" +
+	"chainError\x12*\n" +
+	"\x0ehostname_match\x18\v \x01(\bH\x01R\rhostnameMatch\x88\x01\x01B\x0e\n" +
+	"\f_chain_validB\x11\n" +
+	"\x0f_hostname_match\"\xc3\x01\n" +
 	"\rSwarmTopology\x12@\n" +
 	"\bservices\x18\x01 \x03(\v2$.maintenant.agent.v1.SwarmServiceMsgR\bservices\x127\n" +
 	"\x05tasks\x18\x02 \x03(\v2!.maintenant.agent.v1.SwarmTaskMsgR\x05tasks\x127\n" +
@@ -3863,6 +3895,7 @@ func file_proto_ingest_proto_init() {
 		(*AgentEvent_HostOs)(nil),
 		(*AgentEvent_Runtime)(nil),
 	}
+	file_proto_ingest_proto_msgTypes[24].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

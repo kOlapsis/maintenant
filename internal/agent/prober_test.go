@@ -149,6 +149,23 @@ func TestCertEvent(t *testing.T) {
 	assert.Equal(t, nb.Unix(), ci.GetNotBefore().AsTime().Unix())
 }
 
+func TestCertEvent_CarriesTheValidationVerdict(t *testing.T) {
+	for name, scan := range map[string]*certificate.CheckCertificateResult{
+		"valid":             {ChainValid: true, HostnameMatch: true},
+		"chain invalid":     {ChainValid: false, ChainError: "x509: certificate signed by unknown authority", HostnameMatch: true},
+		"hostname mismatch": {ChainValid: true, HostnameMatch: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ci := certEvent("a", "h", 443, scan).GetCertificate()
+			require.NotNil(t, ci.ChainValid)
+			require.NotNil(t, ci.HostnameMatch)
+			assert.Equal(t, scan.ChainValid, ci.GetChainValid())
+			assert.Equal(t, scan.ChainError, ci.GetChainError())
+			assert.Equal(t, scan.HostnameMatch, ci.GetHostnameMatch())
+		})
+	}
+}
+
 func TestCertEvent_ZeroDatesOmitted(t *testing.T) {
 	ev := certEvent("a", "h", 443, &certificate.CheckCertificateResult{SubjectCN: "h"})
 	ci := ev.GetCertificate()
