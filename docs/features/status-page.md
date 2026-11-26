@@ -141,7 +141,7 @@ Each monitor is first mapped to a status:
 | Heartbeat | `up`, `started`, `new`, `paused` | never | `down` |
 | Certificate | `valid`, or not checked yet | `expiring` | `expired`, `error`, or `unknown` after a check |
 
-A monitor that no longer exists counts as operational, and so does an endpoint or a certificate that is no longer monitored (its label was removed or its container deleted).
+A monitor that no longer exists counts as operational, and so does an endpoint or a certificate that is no longer monitored (its label was removed or its container deleted). An endpoint or a certificate left unmonitored by the Community quota counts as operational too.
 
 A component with several monitors (or a match-all component) combines them:
 
@@ -402,8 +402,10 @@ POST /status/subscribe
 
 1. The visitor submits an address. `POST /status/subscribe` accepts JSON (`Content-Type: application/json`) or a form field `email` (`application/x-www-form-urlencoded`), and answers `200 {"status": "confirmation_sent"}`.
 2. A confirmation email arrives with a link that stays valid for 24 hours. The subscription is pending until the visitor opens it.
-3. Opening the link (`GET /status/confirm?token=…`) confirms the subscription. Unconfirmed subscriptions older than 24 hours are purged daily.
+3. Opening the link (`GET /status/confirm?token=…`) confirms the subscription. Unconfirmed subscriptions older than 24 hours are purged at startup and then daily.
 4. Every notification ends with a personal unsubscribe link (`GET /status/unsubscribe?token=…`). Unsubscribing always works, even when subscriptions are closed.
+
+A confirmation or unsubscribe link that was already used, is unknown or has expired answers a neutral page with a `200`, not an error: a mail scanner may open the link before the visitor does, and the visitor's own click then lands on that page.
 
 The answer to `POST /status/subscribe` is the same for a new address, a pending one and a confirmed one, so nobody can use the form to find out who is subscribed. Any other `Content-Type` answers `415 unsupported_media_type`. A pending address asked for less than 15 minutes ago receives nothing and its link keeps working; after 15 minutes it receives a fresh link and the previous one stops working. A confirmed address receives nothing. At most 100 confirmation emails are sent per hour: past that, requests get the same answer, no email goes out until the next hour, and a single warning is logged for that hour. A failed email is only written to the log.
 

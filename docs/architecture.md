@@ -306,6 +306,11 @@ database is unreachable `/api/v1/health` still answers 200 and reports it in
 `503 STORAGE_UNAVAILABLE`, and a `storage.availability_changed` event tells the
 interface.
 
+**Stopping:** on `SIGTERM` the server closes its streams, lets the HTTP requests
+in flight finish for up to 10 seconds, then waits up to 10 seconds for its
+services (agent streams, retention pass, checks, notifications being sent) before
+it closes the database. Work still running after that is left unfinished.
+
 ---
 
 ## SQLite Architecture

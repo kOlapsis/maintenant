@@ -151,7 +151,7 @@ Access logs via the API:
 - `GET /api/v1/containers/{id}/logs`: fetch recent logs. `lines` defaults to 100 and is capped at 500, `timestamps=true` prefixes each line with its time.
 - `GET /api/v1/containers/{id}/logs/stream`: SSE stream of live logs. It emits `container.log_line` events, then a final `container.log_error` event when the container stops, and a keep-alive comment every 25 seconds. `lines` sets the initial backlog (default 100, maximum 500). On Kubernetes, `container` selects a container of the pod. While the server's own runtime is disconnected, it answers `503 RUNTIME_UNAVAILABLE`, like `logs`.
 
-Containers of a [remote agent](multihost.md) are read through that agent, whatever the state of the server's own runtime. A tail waits at most 15 seconds, and an agent serves four live streams at a time. The API answers `AGENT_OFFLINE` (503), `AGENT_TOO_OLD` (501), `LOGS_BUSY` (429) or `LOGS_TIMEOUT` (504) when it cannot.
+Containers of a [remote agent](multihost.md) are read through that agent, whatever the state of the server's own runtime. A tail waits at most 15 seconds, and an agent serves four live streams at a time. Each line is cut at 8 KiB. The API answers `AGENT_OFFLINE` (503), `AGENT_TOO_OLD` (501), `LOGS_BUSY` (429) or `LOGS_TIMEOUT` (504) when it cannot.
 
 ---
 

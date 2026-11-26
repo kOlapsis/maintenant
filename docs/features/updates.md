@@ -393,7 +393,7 @@ With Personal, the alert details carry the `update_command` and the `rollback_co
 
 ## Data Retention
 
-Once a day, maintenant deletes the scan records older than 30 days, the expired CVE cache entries, the baselines of containers that no longer exist and the risk score history older than 90 days. A scan that a pending update still refers to is kept. Pending updates are never deleted by age: one stays until a scan no longer finds it or its container is gone, see [When an update goes away](#when-an-update-goes-away).
+At startup and then once a day, maintenant deletes the scan records older than 30 days, the expired CVE cache entries, the baselines of containers that no longer exist and the risk score history older than 90 days. A scan that a pending update still refers to is kept. Pending updates are never deleted by age: one stays until a scan no longer finds it or its container is gone, see [When an update goes away](#when-an-update-goes-away).
 
 ---
 

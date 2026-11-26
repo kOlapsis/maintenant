@@ -282,7 +282,7 @@ The full reference (server-side variables, rate limits, stale thresholds) is in 
     The server's edition has reached its enrolled-host cap. Remove an unused agent (**Agents → Delete**) or upgrade the edition, then retry.
 
 !!! failure "`enrollment token already consumed` / `expired`"
-    Tokens are single-use and time-limited. Generate a fresh one and re-run the install command.
+    Tokens are single-use and time-limited. Generate a fresh one and re-run the install command. One case is accepted: an active agent that repeats the enrollment that consumed the token, with the same agent id and the same key, for example because the server's answer was lost, is answered as enrolled.
 
 !!! failure "Host stays `disconnected`"
     - Confirm the gRPC port/subdomain is reachable from the agent host (firewall, DNS, reverse-proxy route), and that `MAINTENANT_GRPC_LISTEN` is not left on its loopback default.

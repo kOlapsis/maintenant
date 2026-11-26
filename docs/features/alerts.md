@@ -98,7 +98,7 @@ See [Docker Swarm](swarm.md) and the [Kubernetes guide](../guides/kubernetes.md)
 - **Recovery.** The alert becomes `resolved` and gets a `resolved_at`. A second alert record, `resolved` with severity `info` and the recovery message, is stored and referenced by `resolved_by_id`. Channels receive a resolved notification, routed by the severity, source and entity of the original alert.
 - **Entity removed.** When a container is archived, an endpoint, a heartbeat or a certificate is deleted, or a heartbeat is paused, its active alerts are resolved without a recovery record and without a notification (the dashboard still receives `alert.resolved`). At startup, maintenant also resolves any active alert whose container, agent, heartbeat, endpoint or certificate no longer exists, so alerts left behind by an earlier run cannot linger.
 - **Silenced.** An alert that fires while a [silence rule](#silence-rules) or a maintenance window matches is stored as `silenced` and broadcast as `alert.silenced`. It is not sent and not escalated while it is held. Once no rule and no window covers it any more, it becomes `active`, is sent and is escalated like a first event, and if its entity recovers before that it is resolved without a notification.
-- **Retention.** Once a day, resolved and silenced alerts are deleted 90 days after their resolution (or after their creation when they have no resolution time). An active alert is never deleted.
+- **Retention.** At startup and then once a day, resolved and silenced alerts are deleted 90 days after their resolution (or after their creation when they have no resolution time). An active alert is never deleted.
 
 ---
 
@@ -160,7 +160,7 @@ POST /api/v1/channels
 
 #### Webhook payload
 
-maintenant sends one `POST` per notification, with `Content-Type: application/json`, the channel's own headers and `X-maintenant-Delivery`, the UUID of the delivery, which stays the same from one attempt to the next. Any 2xx answer counts as delivered; a 4xx other than 408 and 429 fails at once; anything else, or no answer within 10 seconds, is retried as described in [Delivery and Retries](#delivery-and-retries).
+maintenant sends one `POST` per notification, with `Content-Type: application/json`, the channel's own headers and `X-maintenant-Delivery`, the UUID of the delivery, which stays the same from one attempt to the next. Any 2xx answer counts as delivered; a 4xx other than 408 and 429 fails at once; anything else, or no answer within 10 seconds, is retried as described in [Delivery and Retries](#delivery-and-retries). A 307 or 308 redirect is followed, since it keeps the `POST` and its body; a 301, 302 or 303 counts as a failed attempt and is retried, so give the channel the final address.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -502,6 +502,8 @@ Each notification is written to the `notification_deliveries` table, then sent a
 The notifications of one alert to one channel reach the channel in order: a recovery waits until the alert it resolves has been delivered or has failed, even when that alert is waiting for a retry. An alert resolved before its notification went out is still notified, as it was when it fired, and its recovery follows. A reminder that has not gone out yet is replaced by the next reminder of the same alert to the same channel, so a destination back after a long outage receives the latest one only.
 
 A failed attempt is retried 5 seconds later, then 10, 20, 40 seconds later and so on, the wait doubling up to one hour. A sender can lengthen the wait, never shorten it: a Telegram rate limit raises it to the delay Telegram asked for. A notification still not delivered 24 hours after it was created is recorded as `failed` and not retried, and one found older than that at startup is closed the same way without being sent. A refusal that will not change, an HTTP 4xx other than 408 and 429, fails at once, as does an email channel with no SMTP server configured. An HTTP attempt times out after 10 seconds and an email attempt after 30. Every failed attempt is logged with its error.
+
+While the database does not answer, an alert that could not be stored is kept in memory and stored again every 30 seconds until it succeeds. A notification whose triggers or channels could not be read is routed again every 30 seconds, and given up with an error in the log after 24 hours.
 
 An attempt is sent once, even by several instances sharing one PostgreSQL database. If maintenant stops between a successful send and its record, the notification goes out again with the same `X-maintenant-Delivery` id, so a webhook receiver can drop the copy.
 
