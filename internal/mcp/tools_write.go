@@ -134,7 +134,7 @@ func checkComponentIDs(ctx context.Context, svc *Services, ids []string) (*gomcp
 		return errResult("invalid input: " + invalid.Error())
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to check component_ids: %w", err)
+		return storeErrResult(err, "check component_ids")
 	}
 	return nil, nil, nil
 }
@@ -170,7 +170,7 @@ func acknowledgeAlertHandler(svc *Services) gomcp.ToolHandlerFor[acknowledgeAler
 		case errors.Is(err, alert.ErrNotAcknowledgeable):
 			return errResult("conflict: alert is not active or already acknowledged")
 		case err != nil:
-			return nil, nil, fmt.Errorf("failed to acknowledge alert: %w", err)
+			return storeErrResult(err, "acknowledge alert")
 		}
 
 		return jsonResult(map[string]any{
@@ -210,7 +210,7 @@ func createIncidentHandler(svc *Services) gomcp.ToolHandlerFor[createIncidentInp
 		inc := &status.Incident{Title: input.Title, Severity: input.Severity, Status: st}
 		id, err := svc.Incidents.CreateIncident(ctx, inc, input.ComponentIDs, input.Message)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create incident: %w", err)
+			return storeErrResult(err, "create incident")
 		}
 		if created, _ := svc.Incidents.GetIncident(ctx, id); created != nil {
 			inc = created
@@ -238,7 +238,7 @@ func updateIncidentHandler(svc *Services) gomcp.ToolHandlerFor[updateIncidentInp
 		}
 		inc, err := svc.Incidents.GetIncident(ctx, input.IncidentID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get incident: %w", err)
+			return storeErrResult(err, "get incident")
 		}
 		if inc == nil {
 			return errResult("not found: incident does not exist")
@@ -247,7 +247,7 @@ func updateIncidentHandler(svc *Services) gomcp.ToolHandlerFor[updateIncidentInp
 		upd := &status.IncidentUpdate{IncidentID: input.IncidentID, Status: input.Status, Message: input.Message}
 		updateID, err := svc.Incidents.CreateUpdate(ctx, upd)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to post incident update: %w", err)
+			return storeErrResult(err, "post incident update")
 		}
 		upd.ID = updateID
 		if svc.IncidentAnnouncer != nil {
@@ -291,7 +291,7 @@ func createMaintenanceHandler(svc *Services) gomcp.ToolHandlerFor[createMaintena
 		}
 		id, err := svc.Maintenance.CreateMaintenance(ctx, mw, input.ComponentIDs)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create maintenance: %w", err)
+			return storeErrResult(err, "create maintenance")
 		}
 		if svc.IncidentAnnouncer != nil {
 			svc.IncidentAnnouncer.InvalidatePublicSnapshot()
@@ -316,7 +316,7 @@ func pauseMonitorHandler(svc *Services) gomcp.ToolHandlerFor[pauseMonitorInput, 
 			if errors.Is(err, heartbeat.ErrInvalidInput) {
 				return errResult(err.Error())
 			}
-			return nil, nil, fmt.Errorf("failed to pause heartbeat: %w", err)
+			return storeErrResult(err, "pause heartbeat")
 		}
 		if hb == nil {
 			return errResult("not found: heartbeat monitor does not exist")
@@ -338,7 +338,7 @@ func resumeMonitorHandler(svc *Services) gomcp.ToolHandlerFor[resumeMonitorInput
 			if errors.Is(err, heartbeat.ErrInvalidInput) {
 				return errResult(err.Error())
 			}
-			return nil, nil, fmt.Errorf("failed to resume heartbeat: %w", err)
+			return storeErrResult(err, "resume heartbeat")
 		}
 		if hb == nil {
 			return errResult("not found: heartbeat monitor does not exist")
