@@ -242,6 +242,7 @@ const globalBanner = computed(() => {
   if (s === 'degraded') return { color: 'var(--mnt-status-degraded, #EAB308)', text: t('globalDegraded'), icon: '⚠' }
   if (s === 'partial_outage') return { color: 'var(--mnt-status-partial, #F97316)', text: t('globalPartialOutage'), icon: '⚠' }
   if (s === 'major_outage') return { color: 'var(--mnt-status-major, #EF4444)', text: t('globalMajorOutage'), icon: '✕' }
+  if (s === 'under_maintenance') return { color: 'var(--mnt-status-degraded, #EAB308)', text: t('globalMaintenance'), icon: '⚙' }
   return { color: 'var(--mnt-accent, #22C55E)', text: data.value?.global_message || 'Loading…', icon: '·' }
 })
 
@@ -267,7 +268,7 @@ const componentStatusStyle = (status: string) => {
     degraded: { dot: 'bg-amber-500', label: t('statusDegraded'), text: 'text-amber-400' },
     partial_outage: { dot: 'bg-amber-500', label: t('statusPartialOutage'), text: 'text-amber-400' },
     major_outage: { dot: 'bg-rose-500', label: t('statusMajorOutage'), text: 'text-mnt-status-down' },
-    under_maintenance: { dot: 'bg-mnt-green-500', label: 'Under Maintenance', text: 'text-mnt-green-400' },
+    under_maintenance: { dot: 'bg-mnt-green-500', label: t('statusUnderMaintenance'), text: 'text-mnt-green-400' },
   }
   return styles[status] || { dot: 'bg-slate-500', label: status, text: 'text-slate-400' }
 }
@@ -358,6 +359,7 @@ function formatDate(iso: string | number) {
     <template v-else-if="data">
       <!-- Global banner -->
       <div
+        data-testid="global-banner"
         class="py-10 text-center"
         :style="{ backgroundColor: globalBanner.color }"
       >

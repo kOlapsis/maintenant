@@ -89,6 +89,21 @@ describe('PublicStatusPage subscription form', () => {
   })
 })
 
+describe('PublicStatusPage global banner', () => {
+  it('announces a maintenance without the operational colour', async () => {
+    fetchMock.mockReset()
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url !== '/status/api') return jsonResponse(404, {})
+      return jsonResponse(200, { ...statusSnapshot(false), global_status: 'under_maintenance', global_message: '' })
+    })
+    const wrapper = await mountPage()
+
+    const banner = wrapper.find('[data-testid="global-banner"]')
+    expect(banner.text()).toContain('Under maintenance')
+    expect(banner.attributes('style')).toContain('--mnt-status-degraded')
+  })
+})
+
 describe('PublicStatusPage live updates', () => {
   beforeEach(() => {
     fetchMock.mockReset()
