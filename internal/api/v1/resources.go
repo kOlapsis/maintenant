@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
@@ -23,14 +24,29 @@ type ResourceHistoryService interface {
 
 // ResourceHandler handles resource monitoring HTTP endpoints.
 type ResourceHandler struct {
-	service *resource.Service
-	history ResourceHistoryService
-	agents  AgentDirectory // optional — names hosts in the /resources/hosts list
+	service    *resource.Service
+	containers *container.Service
+	history    ResourceHistoryService
+	agents     AgentDirectory // optional — names hosts in the /resources/hosts list
 }
 
 // NewResourceHandler creates a new resource handler.
-func NewResourceHandler(service *resource.Service) *ResourceHandler {
-	return &ResourceHandler{service: service, history: service}
+func NewResourceHandler(service *resource.Service, containers *container.Service) *ResourceHandler {
+	return &ResourceHandler{service: service, containers: containers, history: service}
+}
+
+// knownContainer reports whether id names a container, and answers the request when it does not.
+func (h *ResourceHandler) knownContainer(w http.ResponseWriter, r *http.Request, id string) bool {
+	c, err := h.containers.GetContainer(r.Context(), id)
+	if err != nil {
+		WriteStoreError(w, err, "Failed to get container")
+		return false
+	}
+	if c == nil {
+		WriteError(w, http.StatusNotFound, "NOT_FOUND", "Container not found")
+		return false
+	}
+	return true
 }
 
 // SetAgentDirectory wires the agent directory so /resources/hosts can label
@@ -283,6 +299,10 @@ func (h *ResourceHandler) HandleGetAlertConfig(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	if !h.knownContainer(w, r, id) {
+		return
+	}
+
 	cfg, err := h.service.GetAlertConfig(r.Context(), id)
 	if err != nil {
 		WriteStoreError(w, err, "Failed to fetch alert config")
@@ -335,6 +355,10 @@ func (h *ResourceHandler) HandleUpsertAlertConfig(w http.ResponseWriter, r *http
 	}
 	if input.MemThreshold < 1 || input.MemThreshold > 100 {
 		WriteError(w, http.StatusBadRequest, "INVALID_THRESHOLD", "Memory threshold must be between 1 and 100")
+		return
+	}
+
+	if !h.knownContainer(w, r, id) {
 		return
 	}
 
