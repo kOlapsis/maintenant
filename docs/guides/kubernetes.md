@@ -491,8 +491,11 @@ helm upgrade maintenant ./deploy/helm/maintenant -n maintenant
 helm uninstall maintenant -n maintenant
 ```
 
-!!! warning "The chart's PVC is deleted on uninstall"
-    The chart creates the claim (`<release fullname>-data`) as one of its own resources, so `helm uninstall` deletes it, and the data with it unless the storage class keeps volumes after their claim is gone. Back up the database first. To keep the data outside the release, create the claim yourself and set `persistence.existingClaim`.
+`helm uninstall` keeps the claim the chart created (`<release fullname>-data`), and the database with it. Installing the release again under the same name and namespace reuses it. To delete the data too:
+
+```bash
+kubectl delete pvc maintenant-data -n maintenant
+```
 
 ---
 

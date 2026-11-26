@@ -1,0 +1,6 @@
+{{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
+The data lives in the PersistentVolumeClaim {{ include "maintenant.fullname" . }}-data.
+"helm uninstall" keeps it. To delete the data too:
+
+  kubectl delete pvc {{ include "maintenant.fullname" . }}-data -n {{ .Release.Namespace }}
+{{- end }}
