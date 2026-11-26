@@ -240,7 +240,7 @@ chown 65534:65534 /path/to/data/maintenant.db*
 
 ## The container turns unhealthy during an upgrade
 
-Schema migrations run before the HTTP listener opens, so `/api/v1/health` does not answer while they work. On a large database that is minutes, and longer for the one-time UUID conversion of an old install. The image's healthcheck allows a 30 s start period then three failed probes 30 s apart, so Docker reports `unhealthy` about two minutes in.
+Schema migrations run before the HTTP listener opens, so `/api/v1/health` does not answer while they work. On a large database that is minutes, and longer for the one-time UUID conversion of an old install. The image's healthcheck allows a 10 minute start period, during which the container stays `starting`, then three failed probes 30 s apart: Docker reports `unhealthy` only when a migration runs past about 11 minutes.
 
 Docker itself does not restart an unhealthy container, so the migration goes on. Wait for `database migration` with `"status":"migrations applied"` in the logs. What can interrupt it is an orchestrator that restarts unhealthy containers (Swarm, an `autoheal` sidecar, a Kubernetes liveness probe without a startup probe). An interrupted migration is detected at the next start (`dirty migration state detected, auto-recovering`) and replayed from its beginning, so each restart only loses time. On Kubernetes the chart's `startupProbe` covers this: see [Health Probes](guides/kubernetes.md#health-probes).
 
