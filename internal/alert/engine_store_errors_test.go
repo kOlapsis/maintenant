@@ -112,6 +112,9 @@ func (s flakyChannelStore) GetChannel(ctx context.Context, id string) (*alert.No
 	if err := s.hit("GetChannel"); err != nil {
 		return nil, err
 	}
+	if err := s.hit("GetChannel:" + id); err != nil {
+		return nil, err
+	}
 	return s.ChannelStore.GetChannel(ctx, id)
 }
 
@@ -147,6 +150,10 @@ type storeErrorFixture struct {
 	fail      *failures
 	alerts    alert.AlertStore
 	channels  alert.ChannelStore
+	triggers  alert.TriggerStore
+	silences  alert.SilenceStore
+	trigger   *alert.AlertTrigger
+	clock     *fakeClock
 	escalator *resolveRecorder
 	logs      *syncBuffer
 	engine    *alert.Engine
@@ -169,28 +176,33 @@ func newStoreErrorFixture(t *testing.T) *storeErrorFixture {
 
 	chID, err := channels.InsertChannel(ctx, &alert.NotificationChannel{Name: "hook", Type: "webhook", URL: "https://example.com/hook", Enabled: true})
 	require.NoError(t, err)
-	_, err = triggers.InsertTrigger(ctx, &alert.AlertTrigger{
+	trigger := &alert.AlertTrigger{
 		Name: "all", FilterSources: "test", Enabled: true, NotifyOnResolve: true, ChannelIDs: []string{chID},
-	})
+	}
+	_, err = triggers.InsertTrigger(ctx, trigger)
 	require.NoError(t, err)
 
 	// Never started: the delivery row is the notification, and no send outlives the test.
 	notifier := alert.NewNotifier(channels, logger, true)
 
 	escalator := &resolveRecorder{}
+	silences := store.NewSilenceStore(db)
 	eng := alert.NewEngine(alert.EngineDeps{
 		AlertStore:   flakyAlertStore{alerts, f},
 		ChannelStore: flakyChannelStore{channels, f},
 		TriggerStore: flakyTriggerStore{triggers, f},
-		SilenceStore: store.NewSilenceStore(db),
+		SilenceStore: silences,
 		Notifier:     notifier,
 		Logger:       logger,
 	})
 	eng.SetEscalator(escalator)
+	clock := &fakeClock{now: time.Now()}
+	eng.SetClock(clock.Now)
+	eng.SetSilenceRecheckInterval(time.Hour) // the tests run the store pass themselves
 
 	return &storeErrorFixture{
-		ctx: ctx, fail: f, alerts: alerts, channels: channels,
-		escalator: escalator, logs: logs, engine: eng,
+		ctx: ctx, fail: f, alerts: alerts, channels: channels, triggers: triggers, silences: silences, trigger: trigger,
+		clock: clock, escalator: escalator, logs: logs, engine: eng,
 	}
 }
 

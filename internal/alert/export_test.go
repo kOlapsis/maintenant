@@ -18,6 +18,22 @@ func (e *Engine) Settle() {
 	defer e.procMu.Unlock()
 }
 
+// SetClock sets the clock the engine ages its pending notifications with. Call it before Start.
+func (e *Engine) SetClock(now func() time.Time) { e.now = now }
+
+// SetMaxUnrouted sets how many notifications the engine keeps waiting for the store. Call it before Start.
+func (e *Engine) SetMaxUnrouted(n int) { e.maxUnrouted = n }
+
+// RetryStoreFailures runs the pass that the silence recheck runs after each promotion.
+func (e *Engine) RetryStoreFailures(ctx context.Context) { e.retryStoreFailures(ctx) }
+
+// Unrouted returns how many notifications wait for the store to be routed.
+func (e *Engine) Unrouted() int {
+	e.procMu.Lock()
+	defer e.procMu.Unlock()
+	return len(e.unrouted)
+}
+
 // SetClock sets the clock the notifier schedules and expires deliveries with. Call it before Start.
 func (n *Notifier) SetClock(now func() time.Time) { n.now = now }
 
