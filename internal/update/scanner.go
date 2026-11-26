@@ -73,11 +73,11 @@ func (sc *Scanner) Scan(ctx context.Context, containers []ContainerInfo) ([]Upda
 	return results, scanErrors
 }
 
-// scan is Scan, plus the names of the containers whose image the registry would not show.
-func (sc *Scanner) scan(ctx context.Context, containers []ContainerInfo) ([]UpdateResult, []ScanError, []string) {
+// scan is Scan, plus the containers whose image the registry would not show.
+func (sc *Scanner) scan(ctx context.Context, containers []ContainerInfo) ([]UpdateResult, []ScanError, []ContainerInfo) {
 	var results []UpdateResult
 	var scanErrors []ScanError
-	var unreadable []string
+	var unreadable []ContainerInfo
 
 	// Load exclusions
 	exclusions, err := sc.store.ListExclusions(ctx)
@@ -107,7 +107,7 @@ func (sc *Scanner) scan(ctx context.Context, containers []ContainerInfo) ([]Upda
 
 		result, err := sc.scanContainerWithin(ctx, c, exclusions)
 		if errors.Is(err, errUnreadableImage) {
-			unreadable = append(unreadable, c.Name)
+			unreadable = append(unreadable, c)
 			continue
 		}
 		if err != nil {

@@ -457,20 +457,28 @@ func (s *Service) runScan(ctx context.Context) {
 	}
 
 	// A container whose scan failed or whose image the registry would not show keeps its pending update until a scan reads its registry.
-	failed := make(map[string]bool, len(scanErrors)+len(unreadable))
+	type hostName struct{ host, name string }
+	errored := make(map[string]bool, len(scanErrors))
 	for _, se := range scanErrors {
-		failed[se.ContainerName] = true
+		errored[se.ContainerID] = true
 	}
-	for _, name := range unreadable {
-		failed[name] = true
+	failed := make(map[hostName]bool, len(scanErrors)+len(unreadable))
+	for _, c := range unreadable {
+		failed[hostName{uid.Agent(c.AgentID), c.Name}] = true
+	}
+	for _, c := range containers {
+		if errored[c.ExternalID] {
+			failed[hostName{uid.Agent(c.AgentID), c.Name}] = true
+		}
 	}
 	scannedNames := make([]string, 0, len(containers))
 	var coveredHosts []string
 	for _, c := range containers {
-		if host := uid.Agent(c.AgentID); !slices.Contains(coveredHosts, host) {
+		host := uid.Agent(c.AgentID)
+		if !slices.Contains(coveredHosts, host) {
 			coveredHosts = append(coveredHosts, host)
 		}
-		if !failed[c.Name] {
+		if !failed[hostName{host, c.Name}] {
 			scannedNames = append(scannedNames, c.Name)
 		}
 	}
@@ -531,13 +539,21 @@ func (s *Service) runScan(ctx context.Context) {
 	// Emit a recovery event for each so listening consumers (alert engine) can
 	// resolve the matching active alert.
 	// Only the hosts this scan covered are cleaned, so an absent host keeps its entries.
-	staleUpdates, err := s.store.ListStaleImageUpdates(ctx, scanID, coveredHosts, scannedNames)
-	if err != nil {
-		s.logger.Warn("update scan: list stale updates", "error", err)
-	} else if deleted, err := s.store.DeleteStaleImageUpdates(ctx, scanID, coveredHosts, scannedNames); err != nil {
-		s.logger.Warn("update scan: cleanup stale updates", "error", err)
-	} else if deleted > 0 {
-		s.logger.Info("update scan: removed stale updates", "deleted", deleted)
+	var staleUpdates []StaleImageUpdate
+	for _, host := range coveredHosts {
+		// A name read on another host also cleans the entry of a container stopped on this one.
+		names := slices.DeleteFunc(slices.Clone(scannedNames), func(name string) bool { return failed[hostName{host, name}] })
+		stale, err := s.store.ListStaleImageUpdates(ctx, scanID, []string{host}, names)
+		if err != nil {
+			s.logger.Warn("update scan: list stale updates", "agent_id", host, "error", err)
+			continue
+		}
+		staleUpdates = append(staleUpdates, stale...)
+		if deleted, err := s.store.DeleteStaleImageUpdates(ctx, scanID, []string{host}, names); err != nil {
+			s.logger.Warn("update scan: cleanup stale updates", "agent_id", host, "error", err)
+		} else if deleted > 0 {
+			s.logger.Info("update scan: removed stale updates", "agent_id", host, "deleted", deleted)
+		}
 	}
 
 	// Same for the findings whose container is gone entirely: matching on the
