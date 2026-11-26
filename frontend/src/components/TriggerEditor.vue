@@ -39,12 +39,14 @@ const advancedFiltersEdition = computed(() => requiredEditionFor('alert_advanced
 const SEVERITY_OPTIONS = ['critical', 'warning']
 const SOURCE_OPTIONS = ['container', 'endpoint', 'heartbeat', 'certificate', 'resource', 'update', 'security', 'agent', 'host', 'swarm', 'kubernetes']
 const SCOPE_EXAMPLE = 'container:0195f3c4-11aa-7f00-8c55-2b9d0e3a4c18'
+const SCOPE_HINT = 'One entity_type:entity_id pair per alert entity. The security score and the Swarm quorum carry no id: write infrastructure: and swarm_cluster:.'
 
 const name = ref(props.trigger?.name ?? '')
 const enabled = ref(props.trigger?.enabled ?? true)
 const notifyOnResolve = ref(props.trigger?.notify_on_resolve ?? true)
 const severities = ref<string[]>(toCsvArray(props.trigger?.filter_severities ?? ''))
-const sources = ref<string[]>(knownSources(props.trigger?.filter_sources ?? ''))
+const sources = ref<string[]>(toCsvArray(props.trigger?.filter_sources ?? ''))
+const unknownSources = computed(() => sources.value.filter((x) => !SOURCE_OPTIONS.includes(x)))
 const scopesCsv = ref(props.trigger?.filter_scopes ?? '')
 const selectedChannelIds = ref<string[]>(props.trigger?.channel_ids ?? [])
 
@@ -58,7 +60,7 @@ watch(
     enabled.value = t?.enabled ?? true
     notifyOnResolve.value = t?.notify_on_resolve ?? true
     severities.value = toCsvArray(t?.filter_severities ?? '')
-    sources.value = knownSources(t?.filter_sources ?? '')
+    sources.value = toCsvArray(t?.filter_sources ?? '')
     scopesCsv.value = t?.filter_scopes ?? ''
     selectedChannelIds.value = t?.channel_ids ?? []
   },
@@ -66,10 +68,6 @@ watch(
 
 function toCsvArray(s: string): string[] {
   return s.split(',').map((x) => x.trim()).filter((x) => x.length > 0)
-}
-
-function knownSources(csv: string): string[] {
-  return toCsvArray(csv).filter((x) => SOURCE_OPTIONS.includes(x))
 }
 
 function toggleArray(arr: string[], value: string): string[] {
@@ -260,7 +258,19 @@ async function handleSave() {
           >
             {{ src }}
           </ChipToggle>
+          <ChipToggle
+            v-for="src in unknownSources"
+            :key="src"
+            removable
+            :remove-label="`Remove ${src}`"
+            @remove="toggleSource(src)"
+          >
+            {{ src }} (unknown)
+          </ChipToggle>
         </div>
+        <p v-if="unknownSources.length > 0" class="text-xs text-mnt-muted">
+          No alert carries an unknown source. It stays in this trigger until you remove it.
+        </p>
       </div>
 
       <!-- Scopes: gated by the alert_advanced_filters capability -->
@@ -281,7 +291,7 @@ async function handleSave() {
           Filter triggers by per-entity scope (e.g. <code class="rounded bg-mnt-elevated px-1.5 py-0.5 text-[10px]">{{ SCOPE_EXAMPLE }}</code>).
         </p>
 
-        <FormField label="Scopes (CSV)">
+        <FormField label="Scopes (CSV)" :hint="SCOPE_HINT">
           <template #default="{ id, describedBy, invalid }">
             <TextInput
               :id="id"

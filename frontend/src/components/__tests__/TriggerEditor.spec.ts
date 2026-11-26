@@ -84,15 +84,37 @@ describe('TriggerEditor', () => {
     expect(chips).not.toContain('monitor')
   })
 
-  it('drops a stored source that no alert carries when saving', async () => {
+  it('sends back untouched a stored source it does not know', async () => {
     const wrapper = mount(TriggerEditor, {
-      props: { trigger: { ...trigger, filter_sources: 'container,monitor' } },
+      props: { trigger: { ...trigger, filter_sources: 'monitor' } },
       global: { stubs: { RouterLink: RouterLinkStub } },
     })
+    expect(wrapper.text()).toContain('monitor (unknown)')
+    await wrapper.findAll('button').find((b) => b.text().includes('Save changes'))!.trigger('click')
+    await flushPromises()
+
+    expect(update.mock.calls[0]![1].filter_sources).toBe('monitor')
+  })
+
+  it('removes an unknown source only when the user removes it', async () => {
+    const wrapper = mount(TriggerEditor, {
+      props: { trigger: { ...trigger, filter_sources: 'monitor,container' } },
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    await wrapper.find('button[aria-label="Remove monitor"]').trigger('click')
+    expect(wrapper.text()).not.toContain('monitor')
     await wrapper.findAll('button').find((b) => b.text().includes('Save changes'))!.trigger('click')
     await flushPromises()
 
     expect(update.mock.calls[0]![1].filter_sources).toBe('container')
+  })
+
+  it('tells how to scope the entities that carry no id', () => {
+    const wrapper = mount(TriggerEditor, {
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    expect(wrapper.text()).toContain('infrastructure:')
+    expect(wrapper.text()).toContain('swarm_cluster:')
   })
 
   it('shows a scope example shaped like a real entity id', () => {
