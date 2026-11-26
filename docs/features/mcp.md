@@ -129,7 +129,8 @@ These four routes are served only when `MAINTENANT_MCP=true` and both OAuth cred
 
 - **PKCE S256** is mandatory on all authorization requests, and the verifier is checked at the token endpoint.
 - **Tokens are opaque** (random 32 bytes, hex-encoded). They are stored as SHA-256 hashes: even a database leak does not expose usable tokens.
-- **The client secret is not stored.** maintenant reads it from the environment and keeps only its hash in memory.
+- **The client secret is not stored.** maintenant reads it from the environment and keeps only its hash in memory. Its SHA-256 fingerprint is recorded in the database, to notice when it changes.
+- **Changing the client secret signs every client out.** After a start with a `MAINTENANT_MCP_CLIENT_SECRET` other than the one the stored tokens were issued under, every access token, refresh token and pending authorization code is revoked before the first MCP or OAuth request is answered, and every client signs in again. This also holds when MCP was switched off in between. This is how to cut access after a leak.
 - **Refresh token rotation**: each use of a refresh token invalidates it and issues a new one.
 - **Replay detection**: reusing an already-consumed refresh token revokes all tokens in the session (family), forcing re-authorization.
 - **Automatic cleanup**: expired tokens and codes are garbage-collected every 15 minutes.

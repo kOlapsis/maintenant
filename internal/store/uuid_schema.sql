@@ -992,6 +992,11 @@ CREATE TABLE mcp_oauth_tokens (
 CREATE INDEX idx_mcp_oauth_tokens_family_id ON mcp_oauth_tokens(family_id);
 CREATE INDEX idx_mcp_oauth_tokens_expires_at ON mcp_oauth_tokens(expires_at);
 
+CREATE TABLE IF NOT EXISTS mcp_oauth_client (
+    id            INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+    secret_fingerprint TEXT NOT NULL
+);
+
 -- ============================================================== webhooks =====
 CREATE TABLE webhook_subscriptions (
     id            TEXT PRIMARY KEY NOT NULL,

@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/mcp/oauth"
@@ -14,6 +16,10 @@ import (
 type MCPOAuthStoreImpl struct {
 	db     *Reader
 	writer *Writer
+
+	mu          sync.Mutex
+	fingerprint string // of the client secret in force, empty when none was bound
+	checked     bool   // fingerprint was compared with the recorded one
 }
 
 // NewMCPOAuthStore creates a new SQLite-backed MCP OAuth store.
@@ -24,7 +30,59 @@ func NewMCPOAuthStore(d *DB) *MCPOAuthStoreImpl {
 	}
 }
 
+// BindClientSecret makes the store compare fingerprint with the one recorded in the database before it next serves or stores a code or a token, and revoke them all when it differs.
+func (s *MCPOAuthStoreImpl) BindClientSecret(fingerprint string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.fingerprint = fingerprint
+	s.checked = false
+}
+
+// checkClientSecret runs on first use rather than in BindClientSecret: the HTTP server is built before the writer starts.
+func (s *MCPOAuthStoreImpl) checkClientSecret(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.checked || s.fingerprint == "" {
+		return nil
+	}
+	var revoked bool
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		revoked = false
+		var recorded string
+		err := tx.QueryRowContext(ctx, `SELECT secret_fingerprint FROM mcp_oauth_client WHERE id = 1`).Scan(&recorded)
+		if errors.Is(err, sql.ErrNoRows) {
+			_, err = tx.ExecContext(ctx, `INSERT INTO mcp_oauth_client (id, secret_fingerprint) VALUES (1, ?)`, s.fingerprint)
+			return err
+		}
+		if err != nil || recorded == s.fingerprint {
+			return err
+		}
+		for _, q := range []string{
+			`UPDATE mcp_oauth_tokens SET revoked = 1`,
+			`UPDATE mcp_oauth_codes SET used = 1`,
+		} {
+			if _, err := tx.ExecContext(ctx, q); err != nil {
+				return err
+			}
+		}
+		revoked = true
+		_, err = tx.ExecContext(ctx, `UPDATE mcp_oauth_client SET secret_fingerprint = ? WHERE id = 1`, s.fingerprint)
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("compare mcp oauth client secret: %w", err)
+	}
+	s.checked = true
+	if revoked {
+		slog.Warn("MCP: the client secret changed, every token and pending authorization code was revoked")
+	}
+	return nil
+}
+
 func (s *MCPOAuthStoreImpl) StoreCode(ctx context.Context, code *oauth.MCPAuthCode) error {
+	if err := s.checkClientSecret(ctx); err != nil {
+		return err
+	}
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO mcp_oauth_codes (code_hash, client_id, redirect_uri, code_challenge, code_challenge_method, scope, expires_at, used, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
@@ -40,6 +98,9 @@ func (s *MCPOAuthStoreImpl) StoreCode(ctx context.Context, code *oauth.MCPAuthCo
 // ConsumeCode atomically marks an authorization code used, so that only one
 // caller among concurrent exchanges of the same code can ever succeed.
 func (s *MCPOAuthStoreImpl) ConsumeCode(ctx context.Context, codeHash string) (*oauth.MCPAuthCode, error) {
+	if err := s.checkClientSecret(ctx); err != nil {
+		return nil, err
+	}
 	now := time.Now().Unix()
 	result, err := s.writer.Exec(ctx,
 		`UPDATE mcp_oauth_codes SET used = 1 WHERE code_hash = ? AND used = 0 AND expires_at > ?`,
@@ -94,6 +155,9 @@ func (s *MCPOAuthStoreImpl) readCode(ctx context.Context, codeHash string) (*oau
 }
 
 func (s *MCPOAuthStoreImpl) StoreToken(ctx context.Context, token *oauth.MCPOAuthToken) error {
+	if err := s.checkClientSecret(ctx); err != nil {
+		return err
+	}
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO mcp_oauth_tokens (token_hash, token_type, client_id, scope, expires_at, revoked, family_id, created_at)
 		 VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
@@ -107,12 +171,18 @@ func (s *MCPOAuthStoreImpl) StoreToken(ctx context.Context, token *oauth.MCPOAut
 }
 
 func (s *MCPOAuthStoreImpl) GetToken(ctx context.Context, tokenHash string) (*oauth.MCPOAuthToken, error) {
+	if err := s.checkClientSecret(ctx); err != nil {
+		return nil, err
+	}
 	return s.readToken(ctx, tokenHash)
 }
 
 // ConsumeRefreshToken atomically revokes a refresh token, so that only one
 // caller among concurrent refreshes of the same token can ever rotate it.
 func (s *MCPOAuthStoreImpl) ConsumeRefreshToken(ctx context.Context, tokenHash string) (*oauth.MCPOAuthToken, error) {
+	if err := s.checkClientSecret(ctx); err != nil {
+		return nil, err
+	}
 	result, err := s.writer.Exec(ctx,
 		`UPDATE mcp_oauth_tokens SET revoked = 1 WHERE token_hash = ? AND token_type = 'refresh' AND revoked = 0`,
 		tokenHash)

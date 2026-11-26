@@ -353,6 +353,7 @@ func (a *App) buildHTTPServer() *http.Server {
 		if oauthConfigured {
 			a.warnWeakMCPClientSecret()
 			mcpOAuthStore := store.NewMCPOAuthStore(a.db)
+			mcpOAuthStore.BindClientSecret(mcpoauth.HashToken(a.cfg.MCP.ClientSecret))
 			oauthSrv := mcpoauth.NewOAuthServer(mcpoauth.Config{
 				ClientID:            a.cfg.MCP.ClientID,
 				ClientSecret:        a.cfg.MCP.ClientSecret,
