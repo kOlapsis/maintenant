@@ -303,7 +303,7 @@ All routes are open in every edition, except that creating a standalone monitor 
 
 A monitor has `id`, `hostname`, `port`, `server_name`, `source` (`auto`, `standalone` or `label`), `status` (`valid`, `expiring`, `expired`, `error` or `unknown`), `check_interval_seconds`, `warning_thresholds` (days, default `[30, 14, 7, 3, 1]`), the last check and next check times, `agent_id`, `limited` (`true` when the Community cap leaves the monitor unmonitored: it is not scanned) and timestamps.
 
-- `GET /api/v1/certificates` query parameters: `status`, `source` and `agent_id`. Each monitor carries a `latest_check` object, and the answer is `{ "certificates", "total" }`.
+- `GET /api/v1/certificates` query parameters: `status`, `source` and `agent_id`. Each monitor carries a `latest_check` object, with `days_remaining` once a check has read the certificate, and the answer is `{ "certificates", "total" }`.
 - `POST /api/v1/certificates` body: `hostname` (required), `port` (default 443), `server_name` (a bare host name, optional), `check_interval_seconds` (3600 to 604800, default 43200) and `warning_thresholds`. The first TLS check runs before the answer, so `201` returns `{ "certificate", "latest_check" }`.
 - `PUT /api/v1/certificates/{id}` accepts `check_interval_seconds` and `warning_thresholds` only; other fields are ignored.
 - `GET /api/v1/certificates/{id}` returns `{ "certificate", "latest_check" }` where `latest_check` holds the subject, issuer, SANs, validity dates, `days_remaining`, `chain_valid`, `chain_error`, `hostname_match`, the `chain` and, for a stapled response, `ocsp_stapled`, `ocsp_status`, `ocsp_produced_at`, `ocsp_next_update` and `ocsp_error`.

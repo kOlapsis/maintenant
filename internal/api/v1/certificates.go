@@ -46,9 +46,13 @@ func (h *CertificateHandler) HandleList(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Enrich with latest check data
+	type checkWithDays struct {
+		*certificate.CertCheckResult
+		DaysRemaining *int `json:"days_remaining,omitempty"`
+	}
 	type monitorWithCheck struct {
 		*certificate.CertMonitor
-		LatestCheck *certificate.CertCheckResult `json:"latest_check,omitempty"`
+		LatestCheck *checkWithDays `json:"latest_check,omitempty"`
 	}
 
 	enriched := make([]monitorWithCheck, len(monitors))
@@ -56,7 +60,10 @@ func (h *CertificateHandler) HandleList(w http.ResponseWriter, r *http.Request) 
 		enriched[i] = monitorWithCheck{CertMonitor: m}
 		latest, err := h.svc.GetLatestCheckResult(r.Context(), m.ID)
 		if err == nil && latest != nil {
-			enriched[i].LatestCheck = latest
+			enriched[i].LatestCheck = &checkWithDays{CertCheckResult: latest}
+			if latest.NotAfter != nil {
+				enriched[i].LatestCheck.DaysRemaining = new(latest.DaysRemaining())
+			}
 		}
 	}
 
