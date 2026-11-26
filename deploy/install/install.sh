@@ -295,6 +295,10 @@ _cosign_major() {
 
 _signature_unverified() {
     [ -z "${REQUIRE_COSIGN:-}" ] || abort "$1: the release signature cannot be checked (--require-cosign)" 22
+    if [ -n "${SKIP_COSIGN:-}" ]; then
+        log_warn "cosign verification skipped (--skip-cosign)"
+        return
+    fi
     SIGNATURE_UNVERIFIED="$1"
     log_warn "$1: the release signature is NOT verified, installing on the SHA256 check alone"
 }

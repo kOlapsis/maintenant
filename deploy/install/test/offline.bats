@@ -93,6 +93,13 @@ run_offline() {
     [[ "$output" == *"releases/download/v1.2.3/SHA256SUMS"* ]]
 }
 
+@test "offline install: --skip-cosign keeps the summary plain" {
+    run_offline --binary "$WORK/media/maintenant-v1.2.3-linux-amd64" --sha256sums "$WORK/media/SHA256SUMS" --skip-cosign
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"cosign verification skipped"* ]]
+    [[ "$output" != *"SIGNATURE NOT VERIFIED"* ]]
+}
+
 @test "offline install: --require-cosign exits 22" {
     run_offline --binary "$WORK/media/maintenant-v1.2.3-linux-amd64" --sha256sums "$WORK/media/SHA256SUMS" --require-cosign
     [ "$status" -eq 22 ]
