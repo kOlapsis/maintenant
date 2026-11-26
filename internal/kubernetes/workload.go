@@ -706,13 +706,23 @@ func workloadStatus(ready, desired int32, conditions []K8sCondition, progressing
 	if desired == 0 {
 		return "healthy" // scaled to zero is intentional
 	}
-	if ready >= desired {
+	if ready >= desired && !rolloutStuck(conditions) {
 		return "healthy"
 	}
 	if ready == 0 {
 		return "failed"
 	}
 	return "degraded"
+}
+
+// rolloutStuck reports whether a Deployment's rollout went past its progress deadline.
+func rolloutStuck(conditions []K8sCondition) bool {
+	for _, c := range conditions {
+		if c.Type == string(appsv1.DeploymentProgressing) && c.Status == string(corev1.ConditionFalse) && c.Reason == "ProgressDeadlineExceeded" {
+			return true
+		}
+	}
+	return false
 }
 
 // workloadID identifies a controller as namespace/Kind/name.

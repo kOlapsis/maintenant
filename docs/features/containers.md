@@ -73,7 +73,7 @@ A container that is destroyed, or that the runtime no longer lists, is archived:
 
     | Workload | State |
     |----------|-------|
-    | Deployment | `running` when all desired replicas are ready, or when at least one is (`error_detail` then reads `partial: n/m ready`), `exited` on `ProgressDeadlineExceeded`, `completed` when scaled to 0, `created` otherwise |
+    | Deployment | `running` when all desired replicas are ready, or when at least one is (`error_detail` then reads `partial: n/m ready`), `exited` on `ProgressDeadlineExceeded` with no ready replica (the old replicas still serving keep it `running`, with `ProgressDeadlineExceeded` in `error_detail`), `completed` when scaled to 0, `created` otherwise |
     | StatefulSet, DaemonSet | `created` until a pod is ready, `running` after |
     | Bare pod | `running`, `restarting` (`CrashLoopBackOff`), `created` (pending or image pull errors), `exited` (failed or `OOMKilled`), `completed` (succeeded) |
 

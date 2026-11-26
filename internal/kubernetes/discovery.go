@@ -185,6 +185,9 @@ func (r *Runtime) mapBarePod(pod *corev1.Pod, now time.Time) *cmodel.Container {
 func deploymentState(dep *appsv1.Deployment) (cmodel.ContainerState, string) {
 	for _, cond := range dep.Status.Conditions {
 		if cond.Type == appsv1.DeploymentProgressing && cond.Reason == "ProgressDeadlineExceeded" {
+			if dep.Status.ReadyReplicas > 0 {
+				return cmodel.StateRunning, "ProgressDeadlineExceeded: " + cond.Message
+			}
 			return cmodel.StateExited, "ProgressDeadlineExceeded: " + cond.Message
 		}
 	}

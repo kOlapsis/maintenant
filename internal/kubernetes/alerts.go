@@ -134,7 +134,8 @@ func (c *K8sAlertChecker) checkWorkloads(workloads []K8sWorkload, now time.Time)
 		present[wl.ID] = true
 		st := c.replicas[wl.ID]
 
-		if wl.Ignored || wl.Kind == "Job" || wl.DesiredReplicas == 0 || wl.ReadyReplicas >= wl.DesiredReplicas {
+		stuck := rolloutStuck(wl.Conditions)
+		if wl.Ignored || wl.Kind == "Job" || wl.DesiredReplicas == 0 || (wl.ReadyReplicas >= wl.DesiredReplicas && !stuck) {
 			if st == nil {
 				continue
 			}
@@ -172,9 +173,13 @@ func (c *K8sAlertChecker) checkWorkloads(workloads []K8sWorkload, now time.Time)
 		st.severity = severity
 		details := workloadDetails(wl)
 		details["duration"] = now.Sub(st.firstSeen).Truncate(time.Second).String()
+		msg := fmt.Sprintf("Workload %s under-replicated for %s: %d/%d ready", wl.Name, now.Sub(st.firstSeen).Truncate(time.Second), wl.ReadyReplicas, wl.DesiredReplicas)
+		if stuck {
+			msg = fmt.Sprintf("Workload %s rollout is past its progress deadline: %d/%d ready", wl.Name, wl.ReadyReplicas, wl.DesiredReplicas)
+		}
 		c.emitWorkload(wl.ID, wl.Namespace, wl.Name, alert.Event{
 			Severity: severity,
-			Message:  fmt.Sprintf("Workload %s under-replicated for %s: %d/%d ready", wl.Name, now.Sub(st.firstSeen).Truncate(time.Second), wl.ReadyReplicas, wl.DesiredReplicas),
+			Message:  msg,
 			Details:  details,
 		}, now)
 	}

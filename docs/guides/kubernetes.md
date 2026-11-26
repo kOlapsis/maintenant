@@ -167,7 +167,7 @@ maintenant groups pods by their owning workload:
 | **Job** | Active, succeeded and failed pods against the desired completions |
 | **Bare pod** | A pod with no controller is tracked on its own, with its phase and restart count |
 
-Each workload appears as a single entry with an aggregated health status: `healthy`, `degraded` (some replicas are ready), `failed` (none is ready), or `progressing` during a rollout. A workload scaled to zero is healthy. Individual pods are accessible in the detail view. ReplicaSets have no entry of their own: the pods of a Deployment's ReplicaSet are attached to the Deployment.
+Each workload appears as a single entry with an aggregated health status: `healthy`, `degraded` (some replicas are ready, or a Deployment's rollout is past its progress deadline while the old replicas still serve), `failed` (none is ready), or `progressing` during a rollout. A workload scaled to zero is healthy. Individual pods are accessible in the detail view. ReplicaSets have no entry of their own: the pods of a Deployment's ReplicaSet are attached to the Deployment.
 
 PersistentVolumeClaims are not tracked, and volumes are not part of a StatefulSet's health.
 
@@ -203,7 +203,7 @@ The server raises three Kubernetes alerts for the cluster it runs in or is point
 
 | Alert | Severity | Raised when | Resolved when |
 |-------|----------|-------------|---------------|
-| `replica_health` | Warning, Critical when no replica is ready | A Deployment, StatefulSet or DaemonSet has fewer ready replicas than desired for 5 minutes | All desired replicas are ready, the workload is scaled to zero, ignored or deleted |
+| `replica_health` | Warning, Critical when no replica is ready | A Deployment, StatefulSet or DaemonSet has fewer ready replicas than desired for 5 minutes, or a Deployment's rollout has been past its progress deadline (`ProgressDeadlineExceeded`) for 5 minutes | All desired replicas are ready and no rollout is stuck, the workload is scaled to zero, ignored or deleted |
 | `crash_loop` | Critical | A pod is in `CrashLoopBackOff`, or has restarted 3 times within 10 minutes | The pod stops crash-looping, is ignored or deleted |
 | `node_condition` | Critical when the node is not Ready, Warning under memory, disk or PID pressure | A node reports one of those conditions | The conditions clear, or the node leaves the cluster |
 
