@@ -442,7 +442,7 @@ func (s *Service) runScan(ctx context.Context) {
 	}
 
 	// Run scan
-	results, scanErrors := s.scanner.Scan(ctx, containers)
+	results, scanErrors, unreadable := s.scanner.scan(ctx, containers)
 
 	// Build container lookup for command generation
 	containerByID := make(map[string]ContainerInfo, len(containers))
@@ -450,10 +450,13 @@ func (s *Service) runScan(ctx context.Context) {
 		containerByID[uid.Container(uid.Agent(c.AgentID), c.ExternalID)] = c
 	}
 
-	// A container whose scan failed keeps its pending update until a scan reaches its registry.
-	failed := make(map[string]bool, len(scanErrors))
+	// A container whose scan failed or whose image the registry would not show keeps its pending update until a scan reads its registry.
+	failed := make(map[string]bool, len(scanErrors)+len(unreadable))
 	for _, se := range scanErrors {
 		failed[se.ContainerName] = true
+	}
+	for _, name := range unreadable {
+		failed[name] = true
 	}
 	scannedNames := make([]string, 0, len(containers))
 	var coveredHosts []string
