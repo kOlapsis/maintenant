@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"syscall"
 	"unicode/utf8"
@@ -555,7 +556,9 @@ type endpointConfigView struct {
 
 type endpointView struct {
 	*endpoint.Endpoint
-	Config endpointConfigView `json:"config"`
+	Target    string             `json:"target"`
+	LastError string             `json:"last_error,omitempty"`
+	Config    endpointConfigView `json:"config"`
 }
 
 func endpointViews(eps []*endpoint.Endpoint) []endpointView {
@@ -565,7 +568,12 @@ func endpointViews(eps []*endpoint.Endpoint) []endpointView {
 		for name := range ep.Config.Headers {
 			headers[name] = "***"
 		}
-		views[i] = endpointView{Endpoint: ep, Config: endpointConfigView{EndpointConfig: ep.Config, Headers: headers}}
+		views[i] = endpointView{Endpoint: ep, Target: ep.Target, LastError: ep.LastError, Config: endpointConfigView{EndpointConfig: ep.Config, Headers: headers}}
+		if u, err := url.Parse(ep.Target); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
+			bare := (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path, RawPath: u.RawPath}).String()
+			views[i].Target = bare
+			views[i].LastError = strings.NewReplacer(ep.Target, bare, u.String(), bare, u.Redacted(), bare).Replace(ep.LastError)
+		}
 	}
 	return views
 }

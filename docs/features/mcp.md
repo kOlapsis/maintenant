@@ -208,7 +208,7 @@ and add an `agent_label` to each row that belongs to a remote agent.
 | `list_containers` | List all monitored containers with state, health, and metadata | Community |
 | `get_container` | Detailed info for one container (`container_id`) with recent state transitions | Community |
 | `get_container_logs` | Recent log lines from a container (`container_id`): `lines` (default 100, at most 1000) and optional `timestamps`. A container on a remote agent is read through that agent. The answer starts with a fixed line warning that what follows is untrusted container output; a line over 4096 bytes is cut there and marked ` …[truncated]`, and when the lines exceed 1 MiB (1 048 576 bytes) the oldest are dropped and their count is given on the first line. | Community |
-| `list_endpoints` | Active HTTP/TCP endpoints with status, last response time, HTTP status and error, and `limited` (a limited endpoint is not checked) | Community |
+| `list_endpoints` | Active HTTP/TCP endpoints with status, last response time, HTTP status and error, and `limited` (a limited endpoint is not checked). Header values are masked as `***`, and the `target` of an HTTP endpoint comes without its credentials and its query string | Community |
 | `get_endpoint_history` | Check history for a specific endpoint (`endpoint_id`, `limit` defaulting to 50) | Community |
 | `list_heartbeats` | All heartbeat monitors with status, last ping, periods | Community |
 | `list_certificates` | TLS certificate monitors with status (`valid`, `expiring`, `expired`, `error`, `unknown`), check times and last error, and `limited` (a limited monitor is not scanned) | Community |
@@ -253,7 +253,7 @@ The write tools of this section change configuration: channels, triggers and esc
 
 | Tool | Description | Edition |
 |------|-------------|---------|
-| `list_channels` / `get_channel` | List or fetch notification channels; `get_channel` adds the delivery health and the triggers routing to it. Header values are masked as `***` and Slack, Discord and Teams webhook URLs are cut after the host, here and in the answers of `create_channel` and `update_channel`; the secret is never returned. | Community |
+| `list_channels` / `get_channel` | List or fetch notification channels; `get_channel` adds the delivery health and the triggers routing to it. Header values are masked as `***` and webhook URLs are cut after the host, here and in the answers of `create_channel` and `update_channel`; the secret is never returned. | Community |
 | `create_channel` / `update_channel` / `delete_channel` | Manage notification channels (webhook is Community; email and Telegram need Personal, Slack and Teams need Pro). A channel is created enabled unless `enabled` is `false`. An email channel takes `config` `{"subject_label":"prod"}` to replace `maintenant` in its subject. | Community |
 | `test_channel` | Send a test notification through a channel | Community |
 | `list_triggers` / `get_trigger` | List or fetch alert triggers (entity to channel routing) | Community |

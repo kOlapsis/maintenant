@@ -77,3 +77,27 @@ func TestListEndpoints_MasksProbeHeaderValues(t *testing.T) {
 	assert.Equal(t, "GET", rows[0].Config.Method)
 	assert.Equal(t, map[string]string{"Authorization": "***", "X-Trace": "***"}, rows[0].Config.Headers)
 }
+
+func TestEndpointViews_StripCredentialsFromTheTarget(t *testing.T) {
+	views := endpointViews([]*endpoint.Endpoint{
+		{
+			Target:    "https://ops:hunter2@example.com/health?token=t0k3n",
+			LastError: `request failed: Get "https://ops:xxxxx@example.com/health?token=t0k3n": context deadline exceeded`,
+		},
+		{Target: "db.internal:5432"},
+	})
+	text, err := json.Marshal(views)
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(text), "hunter2")
+	assert.NotContains(t, string(text), "t0k3n")
+	assert.NotContains(t, string(text), "ops")
+	var rows []struct {
+		Target    string `json:"target"`
+		LastError string `json:"last_error"`
+	}
+	require.NoError(t, json.Unmarshal(text, &rows))
+	assert.Equal(t, "https://example.com/health", rows[0].Target)
+	assert.Equal(t, `request failed: Get "https://example.com/health": context deadline exceeded`, rows[0].LastError)
+	assert.Equal(t, "db.internal:5432", rows[1].Target)
+}

@@ -72,7 +72,7 @@ func TestNotificationChannel_RedactMasksHeaderValues(t *testing.T) {
 	assert.Empty(t, emptyObject.Headers)
 }
 
-// FR-023, US3 scenario 4: platform webhook URLs are cut after the host; the other types keep theirs.
+// FR-023, US3 scenario 4: webhook URLs are cut after the host; email and Telegram keep theirs.
 func TestNotificationChannel_RedactTruncatesPlatformURLs(t *testing.T) {
 	for _, tc := range []struct {
 		typ, url, want string
@@ -81,7 +81,7 @@ func TestNotificationChannel_RedactTruncatesPlatformURLs(t *testing.T) {
 		{"slack", "https://hooks.slack.com/services/T000/B000/XXXXsecret", "https://hooks.slack.com", true},
 		{"discord", "https://discord.com/api/webhooks/1234/abcdTOKEN", "https://discord.com", true},
 		{"teams", "https://acme.webhook.office.com/webhookb2/guid@guid/IncomingWebhook/id/key", "https://acme.webhook.office.com", true},
-		{"webhook", "https://hooks.example.com/path/kept", "https://hooks.example.com/path/kept", false},
+		{"webhook", "https://hooks.example.com/path/cut?token=s3cr3t", "https://hooks.example.com", true},
 		{"email", "ops@example.com", "ops@example.com", false},
 		{"telegram", "-1001234567890", "-1001234567890", false},
 	} {

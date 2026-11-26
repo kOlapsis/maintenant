@@ -466,7 +466,7 @@ A channel has `id`, `name`, `type`, `url`, `headers` (a string holding a JSON ob
 
 - The secret (a Telegram bot token) is never returned, only `has_secret`.
 - Header values are replaced by `***`: `headers` comes back as the same names, sorted, for example `{"Authorization":"***","X-Trace":"***"}`, with `has_headers: true`. Without any header, `headers` is absent and `has_headers` is `false`.
-- The `url` of a `slack`, `discord` or `teams` channel is cut after the host (`https://hooks.slack.com`), with `has_url_secret: true`. Other types return their `url` whole, with `has_url_secret: false`.
+- The `url` of a `webhook`, `slack`, `discord` or `teams` channel is cut after the host (`https://hooks.slack.com`), with `has_url_secret: true`. An `email` or `telegram` channel returns its `url` whole, with `has_url_secret: false`.
 
 Deliveries always use the stored values.
 

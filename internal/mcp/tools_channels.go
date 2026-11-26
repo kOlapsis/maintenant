@@ -17,13 +17,13 @@ import (
 func registerChannelTools(server *gomcp.Server, svc *Services) {
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_channels",
-		Description: "List notification channels, oldest first, with their type, destination, enabled flag and delivery health. Channels are silent on their own: an alert reaches one only through an alert trigger or an escalation level. Header values are masked as *** and Slack, Discord and Teams webhook URLs are cut after the host; the secret is never returned.",
+		Description: "List notification channels, oldest first, with their type, destination, enabled flag and delivery health. Channels are silent on their own: an alert reaches one only through an alert trigger or an escalation level. Header values are masked as *** and webhook URLs are cut after the host; the secret is never returned.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listChannelsHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_channel",
-		Description: "Get one notification channel by id (from list_channels), with its delivery health (healthy or failing, from the last delivery) and the triggers routing to it. Header values are masked as *** and Slack, Discord and Teams webhook URLs are cut after the host; the secret is never returned. Use test_channel to check that it delivers.",
+		Description: "Get one notification channel by id (from list_channels), with its delivery health (healthy or failing, from the last delivery) and the triggers routing to it. Header values are masked as *** and webhook URLs are cut after the host; the secret is never returned. Use test_channel to check that it delivers.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getChannelHandler(svc))
 
