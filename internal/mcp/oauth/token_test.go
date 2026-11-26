@@ -191,3 +191,24 @@ func TestHandleToken_CodeExchangeTellsAStoreFailureFromABadCode(t *testing.T) {
 		})
 	}
 }
+
+func TestHandleToken_RefusesGetAndQueryStringCredentials(t *testing.T) {
+	form := url.Values{
+		"grant_type": {"refresh_token"}, "refresh_token": {"old"},
+		"client_id": {"maintenant-mcp"}, "client_secret": {"secret"},
+	}
+
+	store := refreshStore("read")
+	rec := httptest.NewRecorder()
+	newTestServerWithStore(store).HandleToken(rec, httptest.NewRequest(http.MethodGet, "/oauth/token?"+form.Encode(), nil))
+	assert.Equal(t, http.StatusMethodNotAllowed, rec.Code, rec.Body.String())
+	assert.Empty(t, store.storedTokens)
+
+	store = refreshStore("read")
+	rec = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/oauth/token?"+form.Encode(), strings.NewReader(""))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	newTestServerWithStore(store).HandleToken(rec, req)
+	assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	assert.Empty(t, store.storedTokens, "credentials in the query string are not read")
+}

@@ -12,12 +12,17 @@ import (
 // HandleToken handles the token endpoint.
 // POST /oauth/token — supports authorization_code and refresh_token grants.
 func (s *OAuthServer) HandleToken(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		tokenError(w, http.StatusMethodNotAllowed, "invalid_request", "POST required")
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		tokenError(w, http.StatusBadRequest, "invalid_request", "malformed form data")
 		return
 	}
 
-	grantType := r.FormValue("grant_type")
+	grantType := r.PostFormValue("grant_type")
 
 	switch grantType {
 	case "authorization_code":
@@ -30,11 +35,11 @@ func (s *OAuthServer) HandleToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *OAuthServer) handleAuthorizationCode(w http.ResponseWriter, r *http.Request) {
-	code := r.FormValue("code")
-	clientID := r.FormValue("client_id")
-	clientSecret := r.FormValue("client_secret")
-	redirectURI := r.FormValue("redirect_uri")
-	codeVerifier := r.FormValue("code_verifier")
+	code := r.PostFormValue("code")
+	clientID := r.PostFormValue("client_id")
+	clientSecret := r.PostFormValue("client_secret")
+	redirectURI := r.PostFormValue("redirect_uri")
+	codeVerifier := r.PostFormValue("code_verifier")
 
 	// Validate client credentials
 	if clientID != s.clientID || !s.VerifyClientSecret(clientSecret) {
@@ -86,9 +91,9 @@ func (s *OAuthServer) handleAuthorizationCode(w http.ResponseWriter, r *http.Req
 }
 
 func (s *OAuthServer) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
-	refreshTokenRaw := r.FormValue("refresh_token")
-	clientID := r.FormValue("client_id")
-	clientSecret := r.FormValue("client_secret")
+	refreshTokenRaw := r.PostFormValue("refresh_token")
+	clientID := r.PostFormValue("client_id")
+	clientSecret := r.PostFormValue("client_secret")
 
 	// Validate client credentials
 	if clientID != s.clientID || !s.VerifyClientSecret(clientSecret) {
