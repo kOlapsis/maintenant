@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -22,44 +23,48 @@ func SocketPath(dbPath string) string {
 	return filepath.Join(filepath.Dir(dbPath), "mcp.sock")
 }
 
-// ServeSocket serves server on a Unix socket readable only by the instance's user, until ctx ends.
-func ServeSocket(ctx context.Context, server *gomcp.Server, path string, logger *slog.Logger) error {
+// ServeSocket serves server on a Unix socket readable only by the instance's user until ctx ends, closing every session then, and returns a function that waits for the sessions to end.
+func ServeSocket(ctx context.Context, server *gomcp.Server, path string, logger *slog.Logger) (func(), error) {
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("remove stale MCP socket: %w", err)
+		return nil, fmt.Errorf("remove stale MCP socket: %w", err)
 	}
 	old := syscall.Umask(0o077)
 	ln, err := net.Listen("unix", path)
 	syscall.Umask(old)
 	if err != nil {
-		return fmt.Errorf("listen on MCP socket: %w", err)
+		return nil, fmt.Errorf("listen on MCP socket: %w", err)
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
 		_ = ln.Close()
-		return fmt.Errorf("restrict MCP socket: %w", err)
+		return nil, fmt.Errorf("restrict MCP socket: %w", err)
 	}
 
-	go func() {
+	var sessions sync.WaitGroup
+	sessions.Go(func() {
 		<-ctx.Done()
 		_ = ln.Close()
-	}()
-	go func() {
+	})
+	sessions.Go(func() {
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
 				return
 			}
-			go func() {
+			sessions.Go(func() {
 				defer func() { _ = conn.Close() }()
+				// A tool call in flight still runs to its end: the SDK does not cancel it when the connection closes.
+				stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+				defer stop()
 				ss, err := server.Connect(ctx, &gomcp.IOTransport{Reader: conn, Writer: conn}, nil)
 				if err != nil {
 					logger.Warn("MCP socket session failed", "error", err)
 					return
 				}
 				_ = ss.Wait()
-			}()
+			})
 		}
-	}()
-	return nil
+	})
+	return sessions.Wait, nil
 }
 
 // Relay pipes a stdio MCP client to the socket of the running instance, until either side closes.

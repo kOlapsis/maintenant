@@ -27,7 +27,8 @@ func TestRelay_ReachesServerThroughSocket(t *testing.T) {
 	})
 
 	path := filepath.Join(t.TempDir(), "mcp.sock")
-	require.NoError(t, ServeSocket(ctx, server, path, slog.Default()))
+	_, err := ServeSocket(ctx, server, path, slog.Default())
+	require.NoError(t, err)
 
 	info, err := os.Stat(path)
 	require.NoError(t, err)

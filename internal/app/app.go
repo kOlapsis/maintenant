@@ -1122,9 +1122,12 @@ func (a *App) startAgentServer(ctx context.Context) error {
 
 func (a *App) startMCPSocket(ctx context.Context) {
 	if a.cfg.Mode != "agent" && (a.cfg.MCP.Enabled || a.cfg.MCP.Socket) {
-		if err := mcp.ServeSocket(ctx, a.mcpServer, mcp.SocketPath(a.cfg.DBPath), a.logger); err != nil {
+		wait, err := mcp.ServeSocket(ctx, a.mcpServer, mcp.SocketPath(a.cfg.DBPath), a.logger)
+		if err != nil {
 			a.logger.Warn("local MCP socket unavailable, --mcp-stdio cannot reach this instance", "error", err)
+			return
 		}
+		a.background.Go(wait)
 	} else if a.cfg.Mode != "agent" {
 		a.logger.Info("local MCP socket not served", "enable", "MAINTENANT_MCP=true or MAINTENANT_MCP_SOCKET=true")
 	}

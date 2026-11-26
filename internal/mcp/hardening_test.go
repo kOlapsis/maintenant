@@ -81,7 +81,8 @@ func TestServeSocket_ReadOnlyServesTheReadToolsOnly(t *testing.T) {
 	defer cancel()
 	server := NewServer(&Services{Version: "test", Logger: slog.Default(), ReadOnly: true})
 	path := filepath.Join(t.TempDir(), "mcp.sock")
-	require.NoError(t, ServeSocket(ctx, server, path, slog.Default()))
+	_, err := ServeSocket(ctx, server, path, slog.Default())
+	require.NoError(t, err)
 
 	cs := connectThroughRelay(t, ctx, path)
 	tools, err := cs.ListTools(ctx, nil)
@@ -136,7 +137,8 @@ func TestServeSocket_WriteToolsRunWithoutAScope(t *testing.T) {
 	f := newAlertFixture(t)
 	id := f.insertActive(t, "c-socket")
 	path := filepath.Join(t.TempDir(), "mcp.sock")
-	require.NoError(t, ServeSocket(ctx, NewServer(f.svc), path, slog.Default()))
+	_, err := ServeSocket(ctx, NewServer(f.svc), path, slog.Default())
+	require.NoError(t, err)
 
 	cs := connectThroughRelay(t, ctx, path)
 	res, err := cs.CallTool(ctx, &gomcp.CallToolParams{Name: "acknowledge_alert", Arguments: map[string]any{"alert_id": id, "acknowledged_by": "socket"}})
@@ -346,7 +348,8 @@ func TestServeSocket_IsClosedToOthersUnderAnOpenUmask(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	path := filepath.Join(t.TempDir(), "mcp.sock")
-	require.NoError(t, ServeSocket(ctx, gomcp.NewServer(&gomcp.Implementation{Name: "t", Version: "0"}, nil), path, slog.Default()))
+	_, err := ServeSocket(ctx, gomcp.NewServer(&gomcp.Implementation{Name: "t", Version: "0"}, nil), path, slog.Default())
+	require.NoError(t, err)
 
 	info, err := os.Stat(path)
 	require.NoError(t, err)

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -20,6 +21,9 @@ import (
 	"github.com/kolapsis/maintenant/internal/commercial"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/extpoint"
+	"github.com/kolapsis/maintenant/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/mcp"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 type hold struct {
@@ -148,6 +152,29 @@ func TestShutdown_WaitsForEveryServiceGoroutine(t *testing.T) {
 			},
 			begin: func(t *testing.T, a *App, _ *syncBuffer) {
 				require.NoError(t, a.subscriberSvc.Subscribe(context.Background(), "someone@example.com"))
+			},
+		},
+		{
+			name: "MCP socket session",
+			hold: "heartbeat: paused",
+			setup: func(_ *testing.T, cfg *Config, _ *hold) []Option {
+				cfg.MCP.Socket = true
+				return nil
+			},
+			begin: func(t *testing.T, a *App, _ *syncBuffer) {
+				hb, err := a.heartbeatSvc.CreateHeartbeat(context.Background(),
+					heartbeat.CreateHeartbeatInput{Name: "probe", IntervalSeconds: 3600, GraceSeconds: 600}, uid.New())
+				require.NoError(t, err)
+				conn, err := net.Dial("unix", mcp.SocketPath(a.cfg.DBPath))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = conn.Close() })
+				client := gomcp.NewClient(&gomcp.Implementation{Name: "probe", Version: "0"}, nil)
+				cs, err := client.Connect(context.Background(), &gomcp.IOTransport{Reader: conn, Writer: conn}, nil)
+				require.NoError(t, err)
+				go func() {
+					_, _ = cs.CallTool(context.Background(), &gomcp.CallToolParams{Name: "pause_monitor",
+						Arguments: map[string]any{"monitor_type": "heartbeat", "monitor_id": hb.ID}})
+				}()
 			},
 		},
 	}
