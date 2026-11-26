@@ -26,7 +26,7 @@ Alert fires (T+0)
 
 A run keeps the policy as it was when the run started. Editing a policy changes the alerts raised afterwards, not the runs already in progress. Deactivating or deleting a policy stops its runs (`stopped_by_policy_disabled`, `stopped_by_policy_deletion`).
 
-Policies only see alerts that are active. An alert raised while a matching [silence rule](alerts.md#silence-rules) or maintenance window is in force is silenced and starts no run. If an alert becomes more severe, policies that match its new severity start a run too; runs already started continue untouched. A policy runs at most once per alert: a policy whose run for the alert has ended, exhausted or stopped, does not start again. An alert that is already acknowledged starts no new run when its severity rises, and a run still going when the alert is acknowledged stops at its next evaluation. Each time a level is sent, the alert's `escalated_at` is set to that time.
+Policies only see alerts that are active. An alert raised while a matching [silence rule](alerts.md#silence-rules) or maintenance window is in force is silenced and starts no run while it is held. If the problem lasts once nothing covers the alert any more, the alert becomes active and its runs start then. If an alert becomes more severe, policies that match its new severity start a run too; runs already started continue untouched. A policy runs at most once per alert: a policy whose run for the alert has ended, exhausted or stopped, does not start again. An alert that is already acknowledged starts no new run when its severity rises, and a run still going when the alert is acknowledged stops at its next evaluation. Each time a level is sent, the alert's `escalated_at` is set to that time.
 
 ---
 

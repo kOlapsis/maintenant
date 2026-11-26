@@ -302,7 +302,7 @@ A scheduler checks the windows every 60 seconds:
 
 Deleting a window that is running closes it the same way: the incident is resolved, the components get their previous status back and subscribers receive `Maintenance Completed: <title>`.
 
-The status page start and end can therefore lag the scheduled times by up to a minute. The alert suppression does not: from `starts_at` to `ends_at`, alerts about the monitors of the listed components are dropped, and [escalation runs](alert-escalation.md#maintenance-windows-suspend-escalation) on them are paused. A match-all component in a window covers every monitor of its type.
+The status page start and end can therefore lag the scheduled times by up to a minute. The alert suppression does not: from `starts_at` to `ends_at`, alerts about the monitors of the listed components are held as `silenced` instead of being notified, and raised within 30 seconds of the end of the window if the problem lasts (see [Silence Rules](alerts.md#silence-rules)), and [escalation runs](alert-escalation.md#maintenance-windows-suspend-escalation) on them are paused. A match-all component in a window covers every monitor of its type.
 
 `GET /api/v1/status/maintenance` returns the windows with their components; `limit` defaults to 20, and a value above 100 is replaced by 20. Until a window starts, the public page lists it under upcoming maintenance, which shows the next five. Windows stay until they are deleted.
 

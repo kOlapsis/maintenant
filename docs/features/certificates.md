@@ -159,7 +159,7 @@ The following fields are stored with each check in the certificate history:
 
 OCSP stapling is a **Personal** feature (Personal and Pro). The staple is read in every edition to keep the code path uniform, but persistence, API exposure, and `ocsp_revoked` alert emission are skipped on Community installs. The `ocsp_stapling` feature flag is exposed on `GET /api/v1/edition` so the frontend can render an upgrade teaser instead of an empty OCSP block.
 
-Certificates scanned by a remote agent carry no OCSP data: the agent reports the leaf certificate only.
+Certificates scanned by a remote agent carry no OCSP data: the agent reports the leaf certificate with its chain and hostname results, and does not read the staple.
 
 ---
 

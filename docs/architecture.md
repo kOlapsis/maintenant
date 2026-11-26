@@ -251,7 +251,7 @@ alert.Event → alert engine
   → alert triggers → channels → notifier queue (workers, retries)
 ```
 
-Channels are silent by default: an alert reaches a channel only through an alert trigger or an escalation policy. The notifier tries a delivery up to three times, waiting 1 second and then 5 seconds. The notifications of one alert to one channel go through the same worker one after the other, so a recovery never overtakes the alert it resolves.
+Channels are silent by default: an alert reaches a channel only through an alert trigger or an escalation policy. Each channel has its own queue and its own worker. The notifier retries a failed delivery 5 seconds later, then with a wait that doubles up to one hour, for 24 hours at most. The notifications of one alert to one channel go through that worker one after the other, so a recovery never overtakes the alert it resolves.
 
 Webhook subscriptions are a separate path. The webhook dispatcher is an observer of the SSE broker: it reacts to six event types (`container.state_changed`, `endpoint.status_changed`, `heartbeat.status_changed`, `certificate.status_changed`, `alert.fired`, `alert.resolved`) and sends them through the notifier's worker pool. The events sent to one URL are delivered in order. The dispatcher records each delivery on the subscription (last status, consecutive failures) and deactivates it after 10 failures in a row; a success reactivates it.
 
