@@ -44,20 +44,34 @@ var scopeEntityTypes = []string{
 	"swarm_service", "swarm_node", "workload", "pod", "node",
 }
 
-// ValidateTriggerFilters checks that the comma-separated filters of a trigger can match an alert.
-func ValidateTriggerFilters(severities, sourcesCSV, scopes string) error {
+var scopeEntityTypesWithoutID = []string{"infrastructure", "swarm_cluster"}
+
+func isScope(s string) bool {
+	entityType, id, found := strings.Cut(s, ":")
+	if slices.Contains(scopeEntityTypesWithoutID, entityType) {
+		return found && id == ""
+	}
+	return id != "" && slices.Contains(scopeEntityTypes, entityType)
+}
+
+// ValidateTriggerFilters checks that the comma-separated filters of a trigger can match an alert, accepting as is the sources and scopes the stored trigger, nil on creation, already holds.
+func ValidateTriggerFilters(severities, sourcesCSV, scopes string, stored *AlertTrigger) error {
 	if err := ValidateSeverityFilter(severities); err != nil {
 		return err
 	}
+	var storedSources, storedScopes string
+	if stored != nil {
+		storedSources, storedScopes = stored.FilterSources, stored.FilterScopes
+	}
 	for _, item := range splitCSV(sourcesCSV) {
-		if !IsSource(item) {
+		if !IsSource(item) && !containsCSV(storedSources, item) {
 			return fmt.Errorf("field=filter_sources: %q is not a source (%s)", item, strings.Join(sources, ", "))
 		}
 	}
 	for _, item := range splitCSV(scopes) {
-		entityType, id, _ := strings.Cut(item, ":")
-		if id == "" || !slices.Contains(scopeEntityTypes, entityType) {
-			return fmt.Errorf("field=filter_scopes: %q is not entity_type:entity_id (entity types: %s)", item, strings.Join(scopeEntityTypes, ", "))
+		if !isScope(item) && !containsCSV(storedScopes, item) {
+			return fmt.Errorf("field=filter_scopes: %q is not entity_type:entity_id (entity types: %s; %s take no id, as in %q)",
+				item, strings.Join(scopeEntityTypes, ", "), strings.Join(scopeEntityTypesWithoutID, " and "), scopeEntityTypesWithoutID[0]+":")
 		}
 	}
 	return nil

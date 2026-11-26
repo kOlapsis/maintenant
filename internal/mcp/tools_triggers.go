@@ -68,7 +68,7 @@ type triggerInput struct {
 	Name             string   `json:"name" jsonschema:"Trigger name (1-120 chars)"`
 	FilterSeverities string   `json:"filter_severities" jsonschema:"CSV severity filter: info, warning, critical (e.g. 'critical,warning'). Empty matches everything."`
 	FilterSources    string   `json:"filter_sources" jsonschema:"CSV source filter: container, endpoint, heartbeat, certificate, resource, update, security, agent, host, swarm, kubernetes (e.g. 'container,endpoint'). Empty matches everything."`
-	FilterScopes     string   `json:"filter_scopes" jsonschema:"CSV scope filter of entity_type:entity_id pairs, as found on alerts from list_alerts (e.g. 'container:<entity_id>'). Needs the advanced filters capability. Empty matches everything."`
+	FilterScopes     string   `json:"filter_scopes" jsonschema:"CSV scope filter of entity_type:entity_id pairs, as found on alerts from list_alerts (e.g. 'container:<entity_id>'; 'infrastructure:' and 'swarm_cluster:' take no id). Needs the advanced filters capability. Empty matches everything."`
 	Enabled          *bool    `json:"enabled,omitempty" jsonschema:"Whether the trigger is active. Defaults to true on creation; omitted on update, the current value is kept."`
 	NotifyOnResolve  *bool    `json:"notify_on_resolve,omitempty" jsonschema:"Relay recovery (resolved) notifications, default true"`
 	ChannelIDs       []string `json:"channel_ids" jsonschema:"Notification channel IDs from list_channels (at least one required)"`
@@ -100,7 +100,7 @@ func checkAdvancedFilters(scopes, stored string) (*gomcp.CallToolResult, any, er
 	return checkCapability(extension.CapAlertAdvancedFilters)
 }
 
-func validateTriggerCommon(t *triggerInput) error {
+func validateTriggerCommon(t *triggerInput, stored *alert.AlertTrigger) error {
 	if t.Name == "" {
 		return errors.New("field=name: required")
 	}
@@ -117,7 +117,7 @@ func validateTriggerCommon(t *triggerInput) error {
 		}
 		seen[id] = true
 	}
-	return alert.ValidateTriggerFilters(t.FilterSeverities, t.FilterSources, t.FilterScopes)
+	return alert.ValidateTriggerFilters(t.FilterSeverities, t.FilterSources, t.FilterScopes, stored)
 }
 
 // --- handlers ---
@@ -162,7 +162,7 @@ func createTriggerHandler(svc *Services) gomcp.ToolHandlerFor[triggerInput, any]
 		if r, v, err := checkAdvancedFilters(input.FilterScopes, ""); r != nil {
 			return r, v, err
 		}
-		if err := validateTriggerCommon(&input); err != nil {
+		if err := validateTriggerCommon(&input, nil); err != nil {
 			return errResult(err.Error())
 		}
 		for _, id := range input.ChannelIDs {
@@ -220,7 +220,7 @@ func updateTriggerHandler(svc *Services) gomcp.ToolHandlerFor[updateTriggerInput
 		if r, v, err := checkAdvancedFilters(input.FilterScopes, existing.FilterScopes); r != nil {
 			return r, v, err
 		}
-		if err := validateTriggerCommon(&input.triggerInput); err != nil {
+		if err := validateTriggerCommon(&input.triggerInput, existing); err != nil {
 			return errResult(err.Error())
 		}
 		for _, id := range input.ChannelIDs {

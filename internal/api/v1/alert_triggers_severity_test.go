@@ -26,6 +26,6 @@ func TestTriggers_RefuseAnUnknownSeverityFilter(t *testing.T) {
 func TestValidateTriggerInput_AcceptsTheKnownSeverities(t *testing.T) {
 	for _, good := range []string{"", "critical", "critical, warning", "info,warning,critical", "critical,"} {
 		in := triggerInput{Name: "x", FilterSeverities: good, ChannelIDs: []string{"c1"}}
-		require.NoError(t, validateTriggerInput(&in), good)
+		require.NoError(t, validateTriggerInput(&in, nil), good)
 	}
 }

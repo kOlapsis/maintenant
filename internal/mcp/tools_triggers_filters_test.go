@@ -44,13 +44,27 @@ func TestTriggerWrites_RefuseAFilterThatMatchesNoAlert(t *testing.T) {
 		require.True(t, result.IsError, field)
 		assert.Contains(t, textFromContent(t, result.Content), field)
 
-		result, _, err = updateTriggerHandler(svc)(ctx, nil, updateTriggerInputWithID{ID: legacyID, triggerInput: in})
-		require.NoError(t, err)
-		require.True(t, result.IsError, field)
-		assert.Contains(t, textFromContent(t, result.Content), field)
 	}
 
-	result, _, err := listTriggersHandler(svc)(ctx, nil, listTriggersInput{})
+	off := false
+	result, _, err := updateTriggerHandler(svc)(ctx, nil, updateTriggerInputWithID{ID: legacyID, triggerInput: triggerInput{
+		Name: "legacy", FilterSources: "container,monitor", Enabled: &off, ChannelIDs: []string{ch.ID},
+	}})
+	require.NoError(t, err)
+	require.False(t, result.IsError, textFromContent(t, result.Content))
+	got, err := triggers.GetTrigger(ctx, legacyID)
+	require.NoError(t, err)
+	assert.False(t, got.Enabled)
+	assert.Equal(t, "container,monitor", got.FilterSources)
+
+	result, _, err = updateTriggerHandler(svc)(ctx, nil, updateTriggerInputWithID{ID: legacyID, triggerInput: triggerInput{
+		Name: "legacy", FilterSources: "container,monitor,probe", ChannelIDs: []string{ch.ID},
+	}})
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	assert.Contains(t, textFromContent(t, result.Content), `"probe"`)
+
+	result, _, err = listTriggersHandler(svc)(ctx, nil, listTriggersInput{})
 	require.NoError(t, err)
 	require.False(t, result.IsError)
 	assert.Contains(t, textFromContent(t, result.Content), "container,monitor")
@@ -63,6 +77,10 @@ func TestTriggerWrites_RefuseAFilterThatMatchesNoAlert(t *testing.T) {
 	result, _, err = updateTriggerHandler(svc)(ctx, nil, updateTriggerInputWithID{ID: legacyID, triggerInput: triggerInput{
 		Name: "legacy", FilterSources: "container,swarm,kubernetes", FilterScopes: "container:0195f3c4-11aa-7f00-8c55-2b9d0e3a4c18", ChannelIDs: []string{ch.ID},
 	}})
+	require.NoError(t, err)
+	assert.False(t, result.IsError, textFromContent(t, result.Content))
+
+	result, _, err = createTriggerHandler(svc)(ctx, nil, triggerInput{Name: "posture", FilterScopes: "infrastructure:,swarm_cluster:", ChannelIDs: []string{ch.ID}})
 	require.NoError(t, err)
 	assert.False(t, result.IsError, textFromContent(t, result.Content))
 }
