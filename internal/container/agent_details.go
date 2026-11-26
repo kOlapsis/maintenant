@@ -66,4 +66,5 @@ func (s *Service) forgetAgentDetails(agentID, externalID string) {
 	s.agentDetailsMu.Lock()
 	defer s.agentDetailsMu.Unlock()
 	delete(s.agentDetails, agentContainerKey{agentID, externalID})
+	unknownLabelsWarned.Delete(externalID)
 }

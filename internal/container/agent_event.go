@@ -5,8 +5,11 @@ package container
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agentevent"
@@ -33,6 +36,72 @@ const (
 	maxContainerLabels     = 256
 )
 
+// MaxAgentRows is how many rows of one kind the server keeps for one agent.
+const MaxAgentRows = maxInventoryContainers
+
+var maxAgentContainers = MaxAgentRows
+
+const agentRowRecount = time.Minute
+
+var errAgentRowCeiling = fmt.Errorf("%w: row ceiling reached", agentevent.ErrInvalid)
+
+type agentRowKey struct {
+	owner   any
+	agentID string
+}
+
+type agentRowCount struct {
+	rows      int
+	countedAt time.Time
+	refused   bool
+}
+
+var (
+	agentRowsMu sync.Mutex
+	agentRows   = map[agentRowKey]*agentRowCount{}
+)
+
+// ReserveAgentRow accounts for one more row owner is about to store for agentID, or refuses it with agentevent.ErrInvalid once the agent holds limit of them; count reads the stored number, at most once a minute per agent.
+func ReserveAgentRow(ctx context.Context, owner any, agentID, kind string, limit int, logger *slog.Logger, count func(context.Context) (int, error)) error {
+	agentRowsMu.Lock()
+	defer agentRowsMu.Unlock()
+
+	key := agentRowKey{owner, agentID}
+	st := agentRows[key]
+	if st == nil || time.Since(st.countedAt) >= agentRowRecount {
+		rows, err := count(ctx)
+		if err != nil {
+			return err
+		}
+		if st == nil {
+			st = &agentRowCount{}
+			agentRows[key] = st
+		}
+		st.rows, st.countedAt = rows, time.Now()
+	}
+
+	if st.rows < limit {
+		st.rows++
+		st.refused = false
+		return nil
+	}
+	if !st.refused {
+		st.refused = true
+		logger.Warn("agent reached its "+kind+" ceiling, new ones are refused", "agent_id", agentID, "held", st.rows, "limit", limit)
+	}
+	return fmt.Errorf("%w: agent %s already holds %d rows (%s limit %d)", errAgentRowCeiling, agentID, st.rows, kind, limit)
+}
+
+func (s *Service) reserveAgentContainer(ctx context.Context, agentID string) error {
+	return ReserveAgentRow(ctx, s, agentID, "container", maxAgentContainers, s.logger, func(ctx context.Context) (int, error) {
+		held, err := s.store.ListContainers(ctx, ListContainersOpts{IncludeArchived: true, IncludeIgnored: true, AgentFilter: &agentID})
+		if err != nil {
+			return 0, fmt.Errorf("agent event: count containers: %w", err)
+		}
+		return len(held), nil
+	})
+}
+
 func checkLabelCount(ev *agentpb.ContainerEvent) error {
 	if n := len(ev.GetLabels()); n > maxContainerLabels {
 		return fmt.Errorf("%w: container %s has too many labels (%d, limit %d)", agentevent.ErrInvalid, shortID(ev.GetContainerId()), n, maxContainerLabels)
@@ -54,7 +123,6 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	if err := checkLabelCount(ev); err != nil {
 		return err
 	}
-	WarnUnknownLabels(externalID, ev.GetLabels(), s.logger)
 
 	c, err := s.store.GetContainerByExternalID(ctx, uid.Agent(agentID), externalID)
 	if err != nil {
@@ -85,8 +153,16 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	}
 
 	if c == nil {
-		return s.insertAgentContainer(ctx, agentID, ev, meta)
+		if err := s.insertAgentContainer(ctx, agentID, ev, meta); err != nil {
+			s.forgetAgentDetails(agentID, externalID)
+			return err
+		}
+		if !meta.Replayed {
+			WarnUnknownLabels(externalID, ev.GetLabels(), s.logger)
+		}
+		return nil
 	}
+	WarnUnknownLabels(externalID, ev.GetLabels(), s.logger)
 
 	if !meta.Replayed {
 		if err := s.refreshAgentContainer(ctx, c, ev); err != nil {
@@ -169,6 +245,7 @@ func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *
 		}
 	}
 
+	var refused error
 	live := make(map[string]struct{}, len(reported))
 	for _, c := range reported {
 		externalID := c.GetContainerId()
@@ -176,7 +253,12 @@ func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *
 			continue
 		}
 		live[externalID] = struct{}{}
-		if err := s.HandleAgentEvent(ctx, agentID, c, meta); err != nil {
+		err := s.HandleAgentEvent(ctx, agentID, c, meta)
+		if errors.Is(err, errAgentRowCeiling) {
+			refused = err
+			continue
+		}
+		if err != nil {
 			return err
 		}
 	}
@@ -205,12 +287,15 @@ func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *
 			"id": sc.ID, "archived_at": now, "agent_id": sc.AgentID,
 		})
 	}
-	return nil
+	return refused
 }
 
 // insertAgentContainer creates a new container row reported by a remote agent,
 // mirroring the field defaults of local discovery (docker.mapFromList).
 func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *agentpb.ContainerEvent, meta agentevent.Meta) error {
+	if err := s.reserveAgentContainer(ctx, agentID); err != nil {
+		return err
+	}
 	externalID := ev.GetContainerId()
 	labels := ev.GetLabels()
 	state := agentContainerState(ev)

@@ -8,7 +8,10 @@ import (
 	"fmt"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
+	"github.com/kolapsis/maintenant/internal/container"
 )
+
+var maxAgentLabelMonitors = container.MaxAgentRows
 
 // HandleAgentEvent records a TLS certificate scan pushed by a remote agent.
 //
@@ -29,6 +32,9 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		return err
 	}
 	if monitor == nil {
+		if err := s.reserveAgentLabelMonitor(ctx, agentID); err != nil {
+			return err
+		}
 		monitor = &CertMonitor{
 			Hostname:             host,
 			Port:                 port,
@@ -50,6 +56,16 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 
 	_, err = s.applyCheckResult(ctx, monitor, agentCertToRaw(ev), true)
 	return err
+}
+
+func (s *Service) reserveAgentLabelMonitor(ctx context.Context, agentID string) error {
+	return container.ReserveAgentRow(ctx, s, agentID, "certificate monitor", maxAgentLabelMonitors, s.logger, func(ctx context.Context) (int, error) {
+		held, err := s.store.ListMonitors(ctx, ListCertificatesOpts{Source: string(SourceLabel), AgentFilter: &agentID, IncludeInactive: true})
+		if err != nil {
+			return 0, fmt.Errorf("count agent cert monitors: %w", err)
+		}
+		return len(held), nil
+	})
 }
 
 // agentCertToRaw adapts a pushed CertificateInfo into a scan result, taking chain and hostname as valid when the agent does not report them.
