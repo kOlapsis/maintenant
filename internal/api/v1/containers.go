@@ -19,6 +19,8 @@ type ContainerNameLister interface {
 	ListContainerNames(ctx context.Context, externalID string) ([]string, error)
 }
 
+const maxListLimit = 500
+
 // SecurityInsightProvider provides security insight counts for containers.
 type SecurityInsightProvider interface {
 	InsightCount(containerID string) (int, string)
@@ -329,9 +331,11 @@ func (h *ContainerHandler) HandleTransitions(w http.ResponseWriter, r *http.Requ
 
 	if s := r.URL.Query().Get("since"); s != "" {
 		t, err := time.Parse(time.RFC3339, s)
-		if err == nil {
-			opts.Since = &t
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid 'since' timestamp")
+			return
 		}
+		opts.Since = &t
 	} else {
 		since := time.Now().Add(-24 * time.Hour)
 		opts.Since = &since
@@ -339,14 +343,16 @@ func (h *ContainerHandler) HandleTransitions(w http.ResponseWriter, r *http.Requ
 
 	if u := r.URL.Query().Get("until"); u != "" {
 		t, err := time.Parse(time.RFC3339, u)
-		if err == nil {
-			opts.Until = &t
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid 'until' timestamp")
+			return
 		}
+		opts.Until = &t
 	}
 
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if n, err := strconv.Atoi(l); err == nil && n > 0 {
-			opts.Limit = n
+			opts.Limit = min(n, maxListLimit)
 		}
 	}
 
