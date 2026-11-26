@@ -246,6 +246,7 @@ message AgentEvent {
 // predating it keeps the enrollment value.
 message RuntimeMsg {
   Runtime kind = 1;  // never RUNTIME_UNSPECIFIED
+  bool unreachable = 2;  // the runtime stopped answering the agent; false again once it is back
 }
 
 // ----- Container ------------------------------------------------------------

@@ -43,7 +43,8 @@ func TestDispatcher_RuntimeReportUpdatesTheDetectedRuntime(t *testing.T) {
 	agentID := "00000000-0000-0000-0000-000000000001"
 
 	sink := &recordingBroadcaster{}
-	d := NewDispatcher(DispatchDeps{Runtime: runtimeRecorder{store: agents, broadcaster: sink}})
+	sessions := NewSessions(slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	d := NewDispatcher(DispatchDeps{Runtime: runtimeRecorder{store: agents, broadcaster: sink, sessions: sessions}})
 	report := func(kind agentpb.Runtime) error {
 		return d.Dispatch(ctx, agentID, &agentpb.AgentEvent{
 			AgentId: agentID,
@@ -71,4 +72,37 @@ func TestDispatcher_RuntimeReportUpdatesTheDetectedRuntime(t *testing.T) {
 	require.Error(t, report(agentpb.Runtime(42)))
 	assert.Equal(t, "docker", stored(), "a runtime the server does not know leaves the stored one alone")
 	assert.Empty(t, sink.take())
+}
+
+func TestDispatcher_RuntimeReportMarksTheRuntimeUnreachableForTheSession(t *testing.T) {
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	agents := store.NewAgentStore(storetest.Open(t, logger))
+	insertActiveAgents(t, agents, 1)
+	agentID := "00000000-0000-0000-0000-000000000001"
+
+	sessions := NewSessions(logger, nil)
+	d := NewDispatcher(DispatchDeps{Runtime: runtimeRecorder{store: agents, broadcaster: &recordingBroadcaster{}, sessions: sessions}})
+	report := func(msg *agentpb.RuntimeMsg) {
+		t.Helper()
+		require.NoError(t, d.Dispatch(ctx, agentID, &agentpb.AgentEvent{AgentId: agentID, Body: &agentpb.AgentEvent_Runtime{Runtime: msg}}))
+	}
+
+	sessions.Open(agentID, func(error) {}, "1.2.3.4:1", nil, nil)
+	report(&agentpb.RuntimeMsg{Kind: agentpb.Runtime_RUNTIME_DOCKER})
+	assert.False(t, sessions.RuntimeUnreachable(agentID), "a report without the field, as an older agent sends it, leaves the runtime reachable")
+
+	report(&agentpb.RuntimeMsg{Kind: agentpb.Runtime_RUNTIME_DOCKER, Unreachable: true})
+	assert.True(t, sessions.RuntimeUnreachable(agentID))
+	assert.True(t, sessions.IsConnected(agentID))
+
+	report(&agentpb.RuntimeMsg{Kind: agentpb.Runtime_RUNTIME_DOCKER})
+	assert.False(t, sessions.RuntimeUnreachable(agentID), "the runtime is back")
+
+	report(&agentpb.RuntimeMsg{Kind: agentpb.Runtime_RUNTIME_DOCKER, Unreachable: true})
+	sessions.Open(agentID, func(error) {}, "1.2.3.4:2", nil, nil)
+	assert.False(t, sessions.RuntimeUnreachable(agentID), "a new stream starts from what the agent states on it")
+
+	sessions.Close(agentID, "stream_ended")
+	assert.False(t, sessions.RuntimeUnreachable(agentID))
 }

@@ -17,6 +17,7 @@ import (
 type runtimeRecorder struct {
 	store       *store.AgentStore
 	broadcaster EventBroadcaster
+	sessions    *Sessions
 }
 
 // HandleAgentRuntime stores the runtime an agent reports and announces it when it changed.
@@ -26,6 +27,7 @@ func (r runtimeRecorder) HandleAgentRuntime(ctx context.Context, agentID string,
 	default:
 		return fmt.Errorf("agent %s reported an unknown runtime %d", agentID, ev.GetKind())
 	}
+	r.sessions.SetRuntimeUnreachable(agentID, ev.GetUnreachable())
 	runtime := protoRuntimeToString(ev.GetKind())
 	changed, err := r.store.UpdateDetectedRuntime(ctx, agentID, runtime)
 	if err != nil {

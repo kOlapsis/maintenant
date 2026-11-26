@@ -95,10 +95,23 @@ func (h *KubernetesHandler) markLiveness(m map[string]interface{}, agentID strin
 	if h.sessions == nil || agentID == "" || agentID == uid.LocalAgent {
 		return
 	}
-	if !h.sessions.IsConnected(agentID) {
+	if agentNotReporting(h.sessions, agentID) {
 		m["stale"] = true
 		m["agent_offline"] = true
 	}
+}
+
+type runtimeLiveness interface {
+	RuntimeUnreachable(agentID string) bool
+}
+
+// agentNotReporting reports whether agentID has no live stream, or has one but declared its container runtime unreachable.
+func agentNotReporting(s agentLiveness, agentID string) bool {
+	if !s.IsConnected(agentID) {
+		return true
+	}
+	rl, ok := s.(runtimeLiveness)
+	return ok && rl.RuntimeUnreachable(agentID)
 }
 
 // agentNames resolves agent display identities, or nil when unavailable.

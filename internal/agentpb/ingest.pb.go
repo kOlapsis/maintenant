@@ -1601,6 +1601,7 @@ func (*AgentEvent_Runtime) isAgentEvent_Body() {}
 type RuntimeMsg struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Kind          Runtime                `protobuf:"varint,1,opt,name=kind,proto3,enum=maintenant.agent.v1.Runtime" json:"kind,omitempty"` // never RUNTIME_UNSPECIFIED
+	Unreachable   bool                   `protobuf:"varint,2,opt,name=unreachable,proto3" json:"unreachable,omitempty"`                    // the runtime stopped answering the agent; false again once it is back
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1640,6 +1641,13 @@ func (x *RuntimeMsg) GetKind() Runtime {
 		return x.Kind
 	}
 	return Runtime_RUNTIME_UNSPECIFIED
+}
+
+func (x *RuntimeMsg) GetUnreachable() bool {
+	if x != nil {
+		return x.Unreachable
+	}
+	return false
 }
 
 type ContainerEvent struct {
@@ -3508,10 +3516,11 @@ const file_proto_ingest_proto_rawDesc = "" +
 	"\tinventory\x18\x11 \x01(\v2'.maintenant.agent.v1.ContainerInventoryH\x00R\tinventory\x129\n" +
 	"\ahost_os\x18\x12 \x01(\v2\x1e.maintenant.agent.v1.HostOSMsgH\x00R\x06hostOs\x12;\n" +
 	"\aruntime\x18\x13 \x01(\v2\x1f.maintenant.agent.v1.RuntimeMsgH\x00R\aruntimeB\x06\n" +
-	"\x04body\">\n" +
+	"\x04body\"`\n" +
 	"\n" +
 	"RuntimeMsg\x120\n" +
-	"\x04kind\x18\x01 \x01(\x0e2\x1c.maintenant.agent.v1.RuntimeR\x04kind\"\xf2\x04\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x1c.maintenant.agent.v1.RuntimeR\x04kind\x12 \n" +
+	"\vunreachable\x18\x02 \x01(\bR\vunreachable\"\xf2\x04\n" +
 	"\x0eContainerEvent\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +

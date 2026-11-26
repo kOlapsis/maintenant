@@ -57,6 +57,8 @@ type activeStream struct {
 	spoolDropped    atomic.Int64
 	spoolReportedAt atomic.Int64
 
+	runtimeUnreachable atomic.Bool
+
 	// send is drained by the stream's own Push goroutine, which is the only
 	// writer to the gRPC stream. Callers outside that goroutine (HTTP handlers
 	// issuing commands) enqueue here instead of touching the stream.
@@ -488,6 +490,24 @@ func (s *Sessions) SpoolStatus(agentID string) *agentproto.SpoolState {
 		DroppedSinceConnect: stream.spoolDropped.Load(),
 		ReportedAt:          time.Unix(at, 0),
 	}
+}
+
+// SetRuntimeUnreachable records whether agentID declared that its container runtime stopped answering.
+func (s *Sessions) SetRuntimeUnreachable(agentID string, unreachable bool) {
+	s.mu.RLock()
+	stream, ok := s.active[agentID]
+	s.mu.RUnlock()
+	if ok {
+		stream.runtimeUnreachable.Store(unreachable)
+	}
+}
+
+// RuntimeUnreachable reports whether the connected agentID last declared its container runtime unreachable.
+func (s *Sessions) RuntimeUnreachable(agentID string) bool {
+	s.mu.RLock()
+	stream, ok := s.active[agentID]
+	s.mu.RUnlock()
+	return ok && stream.runtimeUnreachable.Load()
 }
 
 // RejectedEvents returns how many events of agentID were refused for their observation time since startup.

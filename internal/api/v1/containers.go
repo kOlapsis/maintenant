@@ -110,7 +110,7 @@ func (h *ContainerHandler) SetAgentSessions(s agentLiveness) {
 // agentOffline reports whether a remote agent has no live stream. The local
 // runtime (empty/LocalAgent) is governed by the runtime checker, not sessions.
 func (h *ContainerHandler) agentOffline(agentID string) bool {
-	return agentID != "" && agentID != uid.LocalAgent && h.sessions != nil && !h.sessions.IsConnected(agentID)
+	return agentID != "" && agentID != uid.LocalAgent && h.sessions != nil && agentNotReporting(h.sessions, agentID)
 }
 
 // SetAgentDirectory sets the agent directory for enriching remote containers with

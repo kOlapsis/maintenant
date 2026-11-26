@@ -55,6 +55,7 @@ func runCollector(ctx context.Context, id *Identity, link *runtimeLink, nodeName
 			err := collectRuntime(gCtx, id, link, label, nodeName, spool, logger)
 			if errors.Is(err, errRuntimeLost) {
 				logger.Warn("agent: container runtime lost, waiting for it to come back", "runtime", label)
+				(&runtimeWatch{agentID: id.AgentID, label: label, spool: spool, logger: logger}).report(true)
 				if err := link.rt.Connect(gCtx); err != nil {
 					return err
 				}
@@ -104,12 +105,11 @@ func collectRuntime(ctx context.Context, id *Identity, link *runtimeLink, label,
 }
 
 func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runtime, label string, inSwarm func(context.Context) (bool, error), spool *Spool, logger *slog.Logger) error {
-	if err := syncInventory(ctx, id, rt, spool, logger); err != nil {
-		return err
-	}
+	watch := &runtimeWatch{agentID: id.AgentID, label: label, spool: spool, logger: logger}
+	watch.observe(syncInventory(ctx, id, rt, spool, logger) == nil)
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error { return watchRuntimeEvents(gCtx, id, rt, spool, logger) })
-	g.Go(func() error { return streamInventory(gCtx, id, rt, spool, logger) })
+	g.Go(func() error { return streamInventory(gCtx, id, rt, watch, spool, logger) })
 	g.Go(func() error { return sampleRuntimeResources(gCtx, id, rt, spool, logger) })
 	g.Go(func() error { return runLabelProbers(gCtx, id, rt, spool, logger) })
 	if inSwarm != nil {
@@ -144,7 +144,7 @@ type repoDigestLister interface {
 
 // syncInventory pushes a full snapshot of every container the runtime currently
 // knows about, marked complete so the server can reconcile away what it no
-// longer sees. Discovery failure yields no message at all.
+// longer sees. Discovery failure yields no message at all and is returned.
 func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool *Spool, logger *slog.Logger) error {
 	var digests map[string][]string
 	if dl, ok := rt.(repoDigestLister); ok {
@@ -188,7 +188,7 @@ func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool 
 		results, err := ld.DiscoverAllWithLabels(ctx)
 		if err != nil {
 			logger.Warn("collector: inventory discovery failed", "err", err)
-			return nil
+			return err
 		}
 		for _, res := range results {
 			if e := entry(res.Container, res.Labels, res.Exit); e != nil {
@@ -199,7 +199,7 @@ func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool 
 		containers, err := rt.DiscoverAll(ctx)
 		if err != nil {
 			logger.Warn("collector: inventory discovery failed", "err", err)
-			return nil
+			return err
 		}
 		for _, c := range containers {
 			if e := entry(c, nil, nil); e != nil {
@@ -235,9 +235,40 @@ func runtimeEvent(agentID, label string) *agentpb.AgentEvent {
 	}
 }
 
+const unreachableAfter = 3
+
+// runtimeWatch tells the server when the runtime stops answering, after unreachableAfter failures in a row, and when it answers again.
+type runtimeWatch struct {
+	agentID  string
+	label    string
+	spool    *Spool
+	logger   *slog.Logger
+	failures int
+}
+
+func (w *runtimeWatch) observe(ok bool) {
+	wasLost := w.failures >= unreachableAfter
+	if ok {
+		w.failures = 0
+	} else {
+		w.failures++
+	}
+	if lost := w.failures >= unreachableAfter; lost != wasLost {
+		w.report(lost)
+	}
+}
+
+func (w *runtimeWatch) report(unreachable bool) {
+	evt := runtimeEvent(w.agentID, w.label)
+	evt.GetRuntime().Unreachable = unreachable
+	if err := w.spool.Send(evt); err != nil {
+		w.logger.Debug("collector: runtime not reported", "error", err)
+	}
+}
+
 // streamInventory resends the full container inventory on a fixed cadence so the
 // server can reconcile away containers removed on this host.
-func streamInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool *Spool, logger *slog.Logger) error {
+func streamInventory(ctx context.Context, id *Identity, rt runtime.Runtime, watch *runtimeWatch, spool *Spool, logger *slog.Logger) error {
 	ticker := time.NewTicker(containerInventoryInterval)
 	defer ticker.Stop()
 
@@ -246,9 +277,7 @@ func streamInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spoo
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			if err := syncInventory(ctx, id, rt, spool, logger); err != nil {
-				return err
-			}
+			watch.observe(syncInventory(ctx, id, rt, spool, logger) == nil)
 		}
 	}
 }
