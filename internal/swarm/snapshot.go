@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	dockerswarm "github.com/moby/moby/api/types/swarm"
 )
 
@@ -22,7 +23,7 @@ func SnapshotFromClient(ctx context.Context, disc *ServiceDiscovery, client Serv
 		return TopologySnapshot{}, err
 	}
 	nodes, err := client.NodeList(ctx)
-	if err != nil {
+	if err != nil && !cerrdefs.IsPermissionDenied(err) {
 		return TopologySnapshot{}, fmt.Errorf("list nodes: %w", err)
 	}
 

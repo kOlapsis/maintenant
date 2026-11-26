@@ -6,8 +6,10 @@ package swarm
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,7 +39,10 @@ func (c *snapshotClient) TaskList(context.Context) ([]swarm.Task, error) {
 }
 
 func (c *snapshotClient) NodeList(context.Context) ([]swarm.Node, error) {
-	return []swarm.Node{{ID: "n1"}}, c.nodesErr
+	if c.nodesErr != nil {
+		return nil, c.nodesErr
+	}
+	return []swarm.Node{{ID: "n1"}}, nil
 }
 
 func TestSnapshotFromClient_ListsTasksOnce(t *testing.T) {
@@ -56,6 +61,16 @@ func TestSnapshotFromClient_ListsTasksOnce(t *testing.T) {
 	assert.Equal(t, 1, snap.Services[0].RunningReplicas)
 	require.Len(t, snap.Nodes, 1)
 	assert.Equal(t, 2, snap.Nodes[0].TaskCount)
+}
+
+func TestSnapshotFromClient_GoesOnWhenNodeListIsRefused(t *testing.T) {
+	client := &snapshotClient{nodesErr: fmt.Errorf("list nodes: %w", cerrdefs.ErrPermissionDenied)}
+
+	snap, err := SnapshotFromClient(context.Background(), NewServiceDiscovery(client, quietLogger()), client)
+	require.NoError(t, err)
+	assert.Len(t, snap.Services, 2)
+	assert.Len(t, snap.Tasks, 2)
+	assert.Empty(t, snap.Nodes)
 }
 
 func TestSnapshotFromClient_FailsOnNodeListError(t *testing.T) {
