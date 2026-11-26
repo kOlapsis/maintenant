@@ -126,7 +126,11 @@ func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runti
 		if dr, ok := rt.(*docker.Runtime); ok {
 			disc := swarm.NewServiceDiscovery(dr.Client(), logger)
 			client := dr.Client()
-			g.Go(func() error { return streamSwarmTopology(gCtx, id, disc, client, watch, spool, logger) })
+			isManager := func(ctx context.Context) (bool, error) {
+				info, err := client.Info(ctx)
+				return info.Swarm.ControlAvailable, err
+			}
+			g.Go(func() error { return streamSwarmTopology(gCtx, id, disc, client, isManager, watch, spool, logger) })
 		} else {
 			logger.Warn("collector: swarm runtime is not a docker runtime; topology snapshots disabled")
 		}

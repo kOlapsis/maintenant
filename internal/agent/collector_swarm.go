@@ -50,8 +50,28 @@ func watchSwarmMembership(ctx context.Context, label string, inSwarm func(contex
 // snapshot against the rows it holds for this agent, hard-deleting whatever is
 // gone. Sends one snapshot immediately so the server has state before the first
 // tick. Blocks until ctx is cancelled or a push fails.
-func streamSwarmTopology(ctx context.Context, id *Identity, disc *swarm.ServiceDiscovery, client swarm.ServiceClient, watch *runtimeWatch, spool *Spool, logger *slog.Logger) error {
+func streamSwarmTopology(ctx context.Context, id *Identity, disc *swarm.ServiceDiscovery, client swarm.ServiceClient, isManager func(context.Context) (bool, error), watch *runtimeWatch, spool *Spool, logger *slog.Logger) error {
+	wasManager := false
 	send := func() error {
+		manager, err := isManager(ctx)
+		if err != nil {
+			watch.observe("topology", false)
+			logger.Warn("collector: swarm role not read", "err", err)
+			return nil
+		}
+		if !manager {
+			watch.observe("topology", true)
+			if wasManager {
+				wasManager = false
+				logger.Info("collector: this node is no longer a Swarm manager, its cluster is no longer reported")
+				if err := spool.Send(swarmTopologyEvent(id.AgentID, swarm.TopologySnapshot{})); err != nil {
+					logger.Debug("collector: swarm topology not cleared", "error", err)
+				}
+			}
+			return nil
+		}
+		wasManager = true
+
 		snap, err := swarm.SnapshotFromClient(ctx, disc, client)
 		watch.observe("topology", err == nil)
 		if err != nil {

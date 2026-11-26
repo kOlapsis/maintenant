@@ -55,13 +55,25 @@ func TestSwarmTopologyEvent_MarshalsSnapshot(t *testing.T) {
 	require.Equal(t, int32(5), body.GetNodes()[0].GetTaskCount())
 }
 
-type failingSwarmClient struct{ down atomic.Bool }
+type failingSwarmClient struct {
+	down   atomic.Bool
+	worker atomic.Bool
+	asked  atomic.Int32
+}
 
 func (c *failingSwarmClient) ServiceList(context.Context) ([]dockerswarm.Service, error) {
+	if c.worker.Load() {
+		return nil, errors.New("This node is not a swarm manager. Worker nodes can't be used to view or modify cluster state.")
+	}
 	if c.down.Load() {
 		return nil, errors.New("the swarm does not have a leader")
 	}
-	return nil, nil
+	return []dockerswarm.Service{{ID: "svc1"}}, nil
+}
+
+func (c *failingSwarmClient) isManager(context.Context) (bool, error) {
+	c.asked.Add(1)
+	return !c.worker.Load(), nil
 }
 
 func (c *failingSwarmClient) ServiceInspect(context.Context, string) (dockerswarm.Service, error) {
@@ -88,7 +100,7 @@ func TestStreamSwarmTopology_ReportsAManagerThatStopsAnswering(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- streamSwarmTopology(ctx, id, swarm.NewServiceDiscovery(client, testLogger()), client, watch, spool, testLogger())
+		done <- streamSwarmTopology(ctx, id, swarm.NewServiceDiscovery(client, testLogger()), client, client.isManager, watch, spool, testLogger())
 	}()
 
 	last := func() (runtimeReport, bool) {
@@ -109,6 +121,101 @@ func TestStreamSwarmTopology_ReportsAManagerThatStopsAnswering(t *testing.T) {
 		r, ok := last()
 		return ok && r == runtimeReport{swarmKind, false}
 	}, 5*time.Second, 2*time.Millisecond, "the first snapshot that works again must be reported")
+
+	cancel()
+	require.NoError(t, <-done)
+}
+
+func swarmTopologies(sink *captureSink) []int {
+	var out []int
+	for _, ev := range sink.events() {
+		if topo := ev.GetSwarm(); topo != nil {
+			out = append(out, len(topo.GetServices()))
+		}
+	}
+	return out
+}
+
+func TestStreamSwarmTopology_AWorkerIsNotAFailingManager(t *testing.T) {
+	prev := swarmTopologyInterval
+	swarmTopologyInterval = 2 * time.Millisecond
+	t.Cleanup(func() { swarmTopologyInterval = prev })
+
+	sink := &captureSink{}
+	spool := NewSpool(t.TempDir(), SpoolConfig{}, testLogger())
+	spool.Attach(sink)
+	t.Cleanup(func() { _ = spool.Close() })
+
+	client := &failingSwarmClient{}
+	client.worker.Store(true)
+	id := &Identity{AgentID: "agent-1"}
+	watch := &runtimeWatch{agentID: id.AgentID, label: RuntimeSwarm, spool: spool, logger: testLogger()}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- streamSwarmTopology(ctx, id, swarm.NewServiceDiscovery(client, testLogger()), client, client.isManager, watch, spool, testLogger())
+	}()
+	ticks := func(n int32) {
+		t.Helper()
+		from := client.asked.Load()
+		require.Eventually(t, func() bool { return client.asked.Load() >= from+n }, 5*time.Second, time.Millisecond)
+	}
+
+	ticks(6)
+	require.Empty(t, runtimeReports(sink), "a worker cannot list services, which is not a runtime that stopped answering")
+	require.Empty(t, swarmTopologies(sink), "a worker sends no topology")
+
+	client.worker.Store(false)
+	require.Eventually(t, func() bool { return len(swarmTopologies(sink)) > 0 }, 5*time.Second, time.Millisecond,
+		"a node promoted to manager reports the cluster")
+	require.Equal(t, 1, swarmTopologies(sink)[0])
+
+	client.worker.Store(true)
+	require.Eventually(t, func() bool {
+		topologies := swarmTopologies(sink)
+		return topologies[len(topologies)-1] == 0
+	}, 5*time.Second, time.Millisecond, "a demoted manager retires the cluster it reported")
+	sent := len(swarmTopologies(sink))
+	ticks(6)
+	require.Len(t, swarmTopologies(sink), sent, "the empty topology of a demotion is sent once")
+	require.Empty(t, runtimeReports(sink), "neither the promotion nor the demotion is a failure")
+
+	cancel()
+	require.NoError(t, <-done)
+}
+
+func TestStreamSwarmTopology_ADemotedManagerThatWasFailingIsReachableAgain(t *testing.T) {
+	prev := swarmTopologyInterval
+	swarmTopologyInterval = 2 * time.Millisecond
+	t.Cleanup(func() { swarmTopologyInterval = prev })
+
+	sink := &captureSink{}
+	spool := NewSpool(t.TempDir(), SpoolConfig{}, testLogger())
+	spool.Attach(sink)
+	t.Cleanup(func() { _ = spool.Close() })
+
+	client := &failingSwarmClient{}
+	client.down.Store(true)
+	id := &Identity{AgentID: "agent-1"}
+	watch := &runtimeWatch{agentID: id.AgentID, label: RuntimeSwarm, spool: spool, logger: testLogger()}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- streamSwarmTopology(ctx, id, swarm.NewServiceDiscovery(client, testLogger()), client, client.isManager, watch, spool, testLogger())
+	}()
+	swarmKind := agentpb.Runtime_RUNTIME_SWARM
+	lastIs := func(want runtimeReport) func() bool {
+		return func() bool {
+			reports := runtimeReports(sink)
+			return len(reports) > 0 && reports[len(reports)-1] == want
+		}
+	}
+
+	require.Eventually(t, lastIs(runtimeReport{swarmKind, true}), 5*time.Second, time.Millisecond)
+	client.worker.Store(true)
+	require.Eventually(t, lastIs(runtimeReport{swarmKind, false}), 5*time.Second, time.Millisecond)
 
 	cancel()
 	require.NoError(t, <-done)

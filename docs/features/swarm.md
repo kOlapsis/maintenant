@@ -152,7 +152,7 @@ The Nodes page lists every node with its role, status, availability, engine vers
 
 An [agent](../guides/agent-setup.md) on a Swarm manager reports the cluster of that manager to a central maintenant: it is detected automatically, or forced with `--runtime=swarm` (`MAINTENANT_RUNTIME=swarm`). Without the flag, the agent checks the Swarm membership of a Docker host every minute: joining or leaving a Swarm restarts collection under the new runtime, and leaving makes the server drop the cluster it held for that agent. Every 30 seconds it sends a snapshot of the services, tasks and nodes, which shows up in the Services, Tasks and Nodes pages with the name of the agent. The Swarm fields of its containers (service, node, slot) are reported too. Agents are a multi-host feature: they need the Personal edition or above.
 
-- Run the agent on a **manager**. On a worker it reports the containers but the topology snapshot fails, because a worker cannot list services.
+- Run the agent on a **manager**. On a worker it reports the containers only, without services, tasks and nodes, because a worker cannot list them. A node promoted to manager starts reporting the cluster at its next snapshot, and a demoted one makes the server drop the cluster it held for that agent.
 - The alerts above are not raised for an agent's cluster.
 - The API lists take an `agent_id` parameter to pick one agent, or `local` for the server's own swarm.
 
