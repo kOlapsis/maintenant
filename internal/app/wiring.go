@@ -797,6 +797,43 @@ func agentLifecycleEvent(agentID, name, reason string, connected bool) alert.Eve
 	return evt
 }
 
+// agentRuntimeEvent builds the alert raised while a connected agent reports that its container runtime stopped answering, or its recovery.
+func agentRuntimeEvent(agentID, name string, unreachable bool) alert.Event {
+	evt := alert.Event{
+		Source:     alert.SourceAgent,
+		AlertType:  "runtime_unreachable",
+		EntityType: "agent",
+		EntityID:   agentID,
+		EntityName: name,
+		AgentID:    agentID,
+	}
+	if unreachable {
+		evt.Severity = alert.SeverityWarning
+		evt.Message = fmt.Sprintf("Agent %s is connected but its container runtime stopped answering", name)
+		evt.Details = map[string]any{"agent_id": agentID}
+		return evt
+	}
+	evt.Severity = alert.SeverityInfo
+	evt.IsRecover = true
+	evt.Message = fmt.Sprintf("The container runtime of agent %s answers again", name)
+	return evt
+}
+
+// agentAlertEvents translates what the session registry tells about an agent into the alert events to emit.
+func agentAlertEvents(agentID, name, reason string, connected bool) []alert.Event {
+	switch reason {
+	case "runtime_unreachable":
+		return []alert.Event{agentRuntimeEvent(agentID, name, true)}
+	case "runtime_reachable":
+		return []alert.Event{agentRuntimeEvent(agentID, name, false)}
+	case "revoked", "deleted":
+		gone := agentRuntimeEvent(agentID, name, false)
+		gone.Message = fmt.Sprintf("Agent %s %s", name, reason)
+		return []alert.Event{agentLifecycleEvent(agentID, name, reason, connected), gone}
+	}
+	return []alert.Event{agentLifecycleEvent(agentID, name, reason, connected)}
+}
+
 // wireAgentLifecycleAlerts raises a Warning alert when a remote agent's stream
 // drops unexpectedly (network outage, or stale liveness past the threshold) and
 // resolves it when the agent reconnects. Intentional removals (revoke/delete)
@@ -813,9 +850,11 @@ func (a *App) wireAgentLifecycleAlerts() {
 			return
 		}
 
-		evt := agentLifecycleEvent(agentID, a.agentName(ctx, agentID), reason, connected)
-		evt.Timestamp = time.Now()
-		a.emitAlert(evt)
+		now := time.Now()
+		for _, evt := range agentAlertEvents(agentID, a.agentName(ctx, agentID), reason, connected) {
+			evt.Timestamp = now
+			a.emitAlert(evt)
+		}
 	})
 }
 

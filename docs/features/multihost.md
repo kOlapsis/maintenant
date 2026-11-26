@@ -211,7 +211,7 @@ After authentication the agent collects and pushes events continuously:
 
 A Kubernetes agent sends the cluster topology, the host metrics of the node it runs on and the host operating system. Endpoint and certificate labels are read from Docker containers only.
 
-When the agent stays connected but its runtime no longer answers (the event stream is lost, or three discoveries fail in a row), it tells the server. The containers and Kubernetes objects of that host are then shown as stale, with their last known state and the mention "Runtime unreachable", until the runtime answers again.
+When the agent stays connected but its runtime no longer answers (the event stream is lost, or three discoveries fail in a row), it tells the server. The containers and Kubernetes objects of that host are then shown as stale, with their last known state and the mention "Runtime unreachable", until the runtime answers again. A Warning alert (source `agent`, type `runtime_unreachable`) is raised for that agent and resolved when it reports that the runtime answers again.
 
 Endpoints are probed by the agent, from its own network, with the `timeout` and `interval` of their labels. A certificate scan checks the chain and the hostname on the agent and reports the leaf certificate with both results: expiry, chain and hostname alerts work, while OCSP is not checked for certificates scanned by an agent. The chain is checked against the agent's own trust store, so an internal certificate signed by a private CA is reported as an invalid chain unless that CA is given to the agent through `MAINTENANT_CA_CERT` (see below). An agent too old to report these results sends none, and the server then treats the chain and the hostname as valid.
 
