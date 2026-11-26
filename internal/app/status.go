@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/alert"
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
@@ -42,12 +43,15 @@ func ContainerStatus(c *container.Container, stale bool, now time.Time) string {
 	}
 }
 
-// containerStale reports whether the runtime or the agent behind agentID is gone: the local runtime does not answer, the agent is disconnected past the stale threshold, or its runtime is unreachable.
+// containerStale reports whether the runtime or the agent behind agentID is gone: the local runtime does not answer, the agent's runtime is unreachable, or the agent is disconnected past the stale threshold with its agent-offline alert open.
 func (a *App) containerStale(ctx context.Context, agentID string) bool {
 	if uid.Agent(agentID) == uid.LocalAgent {
 		return a.rt == nil || !a.rt.IsConnected()
 	}
-	if a.agentSessions != nil && a.agentSessions.IsConnected(agentID) {
+	if a.agentSessions == nil {
+		return true
+	}
+	if a.agentSessions.IsConnected(agentID) {
 		return a.agentSessions.RuntimeUnreachable(agentID)
 	}
 	ag, err := a.agentStore.Get(ctx, agentID)
@@ -58,7 +62,12 @@ func (a *App) containerStale(ctx context.Context, agentID string) bool {
 	if stale == 0 {
 		stale = 60 * time.Second
 	}
-	return v1.ConnectionState(a.agentSessions, stale, agentID, ag.LastSeenAt) == "disconnected"
+	if v1.ConnectionState(a.agentSessions, stale, agentID, ag.LastSeenAt) != "disconnected" {
+		return false
+	}
+	// The offline alert waits out the reconnection grace that follows a server start.
+	open, err := a.alertStore.GetActiveAlert(ctx, alert.SourceAgent, "disconnected", "agent", agentID)
+	return err != nil || open != nil
 }
 
 // EndpointStatus derives the status page status for an endpoint.

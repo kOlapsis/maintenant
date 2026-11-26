@@ -141,7 +141,7 @@ Each monitor is first mapped to a status:
 | Heartbeat | `up`, `started`, `new`, `paused` | never | `down` |
 | Certificate | `valid`, or not checked yet | `expiring` | `expired`, `error`, or `unknown` after a check |
 
-A container counts as up only while maintenant can see it run. Its agent is offline when it has no live connection and was last seen longer ago than `MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS` (60 seconds by default); the local runtime does not answer when the Docker daemon or the Kubernetes API server is lost. A Kubernetes workload is `created` while none of its replicas is ready, and a pod while it is pending.
+A container counts as up only while maintenant can see it run. Its agent is offline when it has no live connection, was last seen longer ago than `MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS` (60 seconds by default) and its agent-offline alert is open, so the agents still reconnecting in the first two minutes after the server starts keep their last state; the local runtime does not answer when the Docker daemon or the Kubernetes API server is lost. A Kubernetes workload is `created` while none of its replicas is ready, and a pod while it is pending.
 
 A monitor that no longer exists counts as operational, and so does an endpoint or a certificate that is no longer monitored (its label was removed or its container deleted). An endpoint or a certificate left unmonitored by the Community quota counts as operational too. A match-all container component leaves out the stopped container of a Swarm task that failed while a task container of the same service runs: Swarm keeps it in the task history after replacing it.
 

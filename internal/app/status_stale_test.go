@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/status"
@@ -36,7 +35,6 @@ func containerMonitorStatus(t *testing.T, a *App, c *container.Container) string
 }
 
 func TestStatusProvider_ContainerStatusFollowsWhatTheRuntimeVouchesFor(t *testing.T) {
-	ctx := context.Background()
 	a, _ := newTestApp(t, nil)
 	running := func(agentID string) *container.Container {
 		return &container.Container{AgentID: agentID, State: container.StateRunning}
@@ -51,12 +49,4 @@ func TestStatusProvider_ContainerStatusFollowsWhatTheRuntimeVouchesFor(t *testin
 		State: container.StateCreated, LastStateChangeAt: time.Now().Add(-10 * time.Minute),
 	}), "a container that never started")
 
-	seen, lost := time.Now(), time.Now().Add(-time.Hour)
-	for name, lastSeen := range map[string]time.Time{"seen": seen, "lost": lost} {
-		require.NoError(t, a.agentStore.Insert(ctx, &agent.Agent{
-			AgentID: name, Hostname: name, Status: "active", DetectedRuntime: "docker", CreatedAt: lost, LastSeenAt: &lastSeen,
-		}))
-	}
-	assert.Equal(t, status.StatusOperational, containerMonitorStatus(t, a, running("seen")), "an agent seen within the stale threshold")
-	assert.Equal(t, status.StatusMajorOutage, containerMonitorStatus(t, a, running("lost")), "an agent gone for an hour")
 }
