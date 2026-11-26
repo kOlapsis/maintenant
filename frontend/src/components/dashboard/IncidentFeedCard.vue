@@ -23,7 +23,7 @@ const statusAdmin = useStatusAdminStore()
 
 onMounted(() => {
   alertsStore.fetchAlerts()
-  if (hasFeature('incidents')) statusAdmin.fetchIncidents()
+  statusAdmin.fetchIncidents()
 })
 
 // Unified incident feed: active alerts + status page incidents

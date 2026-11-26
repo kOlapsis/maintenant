@@ -25,7 +25,7 @@ import type { PalettePayload } from '@/commercial/services/personalizationApi'
 import TabNav, { type TabNavItem } from '@/components/ui/TabNav.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 
-const { hasFeature, editionPermits, statusURL } = useEdition()
+const { editionPermits, statusURL } = useEdition()
 
 const store = useStatusAdminStore()
 const persoStore = usePersonalizationStore()
@@ -123,9 +123,9 @@ async function savePersonalization() {
 
 onMounted(() => {
   store.fetchComponents()
-  if (hasFeature('incidents')) store.fetchIncidents()
-  if (hasFeature('maintenance_windows')) store.fetchMaintenance()
-  if (hasFeature('subscribers')) store.fetchSubscribers()
+  store.fetchIncidents()
+  store.fetchMaintenance()
+  store.fetchSubscribers()
   store.connectSSE()
 })
 

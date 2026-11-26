@@ -261,7 +261,8 @@ watch(
               <div class="flex justify-between items-center" :class="{ 'mb-2.5': isCommunity }">
                 <!-- Three visually distinct states; Personal is never shown as
                      a free tier, and an unknown edition still renders (FR-041). -->
-                <EditionBadge :edition="editionName" />
+                <EditionBadge v-if="editionName" :edition="editionName" />
+                <span v-else class="text-xs text-mnt-muted">Loading…</span>
                 <span
                   class="text-[10px] px-1.5 py-0.5 rounded font-bold border"
                   :style="{

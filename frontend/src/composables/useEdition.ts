@@ -1,7 +1,7 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
 // SPDX-License-Identifier: Apache-2.0
 
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import {
   fetchEdition,
   fetchLicenseStatus,
@@ -22,12 +22,27 @@ const edition = ref<EditionResponse | null>(null)
 const licenseStatus = ref<LicenseStatus | null>(null)
 const loaded = ref(false)
 
+let retryTimer: ReturnType<typeof setTimeout> | null = null
+let retryDelay = 1000
+
+let markLoaded!: () => void
+const firstLoad = new Promise<void>((resolve) => (markLoaded = resolve))
+watch(edition, (e) => {
+  if (e) markLoaded()
+})
+
 async function load() {
   if (loaded.value) return
   try {
     edition.value = await fetchEdition()
+    retryDelay = 1000
   } catch {
-    edition.value ??= { edition: 'community', organisation_name: '', features: {} }
+    if (edition.value === null) {
+      if (retryTimer) clearTimeout(retryTimer)
+      retryTimer = setTimeout(load, retryDelay)
+      retryDelay = Math.min(30_000, retryDelay * 2)
+      return
+    }
   }
   loaded.value = true
 }
@@ -106,7 +121,8 @@ if (typeof document !== 'undefined') {
 load()
 
 export function useEdition() {
-  const editionName = computed<Edition>(() => edition.value?.edition || 'community')
+  const isLoaded = computed(() => edition.value !== null)
+  const editionName = computed<Edition | null>(() => edition.value?.edition || null)
 
   /**
    * Rank in the Community < Personal < Pro order, or null when the engine
@@ -127,7 +143,7 @@ export function useEdition() {
    * upsell rather than nagging someone who has paid (D10, FR-045).
    */
   const isCommunity = computed(() => editionName.value === 'community')
-  const isPaid = computed(() => !isCommunity.value)
+  const isPaid = computed(() => isLoaded.value && !isCommunity.value)
 
   const organisationName = computed(() => edition.value?.organisation_name || '')
   const statusURL = computed(() => edition.value?.status_url || '')
@@ -288,6 +304,8 @@ export function useEdition() {
 
   return {
     edition,
+    isLoaded,
+    whenLoaded: () => firstLoad,
     editionName,
     editionRank,
     isPro,

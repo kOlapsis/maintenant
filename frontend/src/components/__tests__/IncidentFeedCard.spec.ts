@@ -22,7 +22,9 @@ vi.mock('@/services/sseBus', () => ({
   sseBus: { on: vi.fn(), off: vi.fn(), connect: vi.fn(), disconnect: vi.fn() },
 }))
 
-vi.mock('@/composables/useEdition', () => ({ useEdition: () => ({ hasFeature: () => false }) }))
+vi.mock('@/composables/useEdition', () => ({
+  useEdition: () => ({ hasFeature: () => false, whenLoaded: async () => {} }),
+}))
 
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 

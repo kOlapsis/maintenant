@@ -180,7 +180,8 @@ function isUpgrade(tier: Tier): boolean {
       <h1 class="text-2xl font-semibold text-mnt-primary">Editions</h1>
       <p class="mt-2 max-w-3xl text-sm leading-relaxed text-mnt-muted">
         Maintenant comes in three editions. You are currently running
-        <EditionBadge :edition="editionName" size="md" class="mx-1 align-middle" />
+        <EditionBadge v-if="editionName" :edition="editionName" size="md" class="mx-1 align-middle" />
+        <span v-else>an edition that is still loading</span>
         . Every feature below reflects what this instance actually reports, not a
         marketing table.
       </p>

@@ -27,6 +27,6 @@ export function buildFeedbackUrl(edition: string, version: string): string {
 export function useFeedbackUrl() {
   const { editionName } = useEdition()
   const { version } = useAppVersion()
-  const feedbackUrl = computed(() => buildFeedbackUrl(editionName.value, version.value))
+  const feedbackUrl = computed(() => buildFeedbackUrl(editionName.value ?? 'unknown', version.value))
   return { feedbackUrl }
 }
