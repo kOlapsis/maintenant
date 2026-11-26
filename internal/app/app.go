@@ -742,7 +742,8 @@ func (a *App) wireStatusPage(
 func (a *App) wireUpdates() *update.ContainerServiceAdapter {
 	registryClient := update.NewRegistryClient()
 	updateScanner := update.NewScanner(registryClient, a.updateStore, a.logger)
-	containerAdapter := update.NewContainerServiceAdapter(a.containerSvc, a.logger)
+	containerAdapter := update.NewContainerServiceAdapter(a.containerSvc, a.logger).
+		WithAgentPlatforms(agentRuntimeResolver{store: a.agentStore})
 	if fetcher := updateDetailsFetcher(a.rt, a.logger); fetcher != nil {
 		containerAdapter.WithDetailsFetcher(fetcher)
 	}

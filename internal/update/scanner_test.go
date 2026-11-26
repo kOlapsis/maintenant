@@ -5,7 +5,9 @@ package update
 
 import (
 	"context"
+	"errors"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +22,7 @@ type stubRegistry struct {
 	tags      map[string][]string // imageRef -> tags
 	digest    string
 	platforms []string
+	byRef     map[string]RemoteDigests
 	listCalls int
 }
 
@@ -31,8 +34,21 @@ func (r *stubRegistry) ListTags(_ context.Context, imageRef string) ([]string, e
 	return []string{}, nil
 }
 
-func (r *stubRegistry) ResolveDigests(_ context.Context, _ string) (RemoteDigests, error) {
-	return RemoteDigests{Digest: r.digest, Platforms: r.platforms}, nil
+func (r *stubRegistry) ResolveDigests(_ context.Context, ref string) (RemoteDigests, error) {
+	if d, ok := r.byRef[ref]; ok {
+		return d, nil
+	}
+	if strings.Contains(ref, "@sha256:") {
+		return RemoteDigests{}, errors.New("MANIFEST_UNKNOWN")
+	}
+	out := RemoteDigests{Digest: r.digest}
+	if len(r.platforms) > 0 {
+		out.Platforms = map[string]string{}
+		for _, digest := range r.platforms {
+			out.Platforms[digest] = ""
+		}
+	}
+	return out, nil
 }
 
 // stubStore is a minimal UpdateStore that returns no pins, no exclusions, and the baseline last upserted.

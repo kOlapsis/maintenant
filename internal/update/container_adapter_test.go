@@ -6,6 +6,7 @@ package update
 import (
 	"context"
 	"errors"
+	"runtime"
 	"testing"
 	"time"
 
@@ -157,4 +158,41 @@ func TestContainerServiceAdapter_AgentContainersUseWhatTheAgentReported(t *testi
 	info, err := adapter.GetContainerInfo(context.Background(), agentID, "reported")
 	require.NoError(t, err)
 	assert.Equal(t, "false", info.Labels["maintenant.update.enabled"])
+}
+
+type fakeAgentPlatforms struct {
+	platforms map[string]string
+	calls     map[string]int
+}
+
+func (f fakeAgentPlatforms) AgentPlatform(_ context.Context, agentID string) (string, error) {
+	f.calls[agentID]++
+	if p, ok := f.platforms[agentID]; ok {
+		return p, nil
+	}
+	return "", errors.New("agent not found")
+}
+
+func TestContainerServiceAdapter_PlatformOfTheHostRunningTheContainer(t *testing.T) {
+	svc := newAdapterService(
+		localContainer("local", "nginx:latest"),
+		agentContainer("agent-arm", "a1", "nginx:latest"),
+		agentContainer("agent-arm", "a2", "redis:latest"),
+		agentContainer("agent-gone", "g1", "redis:latest"),
+	)
+	for agentID, id := range map[string]string{"a1": "agent-arm", "a2": "agent-arm", "g1": "agent-gone"} {
+		require.NoError(t, svc.HandleAgentEvent(context.Background(), id, &agentpb.ContainerEvent{
+			ContainerId: agentID, Name: agentID, Image: "nginx:latest",
+		}, agentevent.Meta{ObservedAt: time.Now()}))
+	}
+	platforms := fakeAgentPlatforms{platforms: map[string]string{"agent-arm": "linux/arm64"}, calls: map[string]int{}}
+
+	byID := infosByID(t, NewContainerServiceAdapter(svc, testLogger()).WithAgentPlatforms(platforms))
+	assert.Equal(t, runtime.GOOS+"/"+runtime.GOARCH, byID["local"].Platform)
+	assert.Equal(t, "linux/arm64", byID["a1"].Platform)
+	assert.Equal(t, "linux/arm64", byID["a2"].Platform)
+	assert.Empty(t, byID["g1"].Platform)
+	assert.Equal(t, map[string]int{"agent-arm": 1, "agent-gone": 1}, platforms.calls)
+
+	assert.Empty(t, infosByID(t, NewContainerServiceAdapter(svc, testLogger()))["a1"].Platform)
 }

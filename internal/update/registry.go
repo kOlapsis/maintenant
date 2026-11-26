@@ -9,7 +9,7 @@ import (
 	"net"
 	"net/http"
 	"runtime"
-	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -78,12 +78,13 @@ func (rc *RegistryClient) ListTags(ctx context.Context, imageRef string) ([]stri
 // RemoteDigests is what a reference points at in its registry: the digest of that manifest and, for a multi-platform index, the digests of the platform manifests it lists.
 type RemoteDigests struct {
 	Digest    string
-	Platforms []string
+	Platforms map[string]string // digest of each manifest an index lists -> "os/arch[/variant]", empty for an attestation
 }
 
 // Contains reports whether digest names the manifest itself or one of its platform manifests.
 func (d RemoteDigests) Contains(digest string) bool {
-	return digest != "" && (digest == d.Digest || slices.Contains(d.Platforms, digest))
+	_, listed := d.Platforms[digest]
+	return digest != "" && (digest == d.Digest || listed)
 }
 
 // ResolveDigests returns the digests the given image reference resolves to, the same for every platform.
@@ -109,8 +110,13 @@ func (rc *RegistryClient) ResolveDigests(ctx context.Context, imageRef string) (
 	if err != nil {
 		return RemoteDigests{}, fmt.Errorf("read index manifest for %q: %w", imageRef, err)
 	}
+	out.Platforms = make(map[string]string, len(manifest.Manifests))
 	for _, m := range manifest.Manifests {
-		out.Platforms = append(out.Platforms, m.Digest.String())
+		platform := ""
+		if p := m.Platform; p != nil {
+			platform = strings.TrimSuffix(p.OS+"/"+p.Architecture+"/"+p.Variant, "/")
+		}
+		out.Platforms[m.Digest.String()] = platform
 	}
 	return out, nil
 }
