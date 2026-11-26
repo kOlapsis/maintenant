@@ -26,7 +26,7 @@ type ContainerStore interface {
 	ListTransitionsByContainer(ctx context.Context, containerID string, opts ListTransitionsOpts) ([]*StateTransition, int, error)
 	CountRestartsSince(ctx context.Context, containerID string, since time.Time) (int, error)
 
-	// Uptime
+	// Uptime: the transitions of [from, to], preceded by the last one before from.
 	GetTransitionsInWindow(ctx context.Context, containerID string, from time.Time, to time.Time) ([]*StateTransition, error)
 
 	// Retention

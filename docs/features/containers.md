@@ -197,6 +197,8 @@ The response carries `monitor_id`, `monitor_type` (`container`) and a `days` arr
 | Personal | `24h`, `7d`, `30d` |
 | Pro | `24h`, `7d`, `30d`, `90d` |
 
+Each percentage uses the same rule as the daily bar: the share of the window the container was `running` and not `unhealthy`, counted from the moment maintenant first saw it when that falls inside the window.
+
 Completed days are aggregated once a day ends, so the history outlives the raw transitions. A day past the raw retention that was never aggregated has no value, and an archived container has no value after its archival.
 
 ---
