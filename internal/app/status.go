@@ -40,20 +40,19 @@ func EndpointStatus(ep *endpoint.Endpoint) string {
 		// Serving, but over a certificate we do not trust: not an outage.
 		return status.StatusDegraded
 	default:
+		if ep.LastCheckAt != nil || ep.LastError != "" {
+			return status.StatusMajorOutage
+		}
 		return status.StatusOperational
 	}
 }
 
 // HeartbeatStatus derives the status page status for a heartbeat.
 func HeartbeatStatus(hb *heartbeat.Heartbeat) string {
-	switch hb.Status {
-	case heartbeat.StatusUp:
-		return status.StatusOperational
-	case heartbeat.StatusDown:
+	if hb.Status == heartbeat.StatusDown {
 		return status.StatusMajorOutage
-	default:
-		return status.StatusDegraded
 	}
+	return status.StatusOperational
 }
 
 // CertificateStatus derives the status page status for a certificate monitor.
