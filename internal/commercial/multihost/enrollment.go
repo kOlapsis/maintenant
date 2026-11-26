@@ -248,15 +248,7 @@ func (impl *ingestImpl) Push(stream pushStream) error {
 
 	// Phase 4: async recv so we can select on session cancellation.
 	recvCh := make(chan recvResult, 1)
-	go func() {
-		for {
-			msg, err := stream.Recv()
-			recvCh <- recvResult{msg, err}
-			if err != nil {
-				return
-			}
-		}
-	}()
+	go forwardRecv(stream, recvCh, streamCtx.Done())
 
 	s := &pushSession{impl: impl, stream: stream, agentID: ag.AgentID, lastSeenUpd: connectedAt}
 	s.acks = newAckTracker(time.Now())
@@ -268,6 +260,20 @@ func (impl *ingestImpl) Push(stream pushStream) error {
 		closeReason = reasonResend
 	}
 	return err
+}
+
+func forwardRecv(stream pushStream, out chan<- recvResult, done <-chan struct{}) {
+	for {
+		msg, err := stream.Recv()
+		select {
+		case out <- recvResult{msg, err}:
+		case <-done:
+			return
+		}
+		if err != nil {
+			return
+		}
+	}
 }
 
 func receiveAuth(stream pushStream) (*agentpb.AuthResponse, error) {
