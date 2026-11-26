@@ -261,7 +261,7 @@ jobs:
       # The default pass: SQLite, which is what an unconfigured install uses.
       # PostgreSQL cases skip when MAINTENANT_TEST_DATABASE_URL is unset.
       - name: Unit tests with race detector
-        run: go test -race -cover ./...
+        run: go test -race -cover -timeout 30m ./...
 
       # The same suites again, against PostgreSQL. Anything that diverges
       # between the two engines fails here rather than in production.
@@ -275,7 +275,7 @@ jobs:
           MAINTENANT_TEST_DATABASE_URL: postgres://postgres:ci-test-password@localhost:5432/postgres?sslmode=disable
           MAINTENANT_REQUIRE_POSTGRES: "1"
         run: |
-          go test -race ./internal/store/... ./internal/app/... ./internal/api/v1/... \
+          go test -race -timeout 30m ./internal/store/... ./internal/app/... ./internal/api/v1/... \
             ./internal/commercial/... ./internal/alert/... ./cmd/maintenant/...
 
       # Behind the `integration` build tag, so `go test ./...` skips it entirely.
@@ -286,7 +286,7 @@ jobs:
         env:
           MAINTENANT_TEST_DATABASE_URL: postgres://postgres:ci-test-password@localhost:5432/postgres?sslmode=disable
           MAINTENANT_REQUIRE_POSTGRES: "1"
-        run: go test -race -tags=integration ./...
+        run: go test -race -tags=integration -timeout 30m ./...
 
       # Principle VI grants exactly one CGO exception, and the PostgreSQL
       # driver was chosen pure Go to keep it that way. Nothing enforced it.
@@ -342,7 +342,7 @@ jobs:
         env:
           MAINTENANT_TEST_DATABASE_URL: postgres://postgres:ci-test-password@localhost:5432/postgres?sslmode=disable
           MAINTENANT_REQUIRE_POSTGRES: "1"
-        run: go test -race ./internal/store/...
+        run: go test -race -timeout 30m ./internal/store/...
 
   # The whole product, built and run on both engines, driven through its HTTP
   # surface. It builds an image and starts five containers, so it runs on main

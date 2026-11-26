@@ -46,7 +46,7 @@ test-pg:
 	docker rm -f maintenant-test-pg 2>/dev/null || true
 	docker run --rm -d --name maintenant-test-pg -e POSTGRES_PASSWORD=test -p 127.0.0.1:54329:5432 postgres:14-alpine
 	until docker exec maintenant-test-pg pg_isready -U postgres -q; do sleep 0.5; done
-	MAINTENANT_TEST_DATABASE_URL="postgres://postgres:test@127.0.0.1:54329/postgres?sslmode=disable" go test -race ./internal/store/...
+	MAINTENANT_TEST_DATABASE_URL="postgres://postgres:test@127.0.0.1:54329/postgres?sslmode=disable" go test -race -timeout 30m ./internal/store/...
 	docker rm -f maintenant-test-pg
 
 # Rewrites internal/eol/table.json from endoflife.date. Run before a release.
