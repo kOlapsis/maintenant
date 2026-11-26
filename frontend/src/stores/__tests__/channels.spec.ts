@@ -1,0 +1,46 @@
+// Copyright 2026 Benjamin Touchard (kOlapsis)
+// SPDX-License-Identifier: Apache-2.0
+
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { useChannelsStore } from '@/stores/channels'
+
+const listChannels = vi.hoisted(() => vi.fn())
+vi.mock('@/services/alertApi', () => ({ listChannels }))
+
+const bus = vi.hoisted(() => ({
+  handlers: new Map<string, (e: MessageEvent) => void>(),
+  connect: vi.fn(),
+  disconnect: vi.fn(),
+}))
+vi.mock('@/services/sseBus', () => ({
+  sseBus: {
+    on: (type: string, fn: (e: MessageEvent) => void) => bus.handlers.set(type, fn),
+    off: (type: string) => bus.handlers.delete(type),
+    connect: bus.connect,
+    disconnect: bus.disconnect,
+  },
+}))
+
+describe('channels store', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    listChannels.mockReset()
+    bus.handlers.clear()
+    bus.connect.mockReset()
+    bus.disconnect.mockReset()
+  })
+
+  it('keeps the reason when the channels could not be loaded', async () => {
+    listChannels.mockRejectedValue(new Error('HTTP 503'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const store = useChannelsStore()
+
+    await store.fetchChannels()
+    expect(store.channelsError).toBe('HTTP 503')
+
+    listChannels.mockResolvedValue({ channels: [] })
+    await store.fetchChannels()
+    expect(store.channelsError).toBeNull()
+  })
+})

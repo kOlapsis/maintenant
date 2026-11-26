@@ -17,6 +17,7 @@ import { ApiError } from '@/services/apiFetch'
 import ChannelWizard from '@/components/ChannelWizard.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import InlineAlert from '@/components/ui/InlineAlert.vue'
+import ErrorState from '@/components/ui/ErrorState.vue'
 import FormField from '@/components/ui/FormField.vue'
 import TextInput from '@/components/ui/TextInput.vue'
 import CheckboxInput from '@/components/ui/CheckboxInput.vue'
@@ -308,8 +309,13 @@ function editionLabel(edition?: string): string {
 
     <!-- Channel list -->
     <div class="space-y-3">
+      <ErrorState
+        v-if="store.channels.length === 0 && store.channelsError"
+        title="Notification channels unavailable"
+        :message="store.channelsError"
+      />
       <div
-        v-if="store.channels.length === 0 && !store.channelsLoading"
+        v-else-if="store.channels.length === 0 && !store.channelsLoading"
         class="rounded-xl border border-mnt-default bg-mnt-surface p-6 text-center"
       >
         <p class="text-sm text-mnt-muted">No notification channels configured</p>

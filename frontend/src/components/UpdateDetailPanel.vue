@@ -19,6 +19,7 @@ import ChangelogViewer from '@/commercial/components/updates/ChangelogViewer.vue
 import FeatureGate from '@/components/FeatureGate.vue'
 import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import { copyText } from '@/utils/copyText'
 import InlineAlert from '@/components/ui/InlineAlert.vue'
 import TextareaInput from '@/components/ui/TextareaInput.vue'
 import { osCycleText, osStateTextClass } from '@/utils/osSupport'
@@ -83,28 +84,20 @@ async function loadDetail() {
 
 async function copyCommand() {
   if (!detail.value?.update_command) return
-  try {
-    await navigator.clipboard.writeText(detail.value.update_command)
-    copied.value = true
-    setTimeout(() => {
-      copied.value = false
-    }, 2000)
-  } catch {
-    // fallback
-  }
+  if (!(await copyText(detail.value.update_command))) return
+  copied.value = true
+  setTimeout(() => {
+    copied.value = false
+  }, 2000)
 }
 
 async function copyRollbackCommand() {
   if (!detail.value?.rollback_command) return
-  try {
-    await navigator.clipboard.writeText(detail.value.rollback_command)
-    copiedRollback.value = true
-    setTimeout(() => {
-      copiedRollback.value = false
-    }, 2000)
-  } catch {
-    // fallback
-  }
+  if (!(await copyText(detail.value.rollback_command))) return
+  copiedRollback.value = true
+  setTimeout(() => {
+    copiedRollback.value = false
+  }, 2000)
 }
 
 async function handlePin() {

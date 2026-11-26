@@ -9,6 +9,7 @@ import type { CVEInfo } from '@/services/updateApi'
 import { ref } from 'vue'
 import { Shield, Copy, Check, CheckCircle } from 'lucide-vue-next'
 import UiButton from '@/components/ui/UiButton.vue'
+import { copyText } from '@/utils/copyText'
 
 defineProps<{
   cves: CVEInfo[]
@@ -28,13 +29,9 @@ function getSeverityStyle(sev: string): { bg: string; text: string } {
 const copiedFixId = ref<string | null>(null)
 
 async function copyFixCommand(cveId: string, command: string) {
-  try {
-    await navigator.clipboard.writeText(command)
-    copiedFixId.value = cveId
-    setTimeout(() => { copiedFixId.value = null }, 2000)
-  } catch {
-    // fallback
-  }
+  if (!(await copyText(command))) return
+  copiedFixId.value = cveId
+  setTimeout(() => { copiedFixId.value = null }, 2000)
 }
 </script>
 

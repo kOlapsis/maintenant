@@ -129,6 +129,7 @@ import { ref, onMounted } from 'vue'
 import { Plus } from 'lucide-vue-next'
 import { listWebhooks, deleteWebhook, testWebhook, type WebhookSubscription, type TestWebhookResponse } from '@/services/webhookApi'
 import { useConfirm } from '@/composables/useConfirm'
+import { showToast } from '@/composables/useToast'
 import WebhookForm from '@/components/WebhookForm.vue'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -183,8 +184,8 @@ async function handleDelete(wh: WebhookSubscription) {
   try {
     await deleteWebhook(wh.id)
     await load()
-  } catch {
-    // silently ignore
+  } catch (e) {
+    showToast(`Could not delete the webhook: ${e instanceof Error ? e.message : 'request failed'}`, 'warning')
   }
 }
 

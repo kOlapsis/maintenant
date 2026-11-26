@@ -14,6 +14,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import TextInput from '@/components/ui/TextInput.vue'
 import CheckboxInput from '@/components/ui/CheckboxInput.vue'
 import RangeInput from '@/components/ui/RangeInput.vue'
+import InlineAlert from '@/components/ui/InlineAlert.vue'
 
 const props = defineProps<{
   containerId: string
@@ -26,6 +27,7 @@ const enabled = ref(false)
 const saving = ref(false)
 const error = ref<string | null>(null)
 const saved = ref(false)
+const loadError = ref<string | null>(null)
 
 const alertStateColors: Record<string, string> = {
   normal: 'text-mnt-status-ok',
@@ -40,8 +42,8 @@ onMounted(async () => {
     cpuThreshold.value = config.value.cpu_threshold
     memThreshold.value = config.value.mem_threshold
     enabled.value = config.value.enabled
-  } catch {
-    // Default values already set
+  } catch (e) {
+    loadError.value = e instanceof Error ? e.message : 'Failed to load the alert configuration'
   }
 })
 
@@ -87,6 +89,10 @@ async function save() {
       </span>
     </div>
 
+    <InlineAlert v-if="loadError" class="mb-3" severity="critical" title="Alert configuration unavailable" tag="">
+      {{ loadError }}
+    </InlineAlert>
+
     <div class="space-y-3">
       <!-- Enable toggle -->
       <CheckboxInput v-model="enabled" label="Enable alerts" />
@@ -111,7 +117,7 @@ async function save() {
 
       <!-- Save button -->
       <div class="flex items-center gap-2">
-        <UiButton variant="primary" size="sm" :loading="saving" @click="save">
+        <UiButton variant="primary" size="sm" :loading="saving" :disabled="!config" @click="save">
           {{ saving ? 'Saving...' : 'Save' }}
         </UiButton>
         <span v-if="saved" class="text-xs text-mnt-status-ok">Saved</span>
