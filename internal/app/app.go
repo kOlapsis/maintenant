@@ -1066,7 +1066,7 @@ func (a *App) startAgentWatchers(ctx context.Context) {
 	if threshold == 0 {
 		threshold = 60 * time.Second
 	}
-	a.agentSessions.StartWatchers(ctx, threshold, a.agentStore.StaleAgents)
+	a.background.Go(func() { a.agentSessions.StartWatchers(ctx, threshold, a.agentStore.StaleAgents) })
 }
 
 // startEnrollmentTokenGC purges unconsumed enrollment tokens older than 7 days, every hour.
