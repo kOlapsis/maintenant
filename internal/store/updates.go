@@ -605,28 +605,28 @@ func (s *UpdateStore) DeleteVersionPin(ctx context.Context, agentID, containerID
 // fills e with the stored row either way. It reports whether e was created.
 func (s *UpdateStore) CreateExclusion(ctx context.Context, e *update.UpdateExclusion) (bool, error) {
 	created := false
+	var id string
+	createdAt := e.CreatedAt.Truncate(time.Second)
+	pattern, patternType := e.Pattern, string(e.PatternType)
 	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
 		if err := tx.Serialize(ctx, "update_exclusions"); err != nil {
 			return err
 		}
-		var id string
-		var createdAt int64
+		var storedAt int64
 		err := tx.QueryRowContext(ctx,
 			`SELECT id, created_at FROM update_exclusions WHERE pattern = ? AND pattern_type = ?`,
-			e.Pattern, string(e.PatternType)).Scan(&id, &createdAt)
+			pattern, patternType).Scan(&id, &storedAt)
 		switch {
 		case err == nil:
-			e.ID = id
-			e.CreatedAt = time.Unix(createdAt, 0)
+			createdAt = time.Unix(storedAt, 0)
 			return nil
 		case !errors.Is(err, sql.ErrNoRows):
 			return err
 		}
-		e.ID = uid.New()
-		e.CreatedAt = e.CreatedAt.Truncate(time.Second)
+		id = uid.New()
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO update_exclusions (id, pattern, pattern_type, created_at) VALUES (?, ?, ?, ?)`,
-			e.ID, e.Pattern, string(e.PatternType), e.CreatedAt.Unix()); err != nil {
+			id, pattern, patternType, createdAt.Unix()); err != nil {
 			return err
 		}
 		created = true
@@ -635,6 +635,7 @@ func (s *UpdateStore) CreateExclusion(ctx context.Context, e *update.UpdateExclu
 	if err != nil {
 		return false, fmt.Errorf("create exclusion: %w", err)
 	}
+	e.ID, e.CreatedAt = id, createdAt
 	return created, nil
 }
 
@@ -773,8 +774,17 @@ func (s *UpdateStore) CleanupExpired(ctx context.Context, olderThan time.Time) (
 	}
 	totalDeleted += res.RowsAffected
 
+	historyDeleted, _, err := deleteRowsBefore(ctx, s.writer, batchOpts{}, "risk_score_history", "recorded_at",
+		time.Now().Add(-riskScoreHistoryRetention))
+	totalDeleted += historyDeleted
+	if err != nil {
+		return totalDeleted, fmt.Errorf("cleanup risk score history: %w", err)
+	}
+
 	return totalDeleted, nil
 }
+
+const riskScoreHistoryRetention = 90 * 24 * time.Hour
 
 // --- Row scanners ---
 

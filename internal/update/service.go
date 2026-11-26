@@ -75,6 +75,7 @@ type Service struct {
 	nextScanTime time.Time
 	scanning     bool
 	appCtx       context.Context // application-scoped context for background scans
+	triggered    sync.WaitGroup
 }
 
 // NewService creates the update intelligence service.
@@ -121,7 +122,9 @@ func (s *Service) SetEventCallback(fn EventCallback) {
 
 // Start begins the periodic scan loop. Blocks until ctx is canceled.
 func (s *Service) Start(ctx context.Context) {
+	s.mu.Lock()
 	s.appCtx = ctx
+	s.mu.Unlock()
 	s.logger.Info("starting update intelligence service", "interval", s.interval)
 
 	// Run the first scan after a short delay to let containers start
@@ -151,18 +154,21 @@ func (s *Service) Start(ctx context.Context) {
 // so it survives after the triggering request completes.
 func (s *Service) TriggerScan(_ context.Context) (string, error) {
 	s.mu.RLock()
-	if s.scanning {
-		s.mu.RUnlock()
+	ctx, scanning := s.appCtx, s.scanning
+	s.mu.RUnlock()
+	if scanning {
 		return "", fmt.Errorf("scan already in progress")
 	}
-	s.mu.RUnlock()
-
-	ctx := s.appCtx
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	go s.runScan(ctx)
+	s.triggered.Go(func() { s.runScan(ctx) })
 	return "", nil
+}
+
+// Wait blocks until the scans started by TriggerScan have returned.
+func (s *Service) Wait() {
+	s.triggered.Wait()
 }
 
 // GetLastScanTime returns when the last scan completed.
@@ -442,7 +448,7 @@ func (s *Service) runScan(ctx context.Context) {
 	}
 
 	// Run scan
-	results, scanErrors := s.scanner.Scan(ctx, containers)
+	results, scanErrors, unreadable := s.scanner.scan(ctx, containers)
 
 	// Build container lookup for command generation
 	containerByID := make(map[string]ContainerInfo, len(containers))
@@ -450,10 +456,13 @@ func (s *Service) runScan(ctx context.Context) {
 		containerByID[uid.Container(uid.Agent(c.AgentID), c.ExternalID)] = c
 	}
 
-	// A container whose scan failed keeps its pending update until a scan reaches its registry.
-	failed := make(map[string]bool, len(scanErrors))
+	// A container whose scan failed or whose image the registry would not show keeps its pending update until a scan reads its registry.
+	failed := make(map[string]bool, len(scanErrors)+len(unreadable))
 	for _, se := range scanErrors {
 		failed[se.ContainerName] = true
+	}
+	for _, name := range unreadable {
+		failed[name] = true
 	}
 	scannedNames := make([]string, 0, len(containers))
 	var coveredHosts []string

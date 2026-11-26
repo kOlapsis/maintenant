@@ -7,7 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
@@ -22,7 +24,58 @@ const (
 	SourceSecurity    = "security"
 	SourceAgent       = "agent"
 	SourceHost        = "host"
+	SourceUpdate      = "update"
+	SourceSwarm       = "swarm"
+	SourceKubernetes  = "kubernetes"
 )
+
+var sources = []string{
+	SourceContainer, SourceEndpoint, SourceHeartbeat, SourceCertificate, SourceResource, SourceUpdate,
+	SourceSecurity, SourceAgent, SourceHost, SourceSwarm, SourceKubernetes,
+}
+
+// IsSource reports whether s is one of the sources an alert can carry.
+func IsSource(s string) bool {
+	return slices.Contains(sources, s)
+}
+
+var scopeEntityTypes = []string{
+	"container", "endpoint", "heartbeat", "certificate", "agent",
+	"swarm_service", "swarm_node", "workload", "pod", "node",
+}
+
+var scopeEntityTypesWithoutID = []string{"infrastructure", "swarm_cluster"}
+
+func isScope(s string) bool {
+	entityType, id, found := strings.Cut(s, ":")
+	if slices.Contains(scopeEntityTypesWithoutID, entityType) {
+		return found && id == ""
+	}
+	return id != "" && slices.Contains(scopeEntityTypes, entityType)
+}
+
+// ValidateTriggerFilters checks that the comma-separated filters of a trigger can match an alert, accepting as is the sources and scopes the stored trigger, nil on creation, already holds.
+func ValidateTriggerFilters(severities, sourcesCSV, scopes string, stored *AlertTrigger) error {
+	if err := ValidateSeverityFilter(severities); err != nil {
+		return err
+	}
+	var storedSources, storedScopes string
+	if stored != nil {
+		storedSources, storedScopes = stored.FilterSources, stored.FilterScopes
+	}
+	for _, item := range splitCSV(sourcesCSV) {
+		if !IsSource(item) && !containsCSV(storedSources, item) {
+			return fmt.Errorf("field=filter_sources: %q is not a source (%s)", item, strings.Join(sources, ", "))
+		}
+	}
+	for _, item := range splitCSV(scopes) {
+		if !isScope(item) && !containsCSV(storedScopes, item) {
+			return fmt.Errorf("field=filter_scopes: %q is not entity_type:entity_id (entity types: %s; %s take no id, as in %q)",
+				item, strings.Join(scopeEntityTypes, ", "), strings.Join(scopeEntityTypesWithoutID, " and "), scopeEntityTypesWithoutID[0]+":")
+		}
+	}
+	return nil
+}
 
 // Security alert types.
 const (
@@ -249,7 +302,7 @@ type ChannelStore interface {
 
 // DeliveryQueue is the durable queue a ChannelStore keeps of its pending deliveries.
 type DeliveryQueue interface {
-	// ListDueDeliveries lists up to limit pending deliveries due at now, without those that wait behind a pending delivery of the same alert to the same channel.
+	// ListDueDeliveries lists up to limit pending deliveries due at now, without those that wait behind a pending delivery of the same alert to the same channel, taking the oldest due of each channel in turn.
 	ListDueDeliveries(ctx context.Context, now time.Time, limit int) ([]*NotificationDelivery, error)
 	// ClaimDelivery holds the attempt due at d.NextAttemptAt until until, and reports false when d has moved on or waits behind an earlier delivery.
 	ClaimDelivery(ctx context.Context, d *NotificationDelivery, until time.Time) (bool, error)

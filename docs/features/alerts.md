@@ -129,7 +129,7 @@ A channel is a destination. maintenant delivers alerts to Discord, Telegram, ema
 
 A channel is returned with its `id`, these fields, `has_secret` (the secret itself is never returned), `suspended` and `required_edition`. `GET /api/v1/channels` adds `health`: `failing` when the last delivery through the channel failed, `healthy` otherwise.
 
-Updating a channel with `PUT` changes only the fields you send. A `secret` can be replaced but not cleared: delete the channel instead. Creating, updating, enabling or testing a channel of a type the running edition does not open answers `403 EDITION_REQUIRED`.
+Updating a channel with `PUT` changes only the fields you send. A `secret` can be replaced but not cleared: delete the channel instead. On Pro, deleting a channel that a level of an escalation policy still notifies answers `409 CHANNEL_IN_USE` with the names of those policies: remove the channel from them first. Creating, updating, enabling or testing a channel of a type the running edition does not open answers `403 EDITION_REQUIRED`.
 
 ### Discord
 
@@ -259,7 +259,7 @@ Email goes through your own SMTP server, set with environment variables. The cha
 | `MAINTENANT_SMTP_FROM` | `maintenant@localhost` | Sender address. |
 | `MAINTENANT_SMTP_ALLOW_PLAINTEXT` | `false` | Lets a server that does not announce STARTTLS receive mail in clear. Logged as a warning at startup. |
 
-On a port other than 465, maintenant upgrades the connection with STARTTLS and gives up the delivery if the upgrade fails. A server that does not announce STARTTLS gets nothing: the send fails with `smtp: <host> does not offer STARTTLS; set MAINTENANT_SMTP_ALLOW_PLAINTEXT=true to send in clear`. With `MAINTENANT_SMTP_ALLOW_PLAINTEXT=true` such a server receives the mail in clear, and with credentials set the send still fails unless the server is `localhost`, because the credentials would travel in clear. Server certificates are checked against the system roots plus `MAINTENANT_CA_CERT`, except for a local server, whose certificate is not checked so that a relay with a self-signed certificate works: `localhost`, a host name without a dot such as `smtp-relay`, or a loopback or private address. A send gives up after 30 seconds.
+On a port other than 465, maintenant upgrades the connection with STARTTLS and gives up the delivery if the upgrade fails. A server that does not announce STARTTLS gets nothing: the send fails with `smtp: <host> does not offer STARTTLS; set MAINTENANT_SMTP_ALLOW_PLAINTEXT=true to send in clear`. With `MAINTENANT_SMTP_ALLOW_PLAINTEXT=true` such a server receives the mail in clear, and with credentials set the send still fails unless the server is `localhost`, because the credentials would travel in clear. Server certificates are checked against the system roots plus `MAINTENANT_CA_CERT`. Without `MAINTENANT_CA_CERT`, the certificate of a local server is not checked, so that a relay with a self-signed certificate works: `localhost`, a host name without a dot such as `smtp-relay`, or a loopback or private address. With `MAINTENANT_CA_CERT` set, a local server is checked like any other: its certificate must be signed by a CA of the bundle or by a system root, and must be valid for the configured host. A send gives up after 30 seconds.
 
 The subject reads `[maintenant] ALERT: <message>` or `[maintenant] RESOLVED: <message>`, the acknowledgment notice of an escalation `[maintenant] ACKNOWLEDGED: <message>`, and the test email reads `[maintenant] TEST: Test notification`. The body is plain text.
 
@@ -387,13 +387,13 @@ POST /api/v1/alert-triggers
 |-------|-------------|
 | `name` | Required, at most 120 characters, unique (`409 name_conflict`). |
 | `filter_severities` | Comma-separated severities: `critical`, `warning`, `info`. |
-| `filter_sources` | Comma-separated sources: `container`, `endpoint`, `heartbeat`, `certificate`, `resource`, `update`, `security`, `agent`, `host`, `swarm`, `kubernetes`. |
-| `filter_scopes` | Comma-separated `entity_type:entity_id` pairs, such as `container:0198b1c2-…`. The entity types are in the table of [alert sources](#alert-sources). The id is the one the alert carries in `entity_id`: a UUID for most entities, a Docker ID for Swarm objects, and for Kubernetes `namespace/Kind/name` for a workload (`production/Deployment/api`), `namespace/name` for a pod and the node name for a node. |
+| `filter_sources` | Comma-separated sources: `container`, `endpoint`, `heartbeat`, `certificate`, `resource`, `update`, `security`, `agent`, `host`, `swarm`, `kubernetes`. Any other source is refused on creation. |
+| `filter_scopes` | Comma-separated `entity_type:entity_id` pairs, such as `container:0198b1c2-…`. The entity types are in the table of [alert sources](#alert-sources). The id is the one the alert carries in `entity_id`: a UUID for most entities, a Docker ID for Swarm objects, and for Kubernetes `namespace/Kind/name` for a workload (`production/Deployment/api`), `namespace/name` for a pod and the node name for a node. The alerts of the `infrastructure` and `swarm_cluster` entities carry no id: their scopes are written `infrastructure:` and `swarm_cluster:`, with the colon and nothing after it. A scope with another entity type, or with an id missing where the entity has one, is refused on creation. |
 | `enabled` | Defaults to `true` on creation and keeps its value on update when omitted. |
 | `notify_on_resolve` | Defaults to `true` and keeps its value on update when omitted. Set it to `false` for a channel that should only receive failures. |
 | `channel_ids` | Required, at least one channel UUID, each of an existing channel. |
 
-Filters combine in AND between fields and OR within a field. An empty filter matches everything. A disabled channel is skipped. Multiple triggers can share the same channel without duplicating deliveries: a channel receives an alert once, however many triggers match. A `PUT` needs the `name` and the `channel_ids` again, and a filter left out is cleared. Unknown fields are ignored. An unknown trigger answers `404 trigger_not_found`, and a request that breaks a rule `400 validation_failed`.
+Filters combine in AND between fields and OR within a field. An empty filter matches everything. A disabled channel is skipped. Multiple triggers can share the same channel without duplicating deliveries: a channel receives an alert once, however many triggers match. A `PUT` needs the `name` and the `channel_ids` again, and a filter left out is cleared. Unknown fields are ignored. An unknown trigger answers `404 trigger_not_found`, and a request that breaks a rule `400 validation_failed`. A `PUT` accepts the sources and scopes the trigger already holds, whatever they are, and checks only the ones it adds.
 
 A trigger relays both the initial alert and its recovery. The recovery of an alert is matched with the source, severity and scope of the original alert, so a trigger on `critical` receives the recovery of a critical alert.
 
@@ -466,9 +466,9 @@ DELETE /api/v1/silence/{id}
 | `entity_id` | Optional. Only alerts about this entity. |
 | `reason` | Optional free text. |
 
-An alert is silenced when it matches every field the rule sets, and a rule that sets none silences everything. The list answers `{"rules": […]}` with, for each rule, `starts_at`, `duration_seconds`, `expires_at` and `is_active`. Cancelling a rule keeps it in the full list, inactive.
+An alert is silenced when it matches every field the rule sets, and a rule that sets none silences everything. The list answers `{"rules": […]}` with, for each rule, `starts_at`, `duration_seconds`, `expires_at` and `is_active`. Cancelling a rule keeps it in the full list, inactive. A rule is deleted 90 days after it expired or was cancelled.
 
-A silence only affects alerts that fire while it is in effect. It does not mute an alert that is already active, and an alert that fired during the silence stays silenced after the rule ends. Silenced alerts are listed by `GET /api/v1/alerts?status=silenced`.
+A silence only affects alerts that fire while it is in effect. It does not mute an alert that is already active, and an alert that fired during the silence is held, not discarded. Held alerts are re-evaluated every 30 seconds: one that no silence rule or maintenance window covers any more becomes `active`, is notified and starts its escalation, as if it had just fired. After a restart this still applies to the alerts held in the last 24 hours. An alert whose entity recovers while it is held is resolved without a notification. Silenced alerts are listed by `GET /api/v1/alerts?status=silenced`.
 
 !!! tip "Use silence rules for deployments"
     Create a silence rule before deploying to avoid alerting on expected
@@ -497,9 +497,9 @@ The **Active Alerts** list of the Alerts page has an **Acknowledge** button, whi
 
 ## Delivery and Retries
 
-Each notification is written to the `notification_deliveries` table, then sent at once by one of ten workers, each fed by its own queue of 256 notifications. The table is what keeps it: a notification whose queue is full, or that was waiting when maintenant stopped, stays there and is picked up again within 5 seconds, at startup too.
+Each notification is written to the `notification_deliveries` table, then sent at once by the worker of its channel. Every channel has its own worker and its own queue of 256 notifications, and sends them one at a time: a channel that does not answer delays its own notifications only. The table is what keeps a notification: one whose queue is full, or that was waiting when maintenant stopped, stays there and is picked up again within 5 seconds, at startup too.
 
-The notifications of one alert to one channel reach the channel in order: a recovery waits until the alert it resolves has been delivered or has failed, even when that alert is waiting for a retry. An alert resolved before its notification went out is still notified, as it was when it fired, and its recovery follows. A reminder that has not gone out yet is replaced by the next reminder of the same alert to the same channel, so a destination back after a long outage receives the latest one only. Other alerts and other channels are spread over the ten workers.
+The notifications of one alert to one channel reach the channel in order: a recovery waits until the alert it resolves has been delivered or has failed, even when that alert is waiting for a retry. An alert resolved before its notification went out is still notified, as it was when it fired, and its recovery follows. A reminder that has not gone out yet is replaced by the next reminder of the same alert to the same channel, so a destination back after a long outage receives the latest one only.
 
 A failed attempt is retried 5 seconds later, then 10, 20, 40 seconds later and so on, the wait doubling up to one hour. A sender can lengthen the wait, never shorten it: a Telegram rate limit raises it to the delay Telegram asked for. A notification still not delivered 24 hours after it was created is recorded as `failed` and not retried, and one found older than that at startup is closed the same way without being sent. A refusal that will not change, an HTTP 4xx other than 408 and 429, fails at once, as does an email channel with no SMTP server configured. An HTTP attempt times out after 10 seconds and an email attempt after 30. Every failed attempt is logged with its error.
 

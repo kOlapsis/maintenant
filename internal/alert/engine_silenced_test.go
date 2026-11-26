@@ -229,12 +229,34 @@ func (f *silenceFixture) deliveriesNow(alertID string) int {
 	return len(ds)
 }
 
+func (f *silenceFixture) statusNow(id string) string {
+	a, err := f.alerts.GetAlert(f.ctx, id)
+	if err != nil || a == nil {
+		return ""
+	}
+	return a.Status
+}
+
+// insertHeld stores a silenced outage of an endpoint raised an hour ago, as a stopped server left it.
+func (f *silenceFixture) insertHeld(t *testing.T, entityID string) string {
+	t.Helper()
+	raised := time.Now().Add(-time.Hour)
+	id, err := f.alerts.InsertAlert(f.ctx, &alert.Alert{
+		Source: "test", AlertType: "down", Severity: alert.SeverityCritical, Status: alert.StatusSilenced,
+		Message: entityID + " down", EntityType: "endpoint", EntityID: entityID, EntityName: entityID,
+		Details: "{}", FiredAt: raised, CreatedAt: raised,
+	})
+	require.NoError(t, err)
+	return id
+}
+
 // assertPromotedOnce waits for a held alert to go live, then checks it is notified and escalated exactly once.
 func (f *silenceFixture) assertPromotedOnce(t *testing.T, id string) {
 	t.Helper()
 	require.Eventually(t, func() bool {
-		return f.status(t, id) == alert.StatusActive && f.deliveries(t, id) == 1 && f.escalator.count(id) == 1
+		return f.statusNow(id) == alert.StatusActive && f.deliveriesNow(id) == 1 && f.escalator.count(id) == 1
 	}, 10*time.Second, 5*time.Millisecond, "the held alert must go live, notified and escalated, once the window ends")
+	f.engine.Settle()
 	assert.Never(t, func() bool {
 		return f.deliveriesNow(id) > 1 || f.escalator.count(id) > 1
 	}, 200*time.Millisecond, fastRecheck, "a promoted alert must be notified once")
@@ -370,7 +392,7 @@ func TestSilenced_RestartReloadsRecentHeldRows(t *testing.T) {
 	assert.Zero(t, f.deliveries(t, old.ID))
 }
 
-func TestSilenced_RestartAfterTheWindowDoesNotPromote(t *testing.T) {
+func TestSilenced_RestartAfterTheWindowPromotes(t *testing.T) {
 	f := newSilenceFixture(t)
 	f.silenceEndpoint(t, "ep-7")
 	f.start(fastRecheck)
@@ -382,10 +404,44 @@ func TestSilenced_RestartAfterTheWindowDoesNotPromote(t *testing.T) {
 	f.halt()
 	f.elapse(t, 2*time.Hour)
 	f.start(fastRecheck)
+
+	f.assertPromotedOnce(t, held.ID)
+}
+
+func TestSilenced_ReloadedUncoveredRowIsPromotedOnce(t *testing.T) {
+	f := newSilenceFixture(t)
+	id := f.insertHeld(t, "ep-9")
+
+	f.start(fastRecheck)
+
+	f.assertPromotedOnce(t, id)
+}
+
+func TestSilenced_ReloadedCoveredRowStaysHeldUntilTheSilenceEnds(t *testing.T) {
+	f := newSilenceFixture(t)
+	f.silenceEndpoint(t, "ep-10")
+	id := f.insertHeld(t, "ep-10")
+
+	f.start(fastRecheck)
+	f.assertNeverNotified(t, id)
+	assert.Equal(t, alert.StatusSilenced, f.status(t, id))
+
+	f.elapse(t, 2*time.Hour)
+	f.assertPromotedOnce(t, id)
+}
+
+func TestSilenced_RecoveryBeforeTheFirstRecheckResolvesQuietly(t *testing.T) {
+	f := newSilenceFixture(t)
+	id := f.insertHeld(t, "ep-11")
+
+	f.start(time.Hour)
+	f.send(outageEvent("ep-11", alert.SeverityInfo, true))
 	f.barrier(t)
 
-	f.assertNeverNotified(t, held.ID)
-	assert.Equal(t, alert.StatusSilenced, f.status(t, held.ID))
+	assert.Equal(t, alert.StatusResolved, f.status(t, id))
+	assert.Zero(t, f.deliveries(t, id))
+	assert.Zero(t, f.escalator.count(id))
+	assert.Len(t, f.rows(t, "test", "ep-11"), 1, "a quiet recovery must not add a row")
 }
 
 func TestSilenced_ContainerBackDuringTheWindowStaysQuiet(t *testing.T) {

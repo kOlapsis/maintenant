@@ -37,7 +37,25 @@ const (
 	defaultOrphanTimeout = 2 * time.Minute
 	maintenanceRecheck   = 60 * time.Second
 	recordTimeout        = 5 * time.Second
+
+	firstRetryDelay = 5 * time.Second
+	maxRetryDelay   = time.Hour
+	deliveryMaxAge  = 24 * time.Hour
 )
+
+// retryDelay is the wait after the attempts-th failed attempt, the schedule of the alert notifications: 5 seconds, doubling up to an hour.
+func retryDelay(attempts int) time.Duration {
+	d := firstRetryDelay
+	for i := 1; i < attempts && d < maxRetryDelay; i++ {
+		d *= 2
+	}
+	return min(d, maxRetryDelay)
+}
+
+func isPermanent(err error) bool {
+	var p interface{ Permanent() bool }
+	return errors.As(err, &p) && p.Permanent()
+}
 
 // Sender abstracts the synchronous-send capability of *alert.Notifier so the
 // Runner can be unit-tested without spinning up an HTTP server. *alert.Notifier
@@ -66,9 +84,10 @@ type RunnerDeps struct {
 //
 // Idempotence (R4): ReserveDelivery enforces a UNIQUE (run_id, level_index,
 // channel_id) constraint, so a crash between ReserveDelivery and the network
-// send is recovered at the next cycle without duplicate notifications.
+// send is recovered once the claim taken with the reservation runs out, without duplicate notifications.
 type Runner struct {
 	store         esc.Store
+	queue         esc.DeliveryQueue
 	alertStore    alert.AlertStore
 	channelStore  alert.ChannelStore
 	notifier      Sender
@@ -87,10 +106,11 @@ type Runner struct {
 	sending sync.WaitGroup
 }
 
-// NewRunner wires a Runner. AlertStore, ChannelStore, Notifier, Service, Logger
-// must be non-nil. Suppressor defaults to a no-op when omitted.
+// NewRunner wires a Runner. Store, which must also be an escalation.DeliveryQueue, AlertStore, ChannelStore,
+// Notifier, Service, Logger must be non-nil. Suppressor defaults to a no-op when omitted.
 func NewRunner(d RunnerDeps) *Runner {
-	if d.Store == nil || d.AlertStore == nil || d.ChannelStore == nil ||
+	queue, _ := d.Store.(esc.DeliveryQueue)
+	if queue == nil || d.AlertStore == nil || d.ChannelStore == nil ||
 		d.Notifier == nil || d.Service == nil || d.Logger == nil {
 		panic("escalation.NewRunner: required dependency missing")
 	}
@@ -109,6 +129,7 @@ func NewRunner(d RunnerDeps) *Runner {
 	life, stop := context.WithCancel(context.Background())
 	return &Runner{
 		store:         d.Store,
+		queue:         queue,
 		alertStore:    d.AlertStore,
 		channelStore:  d.ChannelStore,
 		notifier:      d.Notifier,
@@ -132,8 +153,8 @@ func (r *Runner) Run(ctx context.Context) {
 	r.sending.Wait()
 }
 
-// sendInBackground sends a reserved delivery on the runner's own lifetime; once the runner has stopped,
-// the delivery stays pending for the orphan recovery of the next start.
+// sendInBackground sends a claimed delivery on the runner's own lifetime; once the runner has stopped,
+// the delivery stays pending and is retried once its claim runs out.
 func (r *Runner) sendInBackground(d *esc.Delivery, a *alert.Alert, ch *alert.NotificationChannel) {
 	r.sendMu.Lock()
 	defer r.sendMu.Unlock()
@@ -349,7 +370,7 @@ func (r *Runner) OnEditionDowngraded(ctx context.Context) error {
 }
 
 // EvaluateCycle is invoked periodically by the alert engine (default 60s). It
-// recovers stuck deliveries, then steps every due run forward.
+// retries the deliveries that are due again, then steps every due run forward.
 func (r *Runner) EvaluateCycle(ctx context.Context) error {
 	if !extension.Allows(extension.CapAlertEscalation) {
 		r.createMu.Lock()
@@ -360,8 +381,8 @@ func (r *Runner) EvaluateCycle(ctx context.Context) error {
 	now := r.clock()
 	r.retryUnstarted(ctx)
 
-	if err := r.recoverOrphans(ctx, now); err != nil {
-		r.logger.ErrorContext(ctx, "escalation: orphan recovery", "error", err)
+	if err := r.retryDue(ctx, now); err != nil {
+		r.logger.ErrorContext(ctx, "escalation: delivery retries", "error", err)
 	}
 
 	runs, err := r.store.SelectDueRuns(ctx, now)
@@ -427,8 +448,15 @@ func (r *Runner) processRun(ctx context.Context, run *esc.Run, now time.Time) er
 	nextLevel := run.LastExecutedLevelIndex + 1
 	if nextLevel >= len(policy.Levels) {
 		if run.LastExecutedLevelIndex >= 0 && run.LastExecutedLevelIndex < len(policy.Levels) {
+			retrying, err := r.pendingAt(ctx, run.ID, run.LastExecutedLevelIndex)
+			if err != nil {
+				return fmt.Errorf("exhaustion notice left due: %w", err)
+			}
+			if retrying {
+				return nil
+			}
 			exhAlert := formatExhaustedAlert(a, len(policy.Levels))
-			err := r.dispatchLevel(ctx, run.ID, specialLevelExhausted,
+			err = r.dispatchLevel(ctx, run.ID, specialLevelExhausted,
 				policy.Levels[run.LastExecutedLevelIndex].ChannelIDs, exhAlert)
 			if errors.Is(err, errRunStopped) {
 				return nil
@@ -471,6 +499,17 @@ func (r *Runner) processRun(ctx context.Context, run *esc.Run, now time.Time) er
 	return nil
 }
 
+// pendingAt reports whether a delivery of a level of the run is still being sent or waits for a retry.
+func (r *Runner) pendingAt(ctx context.Context, runID string, levelIndex int) (bool, error) {
+	deliveries, err := r.store.SelectRunDeliveries(ctx, runID)
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(deliveries, func(d *esc.Delivery) bool {
+		return d.LevelIndex == levelIndex && d.Status == esc.DeliveryStatusPending
+	}), nil
+}
+
 var errRunStopped = errors.New("run stopped, or its alert acknowledged or resolved")
 
 // dispatchLevel hands a level to each of its channels; it fails when one is left to a later attempt, at once with errRunStopped.
@@ -511,6 +550,7 @@ func (r *Runner) dispatchToChannel(ctx context.Context, runID string, levelIndex
 		ChannelID:        &chID,
 		Status:           esc.DeliveryStatusPending,
 		AttemptStartedAt: now,
+		CreatedAt:        now,
 	}
 	switch {
 	case ch == nil:
@@ -520,6 +560,8 @@ func (r *Runner) dispatchToChannel(ctx context.Context, runID string, levelIndex
 		delivery.Status, delivery.Error = esc.DeliveryStatusFailed, "channel deleted: "+chID
 	case !ch.Enabled:
 		delivery.Status, delivery.Error = esc.DeliveryStatusFailed, "channel disabled"
+	default:
+		delivery.Attempts, delivery.NextAttemptAt = 1, now.Add(r.orphanTimeout) // reserved with its first attempt already taken
 	}
 	reserved, err := r.reserve(ctx, delivery)
 	switch {
@@ -536,90 +578,141 @@ func (r *Runner) dispatchToChannel(ctx context.Context, runID string, levelIndex
 	return nil
 }
 
-// deliverAndUpdate performs the actual network send and persists the outcome.
+// deliverAndUpdate makes the attempt of a claimed delivery, then records it sent, failed, or due again after the
+// retry delay while it is not past its 24 hours.
 func (r *Runner) deliverAndUpdate(delivery *esc.Delivery, a *alert.Alert, ch *alert.NotificationChannel) {
 	eventType := event.AlertFired
 	if delivery.LevelIndex == specialLevelAck {
 		eventType = event.AlertAcknowledged
 	}
-	// Over before the pending row could be taken for an orphan and sent a second time.
+	claim := delivery.NextAttemptAt
+	// Over before the claim runs out and the attempt could be taken a second time.
 	sendCtx, cancelSend := context.WithTimeout(r.life, r.orphanTimeout-recordTimeout)
 	err := r.notifier.SendEventNow(sendCtx, eventType, a, ch)
 	cancelSend()
-	if err != nil {
-		delivery.Status = esc.DeliveryStatusFailed
-		delivery.Error = truncateErr(err.Error())
-	} else {
-		delivery.Status = esc.DeliveryStatusSent
-		t := r.clock()
-		delivery.SentAt = &t
+	now := r.clock()
+	next := now.Add(retryDelay(delivery.Attempts))
+	switch {
+	case err == nil:
+		delivery.Status, delivery.Error, delivery.SentAt = esc.DeliveryStatusSent, "", &now
+	case !isPermanent(err) && !next.After(delivery.CreatedAt.Add(deliveryMaxAge)):
+		delivery.Error, delivery.NextAttemptAt = truncateErr(err.Error()), next
+	default:
+		delivery.Status, delivery.Error = esc.DeliveryStatusFailed, truncateErr(err.Error())
 	}
 	// Still written when the runner stops right after the send, so the outcome is not sent again at the next start.
 	recordCtx, cancelRecord := context.WithTimeout(context.WithoutCancel(r.life), recordTimeout)
 	defer cancelRecord()
-	if uErr := r.store.UpdateDelivery(recordCtx, delivery); uErr != nil {
-		r.logger.ErrorContext(recordCtx, "escalation: update delivery", "error", uErr, "delivery_id", delivery.ID)
+	held, uErr := r.queue.SettleDelivery(recordCtx, delivery, claim)
+	switch {
+	case uErr != nil:
+		r.logger.ErrorContext(recordCtx, "escalation: record delivery, it is due again once its claim runs out", "error", uErr, "delivery_id", delivery.ID)
+	case !held:
+		r.logger.InfoContext(recordCtx, "escalation: delivery claimed by another worker meanwhile, outcome left to it", "delivery_id", delivery.ID)
 	}
 }
 
-// recoverOrphans handles deliveries stuck in 'pending' beyond the orphan timeout.
-// If the alert is still firing, the delivery is retried; otherwise it is abandoned (R4).
-func (r *Runner) recoverOrphans(ctx context.Context, now time.Time) error {
-	cutoff := now.Add(-r.orphanTimeout)
-	orphans, err := r.store.SelectOrphanPendingDeliveries(ctx, cutoff)
+// retryDue sends again the pending deliveries whose next attempt is due, while what they announce still holds.
+func (r *Runner) retryDue(ctx context.Context, now time.Time) error {
+	due, err := r.queue.SelectDueDeliveries(ctx, now)
 	if err != nil {
-		return fmt.Errorf("select orphans: %w", err)
+		return fmt.Errorf("select due deliveries: %w", err)
 	}
-	for _, d := range orphans {
+	for _, d := range due {
+		if now.After(d.CreatedAt.Add(deliveryMaxAge)) {
+			r.closeDelivery(ctx, d, esc.DeliveryStatusFailed, fmt.Sprintf("not delivered within %d hours", int(deliveryMaxAge.Hours())))
+			continue
+		}
 		run, err := r.store.SelectRun(ctx, d.RunID)
 		if err != nil {
-			r.keepOrphan(ctx, d, err)
+			r.keepDue(ctx, d, err)
 			continue
 		}
 		if run == nil {
-			r.abandonDelivery(ctx, d, "run vanished")
-			continue
-		}
-		// Run already terminal → abandon the orphan.
-		if run.Status != esc.RunStatusActive && run.Status != esc.RunStatusPausedByMaintenance {
-			r.abandonDelivery(ctx, d, "run terminated")
+			r.closeDelivery(ctx, d, esc.DeliveryStatusAbandoned, "run vanished")
 			continue
 		}
 		a, err := r.alertStore.GetAlert(ctx, run.AlertID)
 		if err != nil {
-			r.keepOrphan(ctx, d, err)
+			r.keepDue(ctx, d, err)
 			continue
 		}
-		if a == nil || a.Status != alert.StatusActive {
-			r.abandonDelivery(ctx, d, "alert no longer active")
+		if reason := outdated(d, run, a); reason != "" {
+			r.closeDelivery(ctx, d, esc.DeliveryStatusAbandoned, reason)
 			continue
+		}
+		if run.Status == esc.RunStatusPausedByMaintenance && d.LevelIndex >= 0 {
+			continue // retried once the maintenance window is over
 		}
 		if d.ChannelID == nil {
-			r.abandonDelivery(ctx, d, "channel removed")
+			r.closeDelivery(ctx, d, esc.DeliveryStatusAbandoned, "channel removed")
 			continue
 		}
 		ch, err := r.channelStore.GetChannel(ctx, *d.ChannelID)
 		if err != nil {
-			r.keepOrphan(ctx, d, err)
+			r.keepDue(ctx, d, err)
 			continue
 		}
-		if ch == nil {
-			r.abandonDelivery(ctx, d, "channel unavailable")
+		switch {
+		case ch == nil:
+			r.closeDelivery(ctx, d, esc.DeliveryStatusAbandoned, "channel unavailable")
+			continue
+		case !ch.Enabled:
+			r.closeDelivery(ctx, d, esc.DeliveryStatusFailed, "channel disabled")
 			continue
 		}
-		r.sendInBackground(d, a, ch)
+		taken, err := r.queue.ClaimDelivery(ctx, d, now, now.Add(r.orphanTimeout))
+		if err != nil {
+			r.keepDue(ctx, d, err)
+			continue
+		}
+		if taken {
+			r.sendInBackground(d, retriedPayload(d, run, a), ch)
+		}
 	}
 	return nil
 }
 
-func (r *Runner) keepOrphan(ctx context.Context, d *esc.Delivery, err error) {
-	r.logger.WarnContext(ctx, "escalation: orphan delivery left for the next cycle", "error", err, "delivery_id", d.ID)
+// outdated says why a due delivery no longer has to go out, or "" when it still does.
+func outdated(d *esc.Delivery, run *esc.Run, a *alert.Alert) string {
+	switch {
+	case a == nil || a.Status != alert.StatusActive:
+		return "alert no longer active"
+	case d.LevelIndex == specialLevelAck:
+		return ""
+	case a.AcknowledgedAt != nil:
+		return "alert acknowledged"
+	case run.Status != esc.RunStatusActive && run.Status != esc.RunStatusPausedByMaintenance && run.Status != esc.RunStatusExhausted:
+		return "run stopped"
+	}
+	return ""
 }
 
-func (r *Runner) abandonDelivery(ctx context.Context, d *esc.Delivery, reason string) {
-	d.Status = esc.DeliveryStatusAbandoned
+// retriedPayload is the alert a retried delivery carries, worded as its first attempt was.
+func retriedPayload(d *esc.Delivery, run *esc.Run, a *alert.Alert) *alert.Alert {
+	switch d.LevelIndex {
+	case specialLevelAck:
+		ack := alert.Acknowledgment{By: a.AcknowledgedBy}
+		if a.AcknowledgedAt != nil {
+			ack.At = *a.AcknowledgedAt
+		}
+		return formatAckAlert(a, ack)
+	case specialLevelExhausted:
+		return formatExhaustedAlert(a, run.LastExecutedLevelIndex+1)
+	}
+	return a
+}
+
+func (r *Runner) keepDue(ctx context.Context, d *esc.Delivery, err error) {
+	r.logger.WarnContext(ctx, "escalation: delivery retry left for the next cycle", "error", err, "delivery_id", d.ID)
+}
+
+func (r *Runner) closeDelivery(ctx context.Context, d *esc.Delivery, status, reason string) {
+	d.Status = status
 	d.Error = reason
-	_ = r.store.UpdateDelivery(ctx, d)
+	if err := r.store.UpdateDelivery(ctx, d); err != nil {
+		r.logger.WarnContext(ctx, "escalation: close delivery, left for the next cycle", "error", err, "delivery_id", d.ID)
+	}
 }
 
 // --- helpers ---

@@ -835,6 +835,55 @@ func TestService_CheckNow_ProbesAndPersists(t *testing.T) {
 	assert.Equal(t, id, store.results[0].EndpointID)
 }
 
+type ctxStore struct{ *memStore }
+
+func (s ctxStore) UpdateCheckResult(ctx context.Context, id string, status EndpointStatus, alertState AlertState,
+	consecutiveFailures, consecutiveSuccesses int,
+	responseTimeMs int64, httpStatus *int, lastError string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.memStore.UpdateCheckResult(ctx, id, status, alertState, consecutiveFailures, consecutiveSuccesses, responseTimeMs, httpStatus, lastError)
+}
+
+func (s ctxStore) InsertCheckResult(ctx context.Context, result *CheckResult) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return s.memStore.InsertCheckResult(ctx, result)
+}
+
+func TestService_CheckNow_OutlivesTheRequest(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		cancel()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	store := newMemStore()
+	svc := NewService(Deps{Store: ctxStore{store}, Engine: noopEngine(), Logger: noopLogger()})
+	id := seedEndpoint(t, store, &Endpoint{
+		ExternalID: "ctr-slow", LabelKey: "k1",
+		EndpointType: TypeHTTP, Target: srv.URL,
+		Status: StatusDown, AlertState: AlertAlerting,
+		ConsecutiveFailures: 3,
+		Config:              DefaultConfig(), Active: true,
+		AgentID: uid.LocalAgent,
+	})
+
+	ep, err := svc.CheckNow(ctx, id)
+	require.NoError(t, err)
+	require.Error(t, ctx.Err())
+	assert.Equal(t, StatusUp, ep.Status)
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.results, 1)
+	assert.True(t, store.results[0].Success)
+}
+
 // An endpoint probed by an agent lives on that agent's network: dialing it from
 // here would report a failure that says nothing about the target.
 func TestService_CheckNow_RefusesAnAgentProbedEndpoint(t *testing.T) {

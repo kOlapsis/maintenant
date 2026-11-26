@@ -6,6 +6,9 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"log/slog"
+
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 // TopologySnapshot is a full point-in-time view of an agent's Kubernetes
@@ -31,9 +34,8 @@ type SnapshotSource interface {
 	ListAllEvents(ctx context.Context) ([]K8sEventRef, error)
 }
 
-// SnapshotFromRuntime queries the live cluster for namespaces, workloads, pods
-// and nodes. Nodes are best-effort: a cluster-scoped RBAC denial on nodes does
-// not fail the whole snapshot (the agent may only be granted namespaced access).
+// SnapshotFromRuntime queries the live cluster; nodes tolerate only an RBAC
+// denial and events are best effort, any other list error fails the snapshot.
 func SnapshotFromRuntime(ctx context.Context, src SnapshotSource) (TopologySnapshot, error) {
 	var snap TopologySnapshot
 
@@ -57,26 +59,28 @@ func SnapshotFromRuntime(ctx context.Context, src SnapshotSource) (TopologySnaps
 	}
 	snap.Pods = pods
 
-	if nodes, nerr := src.ListNodes(ctx); nerr == nil {
-		// A Node object carries no running-pod count; derive it from the pods
-		// scheduled on each node (spec.nodeName).
-		perNode := make(map[string]int, len(nodes))
-		for i := range pods {
-			if pods[i].NodeName != "" {
-				perNode[pods[i].NodeName]++
-			}
-		}
-		for i := range nodes {
-			nodes[i].RunningPods = perNode[nodes[i].Name]
-		}
-		snap.Nodes = nodes
+	nodes, err := src.ListNodes(ctx)
+	if err != nil && !k8serrors.IsForbidden(err) {
+		return TopologySnapshot{}, fmt.Errorf("list nodes: %w", err)
 	}
+	// A Node object carries no running-pod count; derive it from the pods
+	// scheduled on each node (spec.nodeName).
+	perNode := make(map[string]int, len(nodes))
+	for i := range pods {
+		if pods[i].NodeName != "" {
+			perNode[pods[i].NodeName]++
+		}
+	}
+	for i := range nodes {
+		nodes[i].RunningPods = perNode[nodes[i].Name]
+	}
+	snap.Nodes = nodes
 
-	// Events are best-effort: a cluster-scoped RBAC denial does not fail the
-	// whole snapshot.
-	if events, eerr := src.ListAllEvents(ctx); eerr == nil {
-		snap.Events = events
+	events, err := src.ListAllEvents(ctx)
+	if err != nil && !k8serrors.IsForbidden(err) {
+		slog.Default().Warn("kubernetes topology snapshot: events left out", "error", err)
 	}
+	snap.Events = events
 
 	return snap, nil
 }

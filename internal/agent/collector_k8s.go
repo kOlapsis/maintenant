@@ -18,7 +18,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/kubernetes"
 )
 
-const kubernetesTopologyInterval = 30 * time.Second
+var kubernetesTopologyInterval = 30 * time.Second
 
 // collectKubernetesRuntime streams the cluster topology and the operating
 // system of the node the agent pod runs on. Blocks until ctx is cancelled or a
@@ -73,8 +73,10 @@ func nodeOSRelease(ctx context.Context, src kubernetes.SnapshotSource, nodeName 
 // Workloads/Pods/Namespaces/Nodes views for this agent. Sends one snapshot
 // immediately, then on each tick. (Per-pod metrics remain a server-side concern.)
 func streamKubernetesTopology(ctx context.Context, id *Identity, src kubernetes.SnapshotSource, spool *Spool, logger *slog.Logger) error {
+	watch := &runtimeWatch{agentID: id.AgentID, label: RuntimeKubernetes, spool: spool, logger: logger}
 	send := func() error {
 		snap, err := kubernetes.SnapshotFromRuntime(ctx, src)
+		watch.observe(err == nil)
 		if err != nil {
 			logger.Warn("collector: kubernetes topology snapshot failed", "err", err)
 			return nil

@@ -101,9 +101,11 @@ func (c *Collector) GetHostStat() *HostStatReader {
 
 func (c *Collector) collect(ctx context.Context) {
 	if !c.rt.IsConnected() {
+		c.cleanStale(nil)
 		return
 	}
-	containers, err := c.containerSvc.ListContainers(ctx, container.ListContainersOpts{})
+	local := uid.LocalAgent
+	containers, err := c.containerSvc.ListContainers(ctx, container.ListContainersOpts{AgentFilter: &local})
 	if err != nil {
 		c.logger.Error("resource collector: list containers", "error", err)
 		return
@@ -115,11 +117,6 @@ func (c *Collector) collect(ctx context.Context) {
 		if ct.State == container.StateRunning {
 			running = append(running, ct)
 		}
-	}
-
-	if len(running) == 0 {
-		c.logger.Debug("resource: no running containers, skipping collection")
-		return
 	}
 
 	// Fan out with bounded concurrency.

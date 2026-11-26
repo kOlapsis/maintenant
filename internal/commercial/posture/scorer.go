@@ -64,6 +64,7 @@ type Scorer struct {
 	cache          map[string]cachedScore
 	threshold      int
 	lastInfraScore int
+	alertResumed   bool
 	onPostureAlert security.PostureAlertCallback
 	onPostureEvent security.PostureEventCallback
 
@@ -468,6 +469,13 @@ func (s *Scorer) SetThreshold(threshold int) {
 	s.mu.Unlock()
 }
 
+// ResumeBelowThreshold tells the scorer that the threshold alert is active, so the next score at or above the threshold emits its recovery.
+func (s *Scorer) ResumeBelowThreshold() {
+	s.mu.Lock()
+	s.alertResumed = true
+	s.mu.Unlock()
+}
+
 // evaluateThreshold compares a fresh infrastructure score against the threshold and fires the alert or its recovery.
 func (s *Scorer) evaluateThreshold(score int, color string) {
 	s.evalMu.Lock()
@@ -476,6 +484,7 @@ func (s *Scorer) evaluateThreshold(score int, color string) {
 	s.mu.RLock()
 	threshold := s.threshold
 	previousScore := s.lastInfraScore
+	alertResumed := s.alertResumed
 	onAlert := s.onPostureAlert
 	onEvent := s.onPostureEvent
 	s.mu.RUnlock()
@@ -503,7 +512,7 @@ func (s *Scorer) evaluateThreshold(score int, color string) {
 
 	// Threshold alert
 	if onAlert != nil {
-		wasBelowThreshold := previousScore > 0 && previousScore < threshold
+		wasBelowThreshold := alertResumed || previousScore > 0 && previousScore < threshold
 		isBelowThreshold := score < threshold
 
 		if isBelowThreshold && !wasBelowThreshold {
@@ -517,6 +526,7 @@ func (s *Scorer) evaluateThreshold(score int, color string) {
 
 	s.mu.Lock()
 	s.lastInfraScore = score
+	s.alertResumed = false
 	s.mu.Unlock()
 }
 

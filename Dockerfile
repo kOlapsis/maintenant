@@ -40,7 +40,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
         -o /out/maintenant \
         ./cmd/maintenant
 
-FROM alpine:3.21
+FROM alpine:3.24
 
 RUN apk upgrade --no-cache \
     && apk add --no-cache ca-certificates tzdata setpriv \

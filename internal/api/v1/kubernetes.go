@@ -54,6 +54,7 @@ type KubernetesHandler struct {
 // entities whose reporting agent has no live stream.
 type agentLiveness interface {
 	IsConnected(agentID string) bool
+	RuntimeUnreachable(agentID string) bool
 }
 
 // NewKubernetesHandler creates a new KubernetesHandler. metrics may be nil when
@@ -95,9 +96,13 @@ func (h *KubernetesHandler) markLiveness(m map[string]interface{}, agentID strin
 	if h.sessions == nil || agentID == "" || agentID == uid.LocalAgent {
 		return
 	}
-	if !h.sessions.IsConnected(agentID) {
+	switch {
+	case !h.sessions.IsConnected(agentID):
 		m["stale"] = true
 		m["agent_offline"] = true
+	case h.sessions.RuntimeUnreachable(agentID):
+		m["stale"] = true
+		m["runtime_unreachable"] = true
 	}
 }
 

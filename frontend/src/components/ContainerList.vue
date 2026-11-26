@@ -4,6 +4,7 @@
 -->
 
 <script setup lang="ts">
+import { staleShort, staleTitle } from '@/utils/staleCause'
 import { onMounted, ref, computed } from 'vue'
 import { useContainersStore } from '@/stores/containers'
 import { useResourcesStore } from '@/stores/resources'
@@ -344,7 +345,8 @@ onMounted(() => {
           <span
             v-if="row.stale"
             class="inline-flex items-center rounded-full bg-mnt-sev-unknown px-2 py-0.5 text-[10px] font-bold text-mnt-sev-unknown"
-          >offline</span>
+            :title="staleTitle(row, row.state)"
+          >{{ staleShort(row) }}</span>
           <span
             v-else
             class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold"

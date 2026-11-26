@@ -94,7 +94,10 @@ func setupEscalationTestDB(t *testing.T) (*EscalationStore, *sql.DB) {
 			status TEXT NOT NULL CHECK (status IN ('pending','sent','failed','abandoned')),
 			error TEXT,
 			attempt_started_at BIGINT NOT NULL DEFAULT 0,
-			sent_at BIGINT
+			sent_at BIGINT,
+			attempts INTEGER NOT NULL DEFAULT 0,
+			next_attempt_at BIGINT NOT NULL DEFAULT 0,
+			created_at BIGINT NOT NULL DEFAULT 0
 		);
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_escalation_deliveries_run_level
 			ON escalation_deliveries(run_id, level_index, channel_id);

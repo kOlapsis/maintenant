@@ -166,7 +166,7 @@ func newHTTPClient(cfg EndpointConfig, timeout time.Duration, skipVerify bool, c
 		},
 		Timeout: timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= maxRedirects {
+			if len(via) > maxRedirects {
 				return http.ErrUseLastResponse
 			}
 			return nil

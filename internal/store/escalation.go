@@ -133,23 +133,28 @@ func (s *EscalationStore) SelectPolicies(ctx context.Context, activeOnly bool) (
 }
 
 func (s *EscalationStore) DeletePolicy(ctx context.Context, id string) error {
-	// Stop active runs before deleting; runs retain history via ended_at.
-	if err := s.StopPolicyRuns(ctx, id, escalation.RunStatusStoppedByPolicyDelete, time.Now()); err != nil {
-		return fmt.Errorf("stop runs before policy delete: %w", err)
-	}
-	if _, err := s.writer.Exec(ctx, `DELETE FROM escalation_policies WHERE id = ?`, id); err != nil {
-		return fmt.Errorf("delete escalation policy: %w", err)
-	}
-	return nil
+	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if err := tx.Serialize(ctx, "escalation_runs"); err != nil {
+			return err
+		}
+		// Stop active runs before deleting; runs retain history via ended_at.
+		if _, err := tx.ExecContext(ctx, stopPolicyRunsSQL,
+			escalation.RunStatusStoppedByPolicyDelete, time.Now().Unix(), id); err != nil {
+			return fmt.Errorf("stop runs before policy delete: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM escalation_policies WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("delete escalation policy: %w", err)
+		}
+		return nil
+	})
 }
+
+const stopPolicyRunsSQL = `UPDATE escalation_runs SET status = ?, ended_at = ?, next_action_at = NULL
+	WHERE policy_id = ? AND status IN ('active','paused_by_maintenance')`
 
 // StopPolicyRuns ends the running and paused runs of one policy with the given status.
 func (s *EscalationStore) StopPolicyRuns(ctx context.Context, policyID string, stopStatus string, endedAt time.Time) error {
-	_, err := s.writer.Exec(ctx,
-		`UPDATE escalation_runs SET status = ?, ended_at = ?, next_action_at = NULL
-		WHERE policy_id = ? AND status IN ('active','paused_by_maintenance')`,
-		stopStatus, endedAt.Unix(), policyID,
-	)
+	_, err := s.writer.Exec(ctx, stopPolicyRunsSQL, stopStatus, endedAt.Unix(), policyID)
 	if err != nil {
 		return fmt.Errorf("stop policy runs: %w", err)
 	}
@@ -215,16 +220,21 @@ func (s *EscalationStore) SelectRunsByPolicy(ctx context.Context, policyID strin
 
 func (s *EscalationStore) SelectRunDeliveries(ctx context.Context, runID string) ([]*escalation.Delivery, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT d.id, d.run_id, d.level_index, d.channel_id, d.status, d.error,
-			d.attempt_started_at, d.sent_at, c.name
+		`SELECT `+escalationDeliveryColumns+`
 		FROM escalation_deliveries d
 		LEFT JOIN notification_channels c ON c.id = d.channel_id
 		WHERE d.run_id = ? ORDER BY d.id ASC`, runID)
 	if err != nil {
 		return nil, fmt.Errorf("select run deliveries: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	return scanEscalationDeliveries(rows)
+}
 
+const escalationDeliveryColumns = `d.id, d.run_id, d.level_index, d.channel_id, d.status, d.error,
+	d.attempt_started_at, d.sent_at, c.name, d.attempts, d.next_attempt_at, d.created_at`
+
+func scanEscalationDeliveries(rows *sql.Rows) ([]*escalation.Delivery, error) {
+	defer func() { _ = rows.Close() }()
 	var deliveries []*escalation.Delivery
 	for rows.Next() {
 		d, err := scanEscalationDelivery(rows)
@@ -398,13 +408,7 @@ func (s *EscalationStore) InsertDelivery(ctx context.Context, d *escalation.Deli
 	if d.ID == "" {
 		d.ID = uid.New()
 	}
-	_, err := s.writer.Exec(ctx,
-		`INSERT INTO escalation_deliveries
-			(id, run_id, level_index, channel_id, status, error, attempt_started_at, sent_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		d.ID, d.RunID, d.LevelIndex, channelID, d.Status, NullableString(d.Error),
-		d.AttemptStartedAt.Unix(), nullableTime(d.SentAt),
-	)
+	_, err := s.writer.Exec(ctx, insertEscalationDelivery, escalationDeliveryRow(d.ID, d, channelID)...)
 	if err != nil {
 		if IsUniqueViolation(err) {
 			return "", escalation.ErrDeliveryDuplicate
@@ -439,13 +443,7 @@ func (s *EscalationStore) ReserveDelivery(ctx context.Context, d *escalation.Del
 		if live == 0 {
 			return nil
 		}
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO escalation_deliveries
-				(id, run_id, level_index, channel_id, status, error, attempt_started_at, sent_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, d.RunID, d.LevelIndex, channelID, d.Status, NullableString(d.Error),
-			d.AttemptStartedAt.Unix(), nullableTime(d.SentAt),
-		); err != nil {
+		if _, err := tx.ExecContext(ctx, insertEscalationDelivery, escalationDeliveryRow(id, d, channelID)...); err != nil {
 			if IsUniqueViolation(err) {
 				return escalation.ErrDeliveryDuplicate
 			}
@@ -463,6 +461,80 @@ func (s *EscalationStore) ReserveDelivery(ctx context.Context, d *escalation.Del
 	return reserved, nil
 }
 
+const insertEscalationDelivery = `INSERT INTO escalation_deliveries
+	(id, run_id, level_index, channel_id, status, error, attempt_started_at, sent_at, attempts, next_attempt_at, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+// escalationDeliveryRow is the arguments of insertEscalationDelivery, a delivery being created when its first attempt starts.
+func escalationDeliveryRow(id string, d *escalation.Delivery, channelID any) []any {
+	return []any{id, d.RunID, d.LevelIndex, channelID, d.Status, NullableString(d.Error),
+		d.AttemptStartedAt.Unix(), nullableTime(d.SentAt), d.Attempts, d.NextAttemptAt.Unix(), d.AttemptStartedAt.Unix()}
+}
+
+// SelectDueDeliveries lists the pending deliveries whose next attempt is due at now, oldest due first.
+func (s *EscalationStore) SelectDueDeliveries(ctx context.Context, now time.Time) ([]*escalation.Delivery, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+escalationDeliveryColumns+`
+		FROM escalation_deliveries d
+		LEFT JOIN notification_channels c ON c.id = d.channel_id
+		WHERE d.status = 'pending' AND d.next_attempt_at <= ?
+		ORDER BY d.next_attempt_at, d.id`,
+		now.Unix(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("select due deliveries: %w", err)
+	}
+	return scanEscalationDeliveries(rows)
+}
+
+// ClaimDelivery takes the attempt of d due at d.NextAttemptAt, started at at and held until until; a level is only
+// taken while its run is active or exhausted and its alert active and unacknowledged.
+func (s *EscalationStore) ClaimDelivery(ctx context.Context, d *escalation.Delivery, at, until time.Time) (bool, error) {
+	claimed := false
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if err := tx.Serialize(ctx, "escalation_runs"); err != nil {
+			return err
+		}
+		res, err := tx.ExecContext(ctx,
+			`UPDATE escalation_deliveries SET next_attempt_at = ?, attempt_started_at = ?, attempts = attempts + 1
+			WHERE id = ? AND status = 'pending' AND next_attempt_at = ?
+			AND (level_index < 0 OR EXISTS (SELECT 1 FROM escalation_runs r JOIN alerts a ON a.id = r.alert_id
+				WHERE r.id = escalation_deliveries.run_id AND r.status IN ('active', 'exhausted')
+				AND a.status = 'active' AND a.acknowledged_at IS NULL))`,
+			until.Unix(), at.Unix(), d.ID, d.NextAttemptAt.Unix(),
+		)
+		if err != nil {
+			return fmt.Errorf("claim delivery: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("claim delivery: %w", err)
+		}
+		claimed = n == 1
+		return nil
+	})
+	if err != nil || !claimed {
+		return false, err
+	}
+	d.Attempts++
+	d.AttemptStartedAt = time.Unix(at.Unix(), 0)
+	d.NextAttemptAt = time.Unix(until.Unix(), 0)
+	return true, nil
+}
+
+// SettleDelivery records the outcome of the attempt of d claimed until claim, and reports false when that claim no longer holds.
+func (s *EscalationStore) SettleDelivery(ctx context.Context, d *escalation.Delivery, claim time.Time) (bool, error) {
+	res, err := s.writer.Exec(ctx,
+		`UPDATE escalation_deliveries SET status = ?, error = ?, sent_at = ?, next_attempt_at = ?
+		WHERE id = ? AND status = 'pending' AND next_attempt_at = ?`,
+		d.Status, NullableString(d.Error), nullableTime(d.SentAt), d.NextAttemptAt.Unix(), d.ID, claim.Unix(),
+	)
+	if err != nil {
+		return false, fmt.Errorf("settle delivery: %w", err)
+	}
+	return res.RowsAffected == 1, nil
+}
+
 // UpdateDelivery persists status/error/sent_at after a send attempt completes.
 func (s *EscalationStore) UpdateDelivery(ctx context.Context, d *escalation.Delivery) error {
 	_, err := s.writer.Exec(ctx,
@@ -475,34 +547,6 @@ func (s *EscalationStore) UpdateDelivery(ctx context.Context, d *escalation.Deli
 		return fmt.Errorf("update delivery: %w", err)
 	}
 	return nil
-}
-
-// SelectOrphanPendingDeliveries returns deliveries stuck in 'pending' for longer
-// than the runner's orphan timeout. The runner decides whether to retry or abandon.
-func (s *EscalationStore) SelectOrphanPendingDeliveries(ctx context.Context, before time.Time) ([]*escalation.Delivery, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT d.id, d.run_id, d.level_index, d.channel_id, d.status, d.error,
-			d.attempt_started_at, d.sent_at, c.name
-		FROM escalation_deliveries d
-		LEFT JOIN notification_channels c ON c.id = d.channel_id
-		WHERE d.status = 'pending' AND d.attempt_started_at < ?
-		ORDER BY d.attempt_started_at ASC`,
-		before.Unix(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("select orphan pending deliveries: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var deliveries []*escalation.Delivery
-	for rows.Next() {
-		d, err := scanEscalationDelivery(rows)
-		if err != nil {
-			return nil, err
-		}
-		deliveries = append(deliveries, d)
-	}
-	return deliveries, rows.Err()
 }
 
 // PurgeRunsAndDeliveriesOlderThan deletes terminated runs (ended_at < before) in batches of 1000.
@@ -622,15 +666,17 @@ func scanEscalationDelivery(scanner rowScanner) (*escalation.Delivery, error) {
 	var channelName sql.NullString
 	var errStr sql.NullString
 	var sentAt sql.NullInt64
-	var attemptStartedAt int64
+	var attemptStartedAt, nextAttemptAt, createdAt int64
 
 	err := scanner.Scan(
 		&d.ID, &d.RunID, &d.LevelIndex, &channelID, &d.Status, &errStr,
-		&attemptStartedAt, &sentAt, &channelName,
+		&attemptStartedAt, &sentAt, &channelName, &d.Attempts, &nextAttemptAt, &createdAt,
 	)
 	if err != nil {
 		return nil, err
 	}
+	d.NextAttemptAt = time.Unix(nextAttemptAt, 0)
+	d.CreatedAt = time.Unix(createdAt, 0)
 
 	if channelID.Valid {
 		v := channelID.String

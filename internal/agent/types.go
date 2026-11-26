@@ -60,6 +60,7 @@ var (
 	ErrTokenNotFound        = errors.New("enrollment token not found")
 	ErrTokenAlreadyConsumed = errors.New("enrollment token already consumed")
 	ErrTokenExpired         = errors.New("enrollment token expired")
+	ErrAlreadyEnrolled      = errors.New("agent already enrolled with this token")
 	ErrLabelTooLong         = errors.New("label exceeds 64 characters")
 	ErrAgentRevoked         = errors.New("agent is revoked")
 	ErrBadSignature         = errors.New("invalid Ed25519 signature")

@@ -4,6 +4,7 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -466,6 +467,7 @@ func (h *StatusAdminHandler) HandleUpdateIncident(w http.ResponseWriter, r *http
 		writeStoreError(w, err, "internal", "Failed to update incident")
 		return
 	}
+	h.statusSvc.InvalidatePublicSnapshot()
 	updated, _ := h.incidents.GetIncident(r.Context(), id)
 	if updated != nil {
 		inc = updated
@@ -483,6 +485,7 @@ func (h *StatusAdminHandler) HandleDeleteIncident(w http.ResponseWriter, r *http
 		writeStoreError(w, err, "internal", "Failed to delete incident")
 		return
 	}
+	h.statusSvc.InvalidatePublicSnapshot()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -546,6 +549,7 @@ func (h *StatusAdminHandler) HandleCreateMaintenance(w http.ResponseWriter, r *h
 		writeStoreError(w, err, "internal", "Failed to create maintenance window")
 		return
 	}
+	h.statusSvc.InvalidatePublicSnapshot()
 	created, _ := h.maintenance.GetMaintenance(r.Context(), id)
 	if created != nil {
 		mw = created
@@ -616,6 +620,7 @@ func (h *StatusAdminHandler) HandleUpdateMaintenance(w http.ResponseWriter, r *h
 		writeStoreError(w, err, "internal", "Failed to update maintenance window")
 		return
 	}
+	h.statusSvc.InvalidatePublicSnapshot()
 	updated, _ := h.maintenance.GetMaintenance(r.Context(), id)
 	if updated != nil {
 		existing = updated
@@ -639,6 +644,7 @@ func (h *StatusAdminHandler) HandleDeleteMaintenance(w http.ResponseWriter, r *h
 		writeStoreError(w, err, "internal", "Failed to delete maintenance window")
 		return
 	}
+	h.statusSvc.InvalidatePublicSnapshot()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -696,6 +702,8 @@ func (h *StatusAdminHandler) HandleListSubscribers(w http.ResponseWriter, r *htt
 
 // --- SMTP ---
 
+const smtpTestTimeout = 8 * time.Second // must stay under the 10 s request limit
+
 // HandleTestSmtp sends a test email to the given address through the SMTP server of the environment.
 func (h *StatusAdminHandler) HandleTestSmtp(w http.ResponseWriter, r *http.Request) {
 	if h.mailer == nil {
@@ -714,7 +722,9 @@ func (h *StatusAdminHandler) HandleTestSmtp(w http.ResponseWriter, r *http.Reque
 		WriteError(w, http.StatusBadRequest, "validation", "to must be a valid email address")
 		return
 	}
-	if err := h.mailer.Send(r.Context(), addr.Address, "maintenant SMTP test",
+	ctx, cancel := context.WithTimeout(r.Context(), smtpTestTimeout)
+	defer cancel()
+	if err := h.mailer.Send(ctx, addr.Address, "maintenant SMTP test",
 		"This is a test email from the maintenant status page.\n\n"+
 			"If you received it, subscription confirmations and incident notifications can be delivered.\n"); err != nil {
 		WriteError(w, http.StatusBadGateway, "smtp_failed", err.Error())

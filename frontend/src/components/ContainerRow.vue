@@ -4,6 +4,7 @@
 -->
 
 <script setup lang="ts">
+import { staleShort, staleTitle } from '@/utils/staleCause'
 import { computed } from 'vue'
 import type { Container } from '@/services/containerApi'
 import { useResourcesStore } from '@/stores/resources'
@@ -108,8 +109,8 @@ const showMetrics = computed(() => props.container.state === 'running' && metric
         <span
           v-if="container.stale"
           class="inline-flex items-center rounded-full bg-mnt-sev-unknown px-2 py-0.5 text-[10px] font-bold text-mnt-sev-unknown"
-          :title="`Agent offline, last known: ${container.state}`"
-        >offline</span>
+          :title="staleTitle(container, container.state)"
+        >{{ staleShort(container) }}</span>
         <span
           v-else
           class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold"

@@ -28,7 +28,7 @@ func TestNewEscalation_WiresRunnerInEveryEdition(t *testing.T) {
 	setEdition(t, extension.Community)
 
 	got := NewEscalation(extpoint.EscalationDeps{
-		Store:    newMockStore(),
+		Store:    newRunStore(),
 		Alerts:   newAlertStoreMock(),
 		Channels: &mockChannelStore{},
 		Notifier: alert.NewNotifier(nil, logger, true),

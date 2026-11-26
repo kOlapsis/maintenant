@@ -3,6 +3,7 @@
   SPDX-License-Identifier: Apache-2.0
 -->
 <script setup lang="ts">
+import { staleShort, staleTitle } from '@/utils/staleCause'
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useKubernetesStore } from '@/stores/kubernetes'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
@@ -152,8 +153,8 @@ function formatCPU(millicores: number): string {
             <!-- Status text -->
             <span
               :class="['font-medium', node.stale ? 'text-mnt-sev-unknown' : statusText(node.status)]"
-              :title="node.stale ? `Agent offline · last known: ${node.status}` : undefined"
-            >{{ node.stale ? 'offline' : node.status }}</span>
+              :title="node.stale ? staleTitle(node, node.status) : undefined"
+            >{{ node.stale ? staleShort(node) : node.status }}</span>
 
             <!-- Capacity summary -->
             <span class="tabular-nums hidden sm:inline" :title="`${node.capacity.cpu_millicores}m CPU`">

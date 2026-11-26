@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/agentproto"
@@ -28,6 +29,9 @@ const (
 	// count: whichever comes first ends the current chunk.
 	followChunkLines    = 100
 	followFlushInterval = 250 * time.Millisecond
+
+	maxLogLineBytes   = 8 * 1024
+	maxLogResultBytes = 256 * 1024
 )
 
 // Capabilities lists the command families this build understands. Sent at auth
@@ -161,11 +165,34 @@ func (r *CommandRunner) runLogs(ctx context.Context, out resultSender, requestID
 		r.fail(out, requestID, "logs_unavailable", err.Error())
 		return
 	}
-	r.send(out, &agentpb.CommandResult{
-		RequestId: requestID,
-		Last:      true,
-		Result:    &agentpb.CommandResult_Logs{Logs: &agentpb.LogsChunk{Lines: logLines}},
-	})
+	r.sendLogs(out, requestID, logLines, true)
+}
+
+// sendLogs delivers lines in as many results as the size ceiling requires, only the final one carrying last.
+func (r *CommandRunner) sendLogs(out resultSender, requestID string, lines []string, last bool) bool {
+	for {
+		n, size := 0, len(requestID)+16
+		for n < len(lines) {
+			lines[n] = truncateLogLine(lines[n])
+			size += len(lines[n]) + 4
+			if size > maxLogResultBytes {
+				break
+			}
+			n++
+		}
+		final := n == len(lines)
+		if !r.send(out, &agentpb.CommandResult{
+			RequestId: requestID,
+			Last:      last && final,
+			Result:    &agentpb.CommandResult_Logs{Logs: &agentpb.LogsChunk{Lines: lines[:n]}},
+		}) {
+			return false
+		}
+		if final {
+			return true
+		}
+		lines = lines[n:]
+	}
 }
 
 // followLogs streams the container's output until the request is cancelled or
@@ -183,12 +210,22 @@ func (r *CommandRunner) followLogs(ctx context.Context, out resultSender, reques
 	lineCh := make(chan string, followChunkLines)
 	go func() {
 		defer close(lineCh)
-		scanner := bufio.NewScanner(reader)
-		scanner.Buffer(make([]byte, 64*1024), 64*1024)
-		for scanner.Scan() {
+		br := bufio.NewReaderSize(reader, 2*maxLogLineBytes)
+		for {
+			line, more, err := br.ReadLine()
+			if err != nil {
+				return
+			}
+			text := truncateLogLine(string(line))
+			for more && err == nil {
+				_, more, err = br.ReadLine()
+			}
 			select {
-			case lineCh <- scanner.Text():
+			case lineCh <- text:
 			case <-ctx.Done():
+				return
+			}
+			if err != nil {
 				return
 			}
 		}
@@ -202,13 +239,9 @@ func (r *CommandRunner) followLogs(ctx context.Context, out resultSender, reques
 		if len(buf) == 0 && !last {
 			return true
 		}
-		res := &agentpb.CommandResult{
-			RequestId: requestID,
-			Last:      last,
-			Result:    &agentpb.CommandResult_Logs{Logs: &agentpb.LogsChunk{Lines: buf}},
-		}
+		lines := buf
 		buf = make([]string, 0, followChunkLines)
-		return r.send(out, res)
+		return r.sendLogs(out, requestID, lines, last)
 	}
 
 	for {
@@ -234,6 +267,17 @@ func (r *CommandRunner) followLogs(ctx context.Context, out resultSender, reques
 			}
 		}
 	}
+}
+
+func truncateLogLine(line string) string {
+	if len(line) <= maxLogLineBytes {
+		return line
+	}
+	cut := maxLogLineBytes
+	for cut > 0 && !utf8.RuneStart(line[cut]) {
+		cut--
+	}
+	return line[:cut]
 }
 
 // send delivers res, reporting whether the stream is still usable.

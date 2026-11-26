@@ -137,12 +137,12 @@ func TestAutoIncidentMailsOnOpeningAndResolutionOnly(t *testing.T) {
 
 	svc.HandleAlertEvent(context.Background(), makeAlertEvent("critical", false))
 	opened := n.next(t)
-	assert.Equal(t, "[critical] API Gateway - connection refused", opened.subject)
+	assert.Equal(t, "[critical] API Gateway - Major Outage", opened.subject)
 	assert.Contains(t, opened.message, "Affected components: API Gateway")
-	assert.Contains(t, opened.message, "connection refused")
+	assert.Contains(t, opened.message, "Auto-detected: Major Outage")
 	n.none(t)
 
-	existing := &status.Incident{ID: "inc-9", Title: "API Gateway - connection refused", Status: status.IncidentInvestigating}
+	existing := &status.Incident{ID: "inc-9", Title: "API Gateway - Major Outage", Status: status.IncidentInvestigating}
 	is.mu.Lock()
 	is.activeByComponent = map[string]*status.Incident{comp.ID: existing}
 	is.mu.Unlock()
@@ -153,6 +153,6 @@ func TestAutoIncidentMailsOnOpeningAndResolutionOnly(t *testing.T) {
 	monitor = status.StatusOperational
 	svc.HandleAlertEvent(context.Background(), makeAlertEvent("critical", true))
 	resolved := n.next(t)
-	assert.Equal(t, "Resolved: API Gateway - connection refused", resolved.subject)
+	assert.Equal(t, "Resolved: API Gateway - Major Outage", resolved.subject)
 	n.none(t)
 }

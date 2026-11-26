@@ -13,6 +13,7 @@ import {
   testChannel,
   type NotificationChannel,
 } from '@/services/alertApi'
+import { ApiError } from '@/services/apiFetch'
 import ChannelWizard from '@/components/ChannelWizard.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import InlineAlert from '@/components/ui/InlineAlert.vue'
@@ -144,7 +145,7 @@ async function handleDelete(id: string) {
     const ok = await confirm({
       title: 'Delete channel',
       message:
-        'Remove this notification channel? Triggers and escalation policies referencing it will lose this destination.',
+        'Remove this notification channel? Triggers referencing it will lose this destination. A channel still used by an escalation policy cannot be deleted.',
       confirmLabel: 'Delete',
       destructive: true,
     })
@@ -152,7 +153,11 @@ async function handleDelete(id: string) {
     await deleteChannel(id)
     store.fetchChannels()
   } catch (e) {
-    actionError.value = e instanceof Error ? e.message : 'Failed to delete channel'
+    if (e instanceof ApiError && e.code === 'CHANNEL_IN_USE') {
+      actionError.value = `${e.message}. Remove the channel from them, then delete it.`
+    } else {
+      actionError.value = e instanceof Error ? e.message : 'Failed to delete channel'
+    }
   } finally {
     pending.value = ''
   }

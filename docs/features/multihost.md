@@ -211,7 +211,7 @@ After authentication the agent collects and pushes events continuously:
 
 A Kubernetes agent sends the cluster topology, the host metrics of the node it runs on and the host operating system. Endpoint and certificate labels are read from Docker containers only.
 
-Endpoints are probed by the agent, from its own network, with the `timeout` and `interval` of their labels. A certificate scan reports the leaf certificate only: expiry alerts work, while the chain, hostname and OCSP checks do not run for certificates scanned by an agent.
+Endpoints are probed by the agent, from its own network, with the `timeout` and `interval` of their labels. A certificate scan checks the chain and the hostname on the agent and reports the leaf certificate with both results: expiry, chain and hostname alerts work, while OCSP is not checked for certificates scanned by an agent. The chain is checked against the agent's own trust store, so an internal certificate signed by a private CA is reported as an invalid chain unless that CA is given to the agent through `MAINTENANT_CA_CERT` (see below). An agent too old to report these results sends none, and the server then treats the chain and the hostname as valid.
 
 ### Trusting a private CA
 
@@ -390,12 +390,14 @@ These bounds are fixed, not configurable:
 | Connection handshake | 30 s | the connection is closed |
 | Connection without any stream | 5 min | closed with `GOAWAY`; the agent reconnects. Server keep-alive pings every 60 s |
 | Authentication of a `Push` stream, from the challenge to a verified answer | 30 s | `DeadlineExceeded` `authentication timed out`, the stream is closed |
-| `RegisterAgent` calls and `Push` openings per source address | 10 per minute, burst of 10 | `ResourceExhausted` `too many connection attempts from this address` |
+| `RegisterAgent` calls and `Push` openings that do not authenticate, per source address | 10 per minute, burst of 10 | `ResourceExhausted` `too many connection attempts from this address` |
 | `hostname` / `os_arch` / `agent_version` at enrollment | 253 / 32 / 64 characters | `InvalidArgument` naming the field |
 | Containers in one inventory | 10,000 | the inventory is refused whole (`invalid_argument` stream error), nothing is written |
 | Labels on one container | 256 labels | same as above |
+| Containers kept for one agent, archived ones included | 10,000 | when a new container arrives at the limit, the server deletes that agent's 1,000 longest-archived containers with their history to make room; a new container is refused (`invalid_argument` stream error, not replayed) only when the agent has 10,000 containers that are not archived |
+| Label-declared certificate monitors of one agent | 10,000 | a scan for a new `host:port` is refused the same way |
 
-`agent_id` must be a UUID, at enrollment and in the authentication answer; it is stored and matched in lower case. An unknown enrollment token is refused with `NotFound` by a read, before any write transaction. The per-address quota applies only before authentication, and it is keyed on the TCP peer address: agents behind the same NAT, or a gRPC listener behind a TCP proxy, share one quota. Authenticated streams keep their per-agent event limit (`MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND`).
+`agent_id` must be a UUID, at enrollment and in the authentication answer; it is stored and matched in lower case. An unknown enrollment token is refused with `NotFound` by a read, before any write transaction. The per-address quota applies only before authentication, and it is keyed on the TCP peer address: agents behind the same NAT, or a gRPC listener behind a TCP proxy, share one quota. A `Push` that authenticates gets its attempt back, so agents reconnecting together after a server restart do not use it up; while the quota of an address is empty, every opening from that address is refused, including those of enrolled agents. Authenticated streams keep their per-agent event limit (`MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND`).
 
 ### `--grpc-insecure-skip-tls-verify`
 

@@ -123,9 +123,6 @@ func (m *mcpEscalationStore) ReserveDelivery(_ context.Context, _ *escalation.De
 func (m *mcpEscalationStore) UpdateDelivery(_ context.Context, _ *escalation.Delivery) error {
 	return nil
 }
-func (m *mcpEscalationStore) SelectOrphanPendingDeliveries(_ context.Context, _ time.Time) ([]*escalation.Delivery, error) {
-	return nil, nil
-}
 
 // --- channel store mock ---
 

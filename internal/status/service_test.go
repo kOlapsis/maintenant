@@ -386,7 +386,7 @@ func TestStatusSeverity_Values(t *testing.T) {
 	}
 }
 
-// --- statusLabel ---
+// --- StatusLabel ---
 
 func TestStatusLabel_AllStatuses(t *testing.T) {
 	cases := []struct {
@@ -402,7 +402,7 @@ func TestStatusLabel_AllStatuses(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.status, func(t *testing.T) {
-			assert.Equal(t, tc.expected, statusLabel(tc.status))
+			assert.Equal(t, tc.expected, StatusLabel(tc.status))
 		})
 	}
 }

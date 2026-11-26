@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -61,9 +63,14 @@ type Engine struct {
 	// In-memory active alert map for recovery linking and dedup
 	activeAlerts map[activeAlertKey]*Alert
 	silenced     map[activeAlertKey]*Alert // held back by a silence or a maintenance window, guarded by procMu alone
+	unsaved      map[activeAlertKey]Event
+	unrouted     []*routing
+	maxUnrouted  int
+	now          func() time.Time
 	recheckEvery time.Duration
 	mu           sync.RWMutex
 	procMu       sync.Mutex // serializes a store write with the map update that follows it
+	running      sync.WaitGroup
 }
 
 const (
@@ -119,6 +126,9 @@ func NewEngine(d EngineDeps) *Engine {
 		suppressor:   noopSuppressor{},
 		activeAlerts: make(map[activeAlertKey]*Alert),
 		silenced:     make(map[activeAlertKey]*Alert),
+		unsaved:      make(map[activeAlertKey]Event),
+		maxUnrouted:  notifierWorkerCount * notifierChannelBuffer,
+		now:          time.Now,
 		recheckEvery: defaultSilenceRecheckInterval,
 	}
 }
@@ -178,7 +188,7 @@ func (e *Engine) Start(ctx context.Context) {
 		e.logger.Error("alert engine: failed to reload silenced alerts", "error", err)
 	}
 
-	go func() {
+	e.running.Go(func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -190,14 +200,19 @@ func (e *Engine) Start(ctx context.Context) {
 				e.processEvent(ctx, evt)
 			}
 		}
-	}()
+	})
 
-	go e.runSilenceRecheck(ctx)
+	e.running.Go(func() { e.runSilenceRecheck(ctx) })
 
 	// Start escalation evaluator only when a real Escalator is injected
 	if _, isNoop := e.escalator.(noopEscalator); !isNoop {
-		go e.runEscalationEvaluator(ctx)
+		e.running.Go(func() { e.runEscalationEvaluator(ctx) })
 	}
+}
+
+// Wait blocks until the goroutines of Start have returned, which follows the end of its context.
+func (e *Engine) Wait() {
+	e.running.Wait()
 }
 
 func (e *Engine) runEscalationEvaluator(ctx context.Context) {
@@ -244,15 +259,11 @@ func (e *Engine) reloadActiveAlerts(ctx context.Context) error {
 	return nil
 }
 
-// reloadSilencedAlerts holds back again the recent silenced alerts that a silence or a maintenance window still covers.
+// reloadSilencedAlerts holds back again the recent silenced alerts, leaving the recheck to promote those no longer covered.
 func (e *Engine) reloadSilencedAlerts(ctx context.Context) error {
 	var held []*Alert
-	var rules []*SilenceRule
 	if err := withRetry(ctx, func() (err error) {
-		if held, err = e.alertStore.ListSilencedAlertsSince(ctx, time.Now().Add(-silencedReloadMaxAge)); err != nil {
-			return err
-		}
-		rules, err = e.silenceStore.GetActiveSilenceRules(ctx)
+		held, err = e.alertStore.ListSilencedAlertsSince(ctx, time.Now().Add(-silencedReloadMaxAge))
 		return err
 	}); err != nil {
 		return err
@@ -273,9 +284,6 @@ func (e *Engine) reloadSilencedAlerts(ctx context.Context) error {
 		if active {
 			continue
 		}
-		if covered, err := e.covered(ctx, rules, eventOf(a)); err == nil && !covered {
-			continue
-		}
 		e.silenced[key] = a
 	}
 
@@ -292,8 +300,22 @@ func (e *Engine) runSilenceRecheck(ctx context.Context) {
 			return
 		case <-ticker.C:
 			e.promoteUncovered(ctx)
+			e.retryStoreFailures(ctx)
 		}
 	}
+}
+
+// retryStoreFailures stores again the events, then routes again the notifications, that a store error left unfinished.
+func (e *Engine) retryStoreFailures(ctx context.Context) {
+	e.procMu.Lock()
+	defer e.procMu.Unlock()
+	for key, evt := range e.unsaved {
+		e.process(ctx, evt)
+		if _, failed := e.unsaved[key]; failed {
+			break
+		}
+	}
+	e.routePending(ctx, nil)
 }
 
 // promoteUncovered promotes every held alert that no silence or maintenance window covers anymore.
@@ -368,17 +390,29 @@ func eventOf(a *Alert) Event {
 func (e *Engine) processEvent(ctx context.Context, evt Event) {
 	e.procMu.Lock()
 	defer e.procMu.Unlock()
+	e.process(ctx, evt)
+}
 
-	if evt.IsRecover {
-		e.processRecovery(ctx, evt)
-		return
-	}
-
+// process applies evt under procMu, in place of an event of the same key the store refused, which a recovery
+// first tries to store.
+func (e *Engine) process(ctx context.Context, evt Event) {
 	key := activeAlertKey{
 		Source:     evt.Source,
 		AlertType:  evt.AlertType,
 		EntityType: evt.EntityType,
 		EntityID:   evt.EntityID,
+	}
+	if pending, ok := e.unsaved[key]; ok {
+		delete(e.unsaved, key)
+		if evt.IsRecover {
+			e.process(ctx, pending)
+			delete(e.unsaved, key)
+		}
+	}
+
+	if evt.IsRecover {
+		e.processRecovery(ctx, evt)
+		return
 	}
 
 	// Dedup: skip if there's already an active alert for this key,
@@ -469,7 +503,8 @@ func (e *Engine) processEvent(ctx context.Context, evt Event) {
 		id, err = e.alertStore.InsertAlert(ctx, a)
 		return err
 	}); err != nil {
-		e.logger.Error("alert engine: persist alert", "error", err)
+		e.logger.Error("alert engine: persist alert, retried at the next pass", "error", err)
+		e.unsaved[key] = evt
 		return
 	}
 	a.ID = id
@@ -789,49 +824,194 @@ func matchesSilenceRule(rule *SilenceRule, evt Event) bool {
 	return true
 }
 
-// dispatchNotifications matches triggers and the entity router against routeBy,
-// then delivers payload (they differ only for recoveries).
+// dispatchNotifications routes payload by the triggers matching routeBy (they differ only for recoveries), after
+// the notifications of the same alert a store error left to route.
 func (e *Engine) dispatchNotifications(ctx context.Context, routeBy *Alert, payload *Alert, eventType string) {
 	if e.channelStore == nil || e.notifier == nil {
 		return
 	}
+	by, sent := *routeBy, *payload
+	r := &routing{routeBy: &by, payload: &sent, eventType: eventType, since: e.now(), done: map[string]bool{}, unread: map[string]bool{}}
+	e.unrouted = append(e.unrouted, r)
+	e.routePending(ctx, r)
+	if n := len(e.unrouted); n > e.maxUnrouted {
+		e.giveUp(e.unrouted[n-1], "alert engine: notification dropped, too many waiting for the store")
+		e.unrouted = e.unrouted[:n-1]
+	}
+}
 
-	dispatched := make(map[string]bool)
+type routing struct {
+	routeBy, payload *Alert
+	eventType        string
+	since            time.Time
+	done, unread     map[string]bool
+}
 
-	// Resolve channels from active alert triggers.
-	if e.triggerStore != nil {
-		var triggers []*AlertTrigger
-		if err := withRetry(ctx, func() (err error) {
-			triggers, err = e.triggerStore.ListEnabledTriggers(ctx)
-			return err
-		}); err != nil {
-			e.logger.Warn("alert engine: alert not notified, alert triggers unreadable", "error", err, "alert_id", routeBy.ID)
-			return
+func (e *Engine) giveUp(r *routing, msg string) {
+	e.logger.Error(msg, "alert_id", r.routeBy.ID, "event_type", r.eventType, "unread_channel_ids", slices.Sorted(maps.Keys(r.unread)))
+}
+
+// routePending routes the notifications waiting for the store, only those of fresh's alert when fresh is set, each
+// alert's in the order they were dispatched.
+func (e *Engine) routePending(ctx context.Context, fresh *routing) {
+	p := &routePass{e: e, ctx: ctx, fresh: fresh, unreadable: map[string]bool{}}
+	waiting := map[string]bool{}
+	left := e.unrouted[:0]
+	for _, r := range e.unrouted {
+		id := r.routeBy.ID
+		if (fresh != nil && id != fresh.routeBy.ID) || waiting[id] {
+			left = append(left, r)
+			continue
 		}
-		for _, t := range triggers {
-			if !matchesTrigger(t, routeBy) {
+		if r != fresh {
+			if e.now().Sub(r.since) > deliveryMaxAge {
+				e.giveUp(r, "alert engine: notification dropped, not routed within 24 hours")
 				continue
 			}
-			for _, chID := range t.ChannelIDs {
-				if dispatched[chID] {
-					continue
-				}
-				var ch *NotificationChannel
-				if err := withRetry(ctx, func() (err error) {
-					ch, err = e.channelStore.GetChannel(ctx, chID)
-					return err
-				}); err != nil {
-					e.logger.Warn("alert engine: channel not notified, channel unreadable", "error", err, "alert_id", routeBy.ID, "channel_id", chID)
-					continue
-				}
-				if ch == nil || !ch.Enabled {
-					continue
-				}
-				dispatched[chID] = true
-				e.enqueueDelivery(ctx, ch, payload, eventType)
+			if reason := p.obsolete(r); reason != "" {
+				e.logger.Info("alert engine: notification dropped, "+reason, "alert_id", id, "event_type", r.eventType)
+				continue
+			}
+			if r.eventType == EventFired && p.covered(r.routeBy) {
+				waiting[id] = true
+				left = append(left, r)
+				continue
 			}
 		}
+		if !p.route(r) {
+			left = append(left, r)
+		}
 	}
+	e.unrouted = left
+}
+
+// routePass is one routing pass: a failed read is not repeated in it, and a check it cannot read lets the
+// notification go, as it would a fresh one.
+type routePass struct {
+	e                     *Engine
+	ctx                   context.Context
+	fresh                 *routing
+	triggers              []*AlertTrigger
+	triggersErr           error
+	triggersRead          bool
+	unreadable            map[string]bool
+	rules                 []*SilenceRule
+	rulesRead, noCoverage bool
+	noAlertReads          bool
+}
+
+func (p *routePass) try(op func() error) error {
+	if p.fresh != nil {
+		return withRetry(p.ctx, op)
+	}
+	return op()
+}
+
+// obsolete says why r should no longer go out: its alert resolved, removed or acknowledged since it was dispatched.
+func (p *routePass) obsolete(r *routing) string {
+	if r.eventType == EventResolved {
+		return ""
+	}
+	p.e.mu.RLock()
+	live, ok := p.e.activeAlerts[keyOf(r.routeBy)]
+	p.e.mu.RUnlock()
+	if !ok || live.ID != r.routeBy.ID {
+		return "alert no longer active"
+	}
+	if r.eventType == EventSeverityRaised || p.noAlertReads {
+		return ""
+	}
+	stored, err := p.e.alertStore.GetAlert(p.ctx, r.routeBy.ID)
+	if err != nil {
+		p.e.logger.Warn("alert engine: alert unreadable, notification routed as unacknowledged", "error", err, "alert_id", r.routeBy.ID)
+		p.noAlertReads = true
+		return ""
+	}
+	if stored != nil && stored.AcknowledgedAt != nil {
+		return "alert acknowledged"
+	}
+	return ""
+}
+
+func (p *routePass) covered(a *Alert) bool {
+	if p.noCoverage {
+		return false
+	}
+	if !p.rulesRead {
+		p.rulesRead = true
+		rules, err := p.e.silenceStore.GetActiveSilenceRules(p.ctx)
+		if err != nil {
+			p.e.logger.Error("alert engine: get silence rules", "error", err)
+			p.noCoverage = true
+			return false
+		}
+		p.rules = rules
+	}
+	covered, err := p.e.covered(p.ctx, p.rules, eventOf(a))
+	if err != nil {
+		p.e.logger.Error("alert engine: maintenance suppressor error", "error", err)
+		p.noCoverage = true
+	}
+	return covered
+}
+
+// route hands r to every channel of the triggers matching it that it has not reached yet, and reports whether
+// every one could be read.
+func (p *routePass) route(r *routing) bool {
+	if !p.triggersRead {
+		p.triggersRead = true
+		p.triggersErr = p.try(func() (err error) {
+			p.triggers, err = p.e.triggerStore.ListEnabledTriggers(p.ctx)
+			return err
+		})
+		if p.triggersErr != nil {
+			p.e.logger.Warn("alert engine: alert triggers unreadable, notifications routed at the next pass", "error", p.triggersErr, "alert_id", r.routeBy.ID)
+		}
+	}
+	if p.triggersErr != nil {
+		return false
+	}
+	complete := true
+	for _, t := range p.triggers {
+		if !matchesTrigger(t, r.routeBy) {
+			continue
+		}
+		for _, chID := range t.ChannelIDs {
+			if r.done[chID] {
+				continue
+			}
+			ch, ok := p.channel(chID, r.routeBy.ID)
+			if !ok {
+				r.unread[chID] = true
+				complete = false
+				continue
+			}
+			delete(r.unread, chID)
+			if ch == nil || !ch.Enabled {
+				continue
+			}
+			r.done[chID] = true
+			p.e.enqueueDelivery(p.ctx, ch, r.payload, r.eventType)
+		}
+	}
+	return complete
+}
+
+// channel reads a channel, except one that already failed to read in this pass.
+func (p *routePass) channel(id, alertID string) (*NotificationChannel, bool) {
+	if p.unreadable[id] {
+		return nil, false
+	}
+	var ch *NotificationChannel
+	if err := p.try(func() (err error) {
+		ch, err = p.e.channelStore.GetChannel(p.ctx, id)
+		return err
+	}); err != nil {
+		p.e.logger.Warn("alert engine: channel unreadable, its notifications routed at the next pass", "error", err, "alert_id", alertID, "channel_id", id)
+		p.unreadable[id] = true
+		return nil, false
+	}
+	return ch, true
 }
 
 func (e *Engine) enqueueDelivery(ctx context.Context, ch *NotificationChannel, a *Alert, eventType string) {
@@ -1017,6 +1197,7 @@ func (e *Engine) ResolveByEntity(ctx context.Context, entityType string, entityI
 		e.mu.Lock()
 		delete(e.activeAlerts, key)
 		e.mu.Unlock()
+		e.unrouted = slices.DeleteFunc(e.unrouted, func(r *routing) bool { return r.routeBy.ID == a.ID })
 		if err := e.escalator.OnAlertResolved(ctx, a.ID, now); err != nil {
 			e.logger.ErrorContext(ctx, "alert engine: OnAlertResolved hook error", "error", err, "alert_id", a.ID)
 		}
@@ -1033,6 +1214,11 @@ func (e *Engine) ResolveByEntity(ctx context.Context, entityType string, entityI
 	for key, a := range e.silenced {
 		if key.EntityType == entityType && key.EntityID == entityID {
 			e.resolveSilenced(ctx, key, a, now)
+		}
+	}
+	for key := range e.unsaved {
+		if key.EntityType == entityType && key.EntityID == entityID {
+			delete(e.unsaved, key)
 		}
 	}
 }

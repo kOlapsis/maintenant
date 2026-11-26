@@ -345,11 +345,10 @@ func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric stri
 		return nil, fmt.Errorf("invalid metric: %s", metric)
 	}
 
-	// Filter by host through the container's owning agent so it works across
-	// the snapshot and rollup tables alike (rollups carry no agent_id column).
-	hostClause := ""
+	// Rollups outlive their container and carry no agent_id.
+	knownContainers := "SELECT id FROM containers"
 	if agentID != nil {
-		hostClause = " WHERE container_id IN (SELECT id FROM containers WHERE agent_id = ?)"
+		knownContainers += " WHERE agent_id = ?"
 		args = append(args, uid.Agent(*agentID))
 	}
 	args = append(args, limit)
@@ -358,9 +357,9 @@ func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric stri
 	// switches above (invalid values already returned an error); args are bound.
 	query := fmt.Sprintf(
 		`SELECT container_id, %s AS avg_val, %s AS avg_pct
-		FROM (%s) samples%s
+		FROM (%s) samples WHERE container_id IN (%s)
 		GROUP BY container_id ORDER BY avg_val DESC LIMIT ?`,
-		valExpr, pctExpr, source, hostClause)
+		valExpr, pctExpr, source, knownContainers)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {

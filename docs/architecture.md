@@ -339,7 +339,7 @@ A background goroutine prunes old data. A pass runs at startup and then hourly (
 | Data | Kept |
 |------|------|
 | Container state transitions | 90 days, except the latest transition of each container, which is kept |
-| Archived containers | 30 days after archival, with their update, CVE, pin and risk history |
+| Archived containers | 30 days after archival, with their updates, CVEs, version pin, risk history and risk acknowledgments |
 | Endpoint check results | 30 days |
 | Inactive endpoints | 30 days |
 | Heartbeat pings and executions | 30 days |
@@ -350,8 +350,11 @@ A background goroutine prunes old data. A pass runs at startup and then hourly (
 | Daily resource rollups | 1 year |
 | Alerts | 90 days (daily pass) |
 | Update scan records and image updates | 30 days (daily pass) |
+| Risk score history | 90 days (daily pass) |
+| Silence rules | 90 days after they expired or were cancelled |
 | Escalation runs and deliveries | 90 days (nightly at 03:00 local time) |
 | Unconsumed enrollment tokens | 7 days after expiry (hourly pass) |
+| Consumed enrollment tokens | 90 days after their consumption (hourly pass) |
 
 Before the raw transitions, check results and heartbeat pings are deleted, the same pass writes their daily uptime aggregates (`endpoint_uptime_daily`, `heartbeat_uptime_daily`, `container_uptime_daily`). A day whose aggregate could not be written keeps its raw rows until a later pass succeeds. The uptime API serves up to 365 days from the aggregates and computes the days not aggregated yet from the raw rows.
 

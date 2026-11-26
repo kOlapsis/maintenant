@@ -29,6 +29,7 @@ const (
 	resourceHourlyRetention   = 90 * 24 * time.Hour  // 90 days
 	resourceDailyRetention    = 365 * 24 * time.Hour // 1 year
 	uptimeDailyRetention      = 365 * 24 * time.Hour // the longest range the uptime API serves
+	silenceRuleRetention      = 90 * 24 * time.Hour  // 90 days after the rule ended
 
 	// Below this many deleted rows an autocheckpoint keeps up on its own and
 	// forcing a truncating checkpoint is just noise.
@@ -231,6 +232,8 @@ func runRetentionPass(ctx context.Context, store *ContainerStore, db *DB, logger
 	if opts.ResourceStore != nil {
 		runResourceCleanup(ctx, now, opts.ResourceStore, logger, cfg, &pass)
 	}
+	silenceDeleted, silenceTruncated, err := NewSilenceStore(db).deleteEndedBefore(ctx, now.Add(-silenceRuleRetention), cfg.batchOpts())
+	pass.record(logger, "silence rules", silenceDeleted, silenceTruncated, err)
 
 	if pass.deleted > 0 {
 		logger.Info("retention cleanup: pass complete",

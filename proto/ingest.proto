@@ -246,6 +246,7 @@ message AgentEvent {
 // predating it keeps the enrollment value.
 message RuntimeMsg {
   Runtime kind = 1;  // never RUNTIME_UNSPECIFIED
+  bool unreachable = 2;  // the runtime stopped answering the agent; false again once it is back
 }
 
 // ----- Container ------------------------------------------------------------
@@ -372,6 +373,9 @@ message CertificateInfo {
   google.protobuf.Timestamp not_after  = 6;
   bytes  fingerprint_sha256 = 7;
   repeated string san_dns = 8;
+  optional bool chain_valid    = 9;
+  string        chain_error    = 10;
+  optional bool hostname_match = 11;
 }
 
 // ----- Swarm topology -------------------------------------------------------

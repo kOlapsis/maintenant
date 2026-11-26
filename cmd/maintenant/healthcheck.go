@@ -21,8 +21,8 @@ const healthcheckTimeout = 4 * time.Second
 
 // runHealthcheck backs the image's HEALTHCHECK, which has to serve both modes
 // from a single command. An agent has no port to probe, so it reports liveness
-// through a file in its data directory; a server answers on the address it was
-// actually configured with, which a hardcoded localhost:8080 probe would miss.
+// through a file in its data directory; a server answers on MAINTENANT_ADDR.
+// Only the environment is read, never the flags given to the server.
 // Returns the process exit code.
 func runHealthcheck() int {
 	dataDir := os.Getenv("MAINTENANT_DATA_DIR")

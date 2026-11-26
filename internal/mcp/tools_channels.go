@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/alert/escalation"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/ssrf"
@@ -40,7 +41,7 @@ func registerChannelTools(server *gomcp.Server, svc *Services) {
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "delete_channel",
-		Description: "Permanently delete a notification channel by id (from list_channels). Triggers and escalation levels pointing at it lose that destination but are kept. To stop deliveries without deleting, use update_channel with enabled false.",
+		Description: "Permanently delete a notification channel by id (from list_channels). Triggers pointing at it lose that destination but are kept; a channel used by a level of an escalation policy is refused with the names of those policies, so remove it from them first (update_escalation_policy). To stop deliveries without deleting, use update_channel with enabled false.",
 		Annotations: &gomcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true, OpenWorldHint: new(false)},
 	}, deleteChannelHandler(svc))
 
@@ -337,6 +338,13 @@ func deleteChannelHandler(svc *Services) gomcp.ToolHandlerFor[deleteChannelInput
 		}
 		if ch == nil {
 			return errResult("channel not found")
+		}
+		inUse, err := escalation.PoliciesUsingChannel(ctx, svc.EscalationSvc, input.ID)
+		if err != nil {
+			return storeErrResult(err, "delete channel: list escalation policies")
+		}
+		if len(inUse) > 0 {
+			return errResult("channel is used by escalation policies: " + strings.Join(inUse, ", "))
 		}
 		if err := svc.Channels.DeleteChannel(ctx, input.ID); err != nil {
 			return storeErrResult(err, "delete channel")

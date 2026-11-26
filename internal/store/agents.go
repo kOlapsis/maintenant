@@ -4,6 +4,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -303,8 +304,9 @@ func (s *AgentStore) TokenExists(ctx context.Context, tokenHash string) (bool, e
 // the token consume, and the insert run in one writer-goroutine transaction, no
 // two concurrent enrollments can both pass the cap check and over-fill it. A
 // limit < 0 means unlimited; the local sentinel is never counted. Returns
-// ErrHostLimitReached, ErrTokenNotFound, ErrTokenAlreadyConsumed, or
-// ErrTokenExpired.
+// ErrHostLimitReached, ErrTokenNotFound, ErrTokenAlreadyConsumed,
+// ErrTokenExpired, or ErrAlreadyEnrolled when the same active agent repeats
+// the enrollment that consumed the token.
 func (s *AgentStore) EnrollAtomic(ctx context.Context, limit int, tokenCleartext string, a *agent.Agent) error {
 	var err error
 	// A concurrent read can make SQLite refuse the write upgrade once (BUSY_SNAPSHOT); retrying the whole transaction is its documented remedy.
@@ -321,6 +323,15 @@ func (s *AgentStore) enrollTx(ctx context.Context, limit int, tokenCleartext str
 		if err := tx.Serialize(ctx, "agents"); err != nil {
 			return err
 		}
+		// The client sends the cleartext; the row is found by its hash.
+		tokenHash := agent.HashToken(tokenCleartext)
+		enrolled, err := alreadyEnrolled(ctx, tx, tokenHash, a)
+		if err != nil {
+			return err
+		}
+		if enrolled {
+			return agent.ErrAlreadyEnrolled
+		}
 		if limit >= 0 {
 			var active int
 			if err := tx.QueryRowContext(ctx,
@@ -334,8 +345,6 @@ func (s *AgentStore) enrollTx(ctx context.Context, limit int, tokenCleartext str
 		}
 
 		now := time.Now().Unix()
-		// The client sends the cleartext; the row is found by its hash.
-		tokenHash := agent.HashToken(tokenCleartext)
 		res, err := tx.ExecContext(ctx,
 			`UPDATE enrollment_tokens
 			SET consumed_at = ?, consumed_by_agent_id = ?
@@ -364,6 +373,23 @@ func (s *AgentStore) enrollTx(ctx context.Context, limit int, tokenCleartext str
 		}
 		return nil
 	})
+}
+
+// alreadyEnrolled reports whether this token was consumed by this same agent, still active, with this same public key.
+func alreadyEnrolled(ctx context.Context, tx *Tx, tokenHash string, a *agent.Agent) (bool, error) {
+	var storedKey []byte
+	err := tx.QueryRowContext(ctx,
+		`SELECT a.public_key FROM enrollment_tokens t
+		JOIN agents a ON a.id = t.consumed_by_agent_id
+		WHERE t.token_hash = ? AND t.consumed_by_agent_id = ? AND a.status = 'active'`, tokenHash, a.AgentID,
+	).Scan(&storedKey)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check previous enrollment: %w", err)
+	}
+	return len(storedKey) > 0 && bytes.Equal(storedKey, a.PublicKey), nil
 }
 
 // classifyTokenFailure determines why a token UPDATE matched no rows.
@@ -487,11 +513,12 @@ func (s *AgentStore) StaleAgents(ctx context.Context, threshold time.Duration) (
 	return ids, rows.Err()
 }
 
-// GcExpiredTokens removes unconsumed tokens that expired more than 7 days ago.
+// GcExpiredTokens removes unconsumed tokens that expired more than 7 days ago and tokens consumed more than 90 days ago.
 func (s *AgentStore) GcExpiredTokens(ctx context.Context) error {
-	cutoff := time.Now().Add(-7 * 24 * time.Hour).Unix()
+	now := time.Now()
 	_, err := s.writer.Exec(ctx,
-		`DELETE FROM enrollment_tokens WHERE expires_at < ? AND consumed_at IS NULL`, cutoff)
+		`DELETE FROM enrollment_tokens WHERE (expires_at < ? AND consumed_at IS NULL) OR consumed_at < ?`,
+		now.Add(-7*24*time.Hour).Unix(), now.Add(-90*24*time.Hour).Unix())
 	if err != nil {
 		return fmt.Errorf("gc expired tokens: %w", err)
 	}

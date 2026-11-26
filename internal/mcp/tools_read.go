@@ -69,7 +69,7 @@ func registerReadTools(server *gomcp.Server, svc *Services) {
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_container",
-		Description: "Get one container by its internal id (from list_containers), archived ones included, with its state-transition history newest first: previous and new state, health, exit code and a log snippet. An unknown id returns a not-found error. Use get_container_logs for its current output.",
+		Description: "Get one container by its internal id (from list_containers), archived ones included, with its 20 latest state transitions newest first: previous and new state, health, exit code and a log snippet. An unknown id returns a not-found error. Use get_container_logs for its current output.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getContainerHandler(svc))
 
@@ -199,6 +199,8 @@ func listContainersHandler(svc *Services) gomcp.ToolHandlerFor[listContainersInp
 	}
 }
 
+const getContainerTransitions = 20
+
 func getContainerHandler(svc *Services) gomcp.ToolHandlerFor[getContainerInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input getContainerInput) (*gomcp.CallToolResult, any, error) {
 		if input.ContainerID == "" {
@@ -211,7 +213,7 @@ func getContainerHandler(svc *Services) gomcp.ToolHandlerFor[getContainerInput, 
 		if c == nil {
 			return errResult("not found: container does not exist")
 		}
-		transitions, _, err := svc.Containers.ListTransitions(ctx, c.ID, container.ListTransitionsOpts{})
+		transitions, _, err := svc.Containers.ListTransitions(ctx, c.ID, container.ListTransitionsOpts{Limit: getContainerTransitions})
 		if err != nil {
 			svc.Logger.Warn("failed to list transitions for MCP", "container_id", c.ID, "error", err)
 			transitions = nil

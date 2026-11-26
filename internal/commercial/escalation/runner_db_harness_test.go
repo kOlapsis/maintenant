@@ -40,6 +40,7 @@ func takeFailure(n *atomic.Int32) bool {
 
 type flakyEscStore struct {
 	esc.Store
+	esc.DeliveryQueue
 	insertRunFails  atomic.Int32
 	reserveFails    atomic.Int32
 	refusedPolicyID atomic.Pointer[string]
@@ -148,14 +149,22 @@ func newDBHarness(t *testing.T, sender Sender) *dbHarness {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	db := storetest.Open(t, logger)
 
+	escStore := store.NewEscalationStore(db)
 	h := &dbHarness{
 		t:        t,
 		ctx:      context.Background(),
-		store:    &flakyEscStore{Store: store.NewEscalationStore(db)},
+		store:    &flakyEscStore{Store: escStore, DeliveryQueue: escStore},
 		alerts:   &hookedAlerts{AlertStoreImpl: store.NewAlertStore(db)},
 		channels: &flakyChannels{ChannelStore: store.NewChannelStore(db), getFails: map[string]int{}},
 		now:      time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC),
 	}
+	h.restart(sender)
+	return h
+}
+
+// restart replaces the runner by a new one over the same database, as a process start does.
+func (h *dbHarness) restart(sender Sender) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	supp := &fakeSuppressor{}
 	h.runner = NewRunner(RunnerDeps{
 		Store:         h.store,
@@ -168,7 +177,6 @@ func newDBHarness(t *testing.T, sender Sender) *dbHarness {
 		Clock:         h.clock,
 		OrphanTimeout: time.Hour,
 	})
-	return h
 }
 
 func (h *dbHarness) clock() time.Time {
@@ -239,13 +247,8 @@ func (h *dbHarness) cycle() {
 	require.NoError(h.t, h.runner.EvaluateCycle(h.ctx))
 }
 
-func (h *dbHarness) settle() {
-	h.t.Helper()
-	require.Eventually(h.t, func() bool {
-		pending, err := h.store.SelectOrphanPendingDeliveries(h.ctx, h.clock().Add(24*time.Hour))
-		return err == nil && len(pending) == 0
-	}, 5*time.Second, 5*time.Millisecond, "every delivery leaves pending")
-}
+// settle returns once every send the runner started has recorded its outcome.
+func (h *dbHarness) settle() { h.runner.sending.Wait() }
 
 func sentTo(calls []senderCall, channelID string) int {
 	n := 0

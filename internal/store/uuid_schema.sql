@@ -520,7 +520,10 @@ CREATE TABLE escalation_deliveries (
     status        TEXT NOT NULL CHECK(status IN ('pending','sent','failed','abandoned')),
     error         TEXT,
     attempt_started_at BIGINT NOT NULL DEFAULT 0,
-    sent_at       BIGINT
+    sent_at       BIGINT,
+    attempts      INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at BIGINT NOT NULL DEFAULT 0,
+    created_at    BIGINT NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX idx_escalation_deliveries_run_level ON escalation_deliveries(run_id, level_index, channel_id);
 CREATE INDEX idx_escalation_deliveries_pending ON escalation_deliveries(status, attempt_started_at) WHERE status = 'pending';

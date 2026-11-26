@@ -1,0 +1,1 @@
+-- Data only: the alert text that was removed is not kept anywhere.

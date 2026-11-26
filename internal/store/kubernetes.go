@@ -52,112 +52,118 @@ func (s *KubernetesStore) ReplaceNamespacesForAgent(ctx context.Context, agentID
 func (s *KubernetesStore) ReplaceWorkloadsForAgent(ctx context.Context, agentID string, workloads []kubernetes.K8sWorkload) error {
 	agentID = uid.Agent(agentID)
 	keep := make([]string, 0, len(workloads))
-	for i := range workloads {
-		w := &workloads[i]
-		id := uid.K8sWorkload(agentID, w.ID)
-		keep = append(keep, id)
-		images, err := json.Marshal(orEmptySlice(w.Images))
-		if err != nil {
-			return fmt.Errorf("marshal workload images %s: %w", w.ID, err)
+	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		for i := range workloads {
+			w := &workloads[i]
+			id := uid.K8sWorkload(agentID, w.ID)
+			keep = append(keep, id)
+			images, err := json.Marshal(orEmptySlice(w.Images))
+			if err != nil {
+				return fmt.Errorf("marshal workload images %s: %w", w.ID, err)
+			}
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO kubernetes_workloads (id, agent_id, workload_id, name, namespace, kind,
+					images, ready_replicas, desired_replicas, status, created_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(agent_id, workload_id) DO UPDATE SET
+					name=excluded.name,
+					namespace=excluded.namespace,
+					kind=excluded.kind,
+					images=excluded.images,
+					ready_replicas=excluded.ready_replicas,
+					desired_replicas=excluded.desired_replicas,
+					status=excluded.status,
+					created_at=excluded.created_at`,
+				id, agentID, w.ID, w.Name, w.Namespace, w.Kind,
+				string(images), w.ReadyReplicas, w.DesiredReplicas, w.Status, w.CreatedAt.Unix(),
+			); err != nil {
+				return fmt.Errorf("upsert workload %s: %w", w.ID, err)
+			}
 		}
-		if _, err := s.writer.Exec(ctx,
-			`INSERT INTO kubernetes_workloads (id, agent_id, workload_id, name, namespace, kind,
-				images, ready_replicas, desired_replicas, status, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(agent_id, workload_id) DO UPDATE SET
-				name=excluded.name,
-				namespace=excluded.namespace,
-				kind=excluded.kind,
-				images=excluded.images,
-				ready_replicas=excluded.ready_replicas,
-				desired_replicas=excluded.desired_replicas,
-				status=excluded.status,
-				created_at=excluded.created_at`,
-			id, agentID, w.ID, w.Name, w.Namespace, w.Kind,
-			string(images), w.ReadyReplicas, w.DesiredReplicas, w.Status, w.CreatedAt.Unix(),
-		); err != nil {
-			return fmt.Errorf("upsert workload %s: %w", w.ID, err)
-		}
-	}
-	return deleteNotInForAgent(ctx, s.writer, "kubernetes_workloads", agentID, keep)
+		return deleteNotInForAgent(ctx, tx, "kubernetes_workloads", agentID, keep)
+	})
 }
 
 // ReplacePodsForAgent reconciles the agent's pods.
 func (s *KubernetesStore) ReplacePodsForAgent(ctx context.Context, agentID string, pods []kubernetes.K8sPod) error {
 	agentID = uid.Agent(agentID)
 	keep := make([]string, 0, len(pods))
-	for i := range pods {
-		p := &pods[i]
-		id := uid.Pod(agentID, p.Namespace, p.Name)
-		keep = append(keep, id)
-		containers, err := json.Marshal(orEmptyContainers(p.Containers))
-		if err != nil {
-			return fmt.Errorf("marshal pod containers %s/%s: %w", p.Namespace, p.Name, err)
+	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		for i := range pods {
+			p := &pods[i]
+			id := uid.Pod(agentID, p.Namespace, p.Name)
+			keep = append(keep, id)
+			containers, err := json.Marshal(orEmptyContainers(p.Containers))
+			if err != nil {
+				return fmt.Errorf("marshal pod containers %s/%s: %w", p.Namespace, p.Name, err)
+			}
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO kubernetes_pods (id, agent_id, namespace, name, status, status_reason,
+					restart_count, node_name, pod_ip, host_ip, workload_ref, containers, created_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(agent_id, namespace, name) DO UPDATE SET
+					status=excluded.status,
+					status_reason=excluded.status_reason,
+					restart_count=excluded.restart_count,
+					node_name=excluded.node_name,
+					pod_ip=excluded.pod_ip,
+					host_ip=excluded.host_ip,
+					workload_ref=excluded.workload_ref,
+					containers=excluded.containers,
+					created_at=excluded.created_at`,
+				id, agentID, p.Namespace, p.Name, p.Status, p.StatusReason,
+				p.RestartCount, p.NodeName, p.PodIP, p.HostIP, p.WorkloadRef, string(containers), p.CreatedAt.Unix(),
+			); err != nil {
+				return fmt.Errorf("upsert pod %s/%s: %w", p.Namespace, p.Name, err)
+			}
 		}
-		if _, err := s.writer.Exec(ctx,
-			`INSERT INTO kubernetes_pods (id, agent_id, namespace, name, status, status_reason,
-				restart_count, node_name, pod_ip, host_ip, workload_ref, containers, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(agent_id, namespace, name) DO UPDATE SET
-				status=excluded.status,
-				status_reason=excluded.status_reason,
-				restart_count=excluded.restart_count,
-				node_name=excluded.node_name,
-				pod_ip=excluded.pod_ip,
-				host_ip=excluded.host_ip,
-				workload_ref=excluded.workload_ref,
-				containers=excluded.containers,
-				created_at=excluded.created_at`,
-			id, agentID, p.Namespace, p.Name, p.Status, p.StatusReason,
-			p.RestartCount, p.NodeName, p.PodIP, p.HostIP, p.WorkloadRef, string(containers), p.CreatedAt.Unix(),
-		); err != nil {
-			return fmt.Errorf("upsert pod %s/%s: %w", p.Namespace, p.Name, err)
-		}
-	}
-	return deleteNotInForAgent(ctx, s.writer, "kubernetes_pods", agentID, keep)
+		return deleteNotInForAgent(ctx, tx, "kubernetes_pods", agentID, keep)
+	})
 }
 
 // ReplaceNodesForAgent reconciles the agent's nodes.
 func (s *KubernetesStore) ReplaceNodesForAgent(ctx context.Context, agentID string, nodes []kubernetes.K8sNode) error {
 	agentID = uid.Agent(agentID)
 	keep := make([]string, 0, len(nodes))
-	for i := range nodes {
-		n := &nodes[i]
-		id := uid.K8sNode(agentID, n.Name)
-		keep = append(keep, id)
-		roles, err := json.Marshal(orEmptySlice(n.Roles))
-		if err != nil {
-			return fmt.Errorf("marshal node roles %s: %w", n.Name, err)
+	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		for i := range nodes {
+			n := &nodes[i]
+			id := uid.K8sNode(agentID, n.Name)
+			keep = append(keep, id)
+			roles, err := json.Marshal(orEmptySlice(n.Roles))
+			if err != nil {
+				return fmt.Errorf("marshal node roles %s: %w", n.Name, err)
+			}
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO kubernetes_nodes (id, agent_id, name, roles, status, running_pods,
+					kubernetes_version, os_image, architecture,
+					capacity_cpu_millicores, capacity_memory_bytes, capacity_pods,
+					allocatable_cpu_millicores, allocatable_memory_bytes, allocatable_pods, created_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(agent_id, name) DO UPDATE SET
+					roles=excluded.roles,
+					status=excluded.status,
+					running_pods=excluded.running_pods,
+					kubernetes_version=excluded.kubernetes_version,
+					os_image=excluded.os_image,
+					architecture=excluded.architecture,
+					capacity_cpu_millicores=excluded.capacity_cpu_millicores,
+					capacity_memory_bytes=excluded.capacity_memory_bytes,
+					capacity_pods=excluded.capacity_pods,
+					allocatable_cpu_millicores=excluded.allocatable_cpu_millicores,
+					allocatable_memory_bytes=excluded.allocatable_memory_bytes,
+					allocatable_pods=excluded.allocatable_pods,
+					created_at=excluded.created_at`,
+				id, agentID, n.Name, string(roles), n.Status, n.RunningPods,
+				n.KubernetesVersion, n.OSImage, n.Architecture,
+				n.Capacity.CPUMillicores, n.Capacity.MemoryBytes, n.Capacity.Pods,
+				n.Allocatable.CPUMillicores, n.Allocatable.MemoryBytes, n.Allocatable.Pods, n.CreatedAt.Unix(),
+			); err != nil {
+				return fmt.Errorf("upsert k8s node %s: %w", n.Name, err)
+			}
 		}
-		if _, err := s.writer.Exec(ctx,
-			`INSERT INTO kubernetes_nodes (id, agent_id, name, roles, status, running_pods,
-				kubernetes_version, os_image, architecture,
-				capacity_cpu_millicores, capacity_memory_bytes, capacity_pods,
-				allocatable_cpu_millicores, allocatable_memory_bytes, allocatable_pods, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(agent_id, name) DO UPDATE SET
-				roles=excluded.roles,
-				status=excluded.status,
-				running_pods=excluded.running_pods,
-				kubernetes_version=excluded.kubernetes_version,
-				os_image=excluded.os_image,
-				architecture=excluded.architecture,
-				capacity_cpu_millicores=excluded.capacity_cpu_millicores,
-				capacity_memory_bytes=excluded.capacity_memory_bytes,
-				capacity_pods=excluded.capacity_pods,
-				allocatable_cpu_millicores=excluded.allocatable_cpu_millicores,
-				allocatable_memory_bytes=excluded.allocatable_memory_bytes,
-				allocatable_pods=excluded.allocatable_pods,
-				created_at=excluded.created_at`,
-			id, agentID, n.Name, string(roles), n.Status, n.RunningPods,
-			n.KubernetesVersion, n.OSImage, n.Architecture,
-			n.Capacity.CPUMillicores, n.Capacity.MemoryBytes, n.Capacity.Pods,
-			n.Allocatable.CPUMillicores, n.Allocatable.MemoryBytes, n.Allocatable.Pods, n.CreatedAt.Unix(),
-		); err != nil {
-			return fmt.Errorf("upsert k8s node %s: %w", n.Name, err)
-		}
-	}
-	return deleteNotInForAgent(ctx, s.writer, "kubernetes_nodes", agentID, keep)
+		return deleteNotInForAgent(ctx, tx, "kubernetes_nodes", agentID, keep)
+	})
 }
 
 // ListNamespaces returns the agent's namespaces sorted by name. agentID empty

@@ -6,6 +6,7 @@ package update
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"runtime"
 	"slices"
@@ -17,6 +18,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
+	"github.com/kolapsis/maintenant/internal/ssrf"
 	"github.com/kolapsis/maintenant/internal/trust"
 )
 
@@ -25,19 +27,38 @@ const registryResponseHeaderTimeout = 30 * time.Second
 // RegistryClient wraps go-containerregistry for read-only registry operations.
 type RegistryClient struct {
 	transport http.RoundTripper
+	outbound  http.RoundTripper
+}
+
+// literalGuard refuses a request whose URL host is an IP literal the probe guard blocks, which the dial guard cannot see behind a proxy.
+type literalGuard struct{ next http.RoundTripper }
+
+func (g literalGuard) RoundTrip(req *http.Request) (*http.Response, error) {
+	if ip := net.ParseIP(req.URL.Hostname()); ip != nil && ssrf.IsBlockedForProbe(ip) {
+		if req.Body != nil {
+			_ = req.Body.Close()
+		}
+		return nil, fmt.Errorf("probe guard: blocked connection to %s", ip)
+	}
+	return g.next.RoundTrip(req)
 }
 
 // NewRegistryClient creates a new registry client.
 func NewRegistryClient() *RegistryClient {
 	t := trust.HTTPTransport()
 	t.ResponseHeaderTimeout = registryResponseHeaderTimeout
-	return &RegistryClient{transport: t}
+	rc := &RegistryClient{transport: t, outbound: t}
+	if !ssrf.ProbeGuardDisabled() {
+		t.DialContext = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: ssrf.ProbeControl}).DialContext
+		rc.outbound = literalGuard{next: t}
+	}
+	return rc
 }
 
 func (rc *RegistryClient) remoteOptions() []remote.Option {
 	return []remote.Option{
 		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-		remote.WithTransport(rc.transport),
+		remote.WithTransport(rc.outbound),
 	}
 }
 

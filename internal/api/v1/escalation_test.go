@@ -126,9 +126,6 @@ func (m *escalationTestStore) ReserveDelivery(_ context.Context, _ *escalation.D
 func (m *escalationTestStore) UpdateDelivery(_ context.Context, _ *escalation.Delivery) error {
 	return nil
 }
-func (m *escalationTestStore) SelectOrphanPendingDeliveries(_ context.Context, _ time.Time) ([]*escalation.Delivery, error) {
-	return nil, nil
-}
 
 // --- in-memory channel store mock ---
 

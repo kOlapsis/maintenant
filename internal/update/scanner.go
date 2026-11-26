@@ -5,6 +5,7 @@ package update
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -36,6 +37,8 @@ type ContainerInfo struct {
 
 const scanImageTimeout = 2 * time.Minute
 
+var errUnreadableImage = errors.New("image not readable from its registry")
+
 // Scanner checks containers for available updates by comparing tags and digests.
 // registryQuerier abstracts the registry operations needed by Scanner.
 // Satisfied by *RegistryClient in production; replaced by stubs in tests.
@@ -65,8 +68,15 @@ func NewScanner(registry *RegistryClient, store UpdateStore, logger *slog.Logger
 
 // Scan checks all provided containers for available updates.
 func (sc *Scanner) Scan(ctx context.Context, containers []ContainerInfo) ([]UpdateResult, []ScanError) {
+	results, scanErrors, _ := sc.scan(ctx, containers)
+	return results, scanErrors
+}
+
+// scan is Scan, plus the names of the containers whose image the registry would not show.
+func (sc *Scanner) scan(ctx context.Context, containers []ContainerInfo) ([]UpdateResult, []ScanError, []string) {
 	var results []UpdateResult
 	var scanErrors []ScanError
+	var unreadable []string
 
 	// Load exclusions
 	exclusions, err := sc.store.ListExclusions(ctx)
@@ -85,7 +95,7 @@ func (sc *Scanner) Scan(ctx context.Context, containers []ContainerInfo) ([]Upda
 		if i > 0 {
 			select {
 			case <-ctx.Done():
-				return results, scanErrors
+				return results, scanErrors, unreadable
 			case <-time.After(sc.delay):
 			}
 		}
@@ -95,6 +105,10 @@ func (sc *Scanner) Scan(ctx context.Context, containers []ContainerInfo) ([]Upda
 			"index", fmt.Sprintf("%d/%d", i+1, len(containers)))
 
 		result, err := sc.scanContainerWithin(ctx, c, exclusions)
+		if errors.Is(err, errUnreadableImage) {
+			unreadable = append(unreadable, c.Name)
+			continue
+		}
 		if err != nil {
 			scanErrors = append(scanErrors, ScanError{
 				ContainerID:   c.ExternalID,
@@ -120,7 +134,7 @@ func (sc *Scanner) Scan(ctx context.Context, containers []ContainerInfo) ([]Upda
 	sc.logger.Info("scanner: finished",
 		"scanned", len(containers), "updates", len(results), "errors", len(scanErrors))
 
-	return results, scanErrors
+	return results, scanErrors, unreadable
 }
 
 func (sc *Scanner) scanContainerWithin(ctx context.Context, c ContainerInfo, exclusions []*UpdateExclusion) (*UpdateResult, error) {
@@ -202,7 +216,7 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 	if err != nil {
 		if isUnreachableImage(err) {
 			sc.logger.Debug("scanner: skipping unreachable image", "image", c.Image, "reason", err.Error())
-			return nil, nil
+			return nil, errUnreadableImage
 		}
 		return nil, fmt.Errorf("list tags: %w", err)
 	}
@@ -248,7 +262,7 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 		switch {
 		case inMajorTag == currentTag && inMajorType == UpdateTypeDigestOnly:
 			republished, err := sc.checkDigest(ctx, target)
-			if err != nil {
+			if err != nil && !errors.Is(err, errUnreadableImage) {
 				sc.logger.Warn("scanner: failed to check digest of current tag",
 					"image", fullRef, "tag", currentTag, "error", err)
 			}
@@ -309,7 +323,7 @@ func (sc *Scanner) checkDigest(ctx context.Context, t scanTarget) (*UpdateResult
 		if isUnreachableImage(err) {
 			sc.logger.Debug("scanner: skipping unreachable tag",
 				"container", c.Name, "tag", t.currentTag, "reason", err.Error())
-			return nil, nil
+			return nil, errUnreadableImage
 		}
 		return nil, fmt.Errorf("get digest: %w", err)
 	}

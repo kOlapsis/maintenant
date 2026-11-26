@@ -77,6 +77,9 @@ type Delivery struct {
 	Error            string     `json:"error,omitempty"`
 	AttemptStartedAt time.Time  `json:"attempt_started_at"`
 	SentAt           *time.Time `json:"sent_at"`
+	Attempts         int        `json:"-"`
+	NextAttemptAt    time.Time  `json:"-"`
+	CreatedAt        time.Time  `json:"-"`
 }
 
 // Limits describes plan tier constraints for the current user.

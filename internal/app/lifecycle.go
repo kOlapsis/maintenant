@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agent"
+	"github.com/kolapsis/maintenant/internal/alert"
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/docker"
@@ -48,7 +49,7 @@ func (a *App) pruneOrphanAlerts(ctx context.Context) {
 		switch al.EntityType {
 		case "container":
 			c, err := a.containerSvc.GetContainer(ctx, al.EntityID)
-			orphan = err != nil || c == nil
+			orphan = err == nil && c == nil
 		case "agent":
 			_, err := a.agentStore.Get(ctx, al.EntityID)
 			orphan = errors.Is(err, agent.ErrAgentNotFound)
@@ -69,7 +70,7 @@ func (a *App) pruneOrphanAlerts(ctx context.Context) {
 	}
 }
 
-// seedRestartAlertTracking hands the containers with an open restart_loop alert to the recovery loop.
+// seedRestartAlertTracking hands the containers with an open restart_loop alert to the recovery loop, and an open posture alert to the scorer.
 func (a *App) seedRestartAlertTracking(ctx context.Context) {
 	activeAlerts, err := a.alertStore.ListActiveAlerts(ctx)
 	if err != nil {
@@ -80,6 +81,9 @@ func (a *App) seedRestartAlertTracking(ctx context.Context) {
 	for _, al := range activeAlerts {
 		if al.EntityType == "container" && al.AlertType == restartLoopAlertType {
 			ids = append(ids, al.EntityID)
+		}
+		if a.scorer != nil && al.AlertType == alert.AlertTypePostureThreshold {
+			a.scorer.ResumeBelowThreshold()
 		}
 	}
 	a.containerSvc.TrackRestartAlerts(ids)
@@ -445,50 +449,39 @@ func (a *App) startRetentionCleanup(ctx context.Context) {
 		},
 	})
 
-	// Alert retention cleanup (90 days)
-	a.background.Go(func() {
-		ticker := time.NewTicker(24 * time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				before := time.Now().Add(-90 * 24 * time.Hour)
-				deleted, err := a.alertStore.DeleteInactiveAlertsOlderThan(ctx, before)
-				if err != nil {
-					a.logger.Error("alert retention cleanup failed", "error", err)
-				} else if deleted > 0 {
-					a.logger.Info("alert retention cleanup", "deleted", deleted)
-				}
-			}
-		}
-	})
-
-	// Update retention cleanup (30 days)
-	a.background.Go(func() {
-		ticker := time.NewTicker(24 * time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				before := time.Now().Add(-30 * 24 * time.Hour)
-				deleted, err := a.updateStore.CleanupExpired(ctx, before)
-				if err != nil {
-					a.logger.Error("update retention cleanup failed", "error", err)
-				} else if deleted > 0 {
-					a.logger.Info("update retention cleanup", "deleted", deleted)
-				}
-			}
-		}
-	})
+	a.startDailyPurges(ctx)
 
 	// Escalation run retention (90 days, nightly at 03:00).
 	if a.escalationSvc != nil {
 		a.background.Go(func() { a.escalationSvc.RunRetentionLoop(ctx) })
 	}
+}
+
+// startDailyPurges deletes inactive alerts older than 90 days and update scans older than 30 days, at start and then every 24 hours.
+func (a *App) startDailyPurges(ctx context.Context) {
+	a.background.Go(func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for ctx.Err() == nil {
+			deleted, err := a.alertStore.DeleteInactiveAlertsOlderThan(ctx, time.Now().Add(-90*24*time.Hour))
+			if err != nil {
+				a.logger.Error("alert retention cleanup failed", "error", err)
+			} else if deleted > 0 {
+				a.logger.Info("alert retention cleanup", "deleted", deleted)
+			}
+			deleted, err = a.updateStore.CleanupExpired(ctx, time.Now().Add(-30*24*time.Hour))
+			if err != nil {
+				a.logger.Error("update retention cleanup failed", "error", err)
+			} else if deleted > 0 {
+				a.logger.Info("update retention cleanup", "deleted", deleted)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	})
 }
 
 // startSwarmRecheck re-reads the Swarm state every 60 seconds, and as soon as

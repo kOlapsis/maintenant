@@ -144,6 +144,37 @@ func (m *svcStore) DeleteContainerByID(_ context.Context, id string) error {
 	return nil
 }
 
+func (m *svcStore) CountAgentContainers(_ context.Context, agentID string) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for _, c := range m.byID {
+		if c.AgentID == agentID {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (m *svcStore) DeleteOldestArchivedContainers(_ context.Context, agentID string, limit int) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var archived []*Container
+	for _, c := range m.byID {
+		if c.AgentID == agentID && c.Archived {
+			archived = append(archived, c)
+		}
+	}
+	sort.Slice(archived, func(i, j int) bool { return archived[i].ArchivedAt.Before(*archived[j].ArchivedAt) })
+	if len(archived) > limit {
+		archived = archived[:limit]
+	}
+	for _, c := range archived {
+		delete(m.byID, c.ID)
+	}
+	return int64(len(archived)), nil
+}
+
 func (m *svcStore) InsertTransition(_ context.Context, t *StateTransition) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

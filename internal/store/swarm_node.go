@@ -36,7 +36,13 @@ func NewSwarmNodeStore(d *DB) *SwarmNodeStore {
 func (s *SwarmNodeStore) UpsertNode(ctx context.Context, node *swarm.SwarmNode) error {
 	node.AgentID = uid.Agent(node.AgentID)
 	node.ID = uid.SwarmNode(node.AgentID, node.NodeID)
-	_, err := s.writer.Exec(ctx,
+	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		return upsertSwarmNode(ctx, tx, node)
+	})
+}
+
+func upsertSwarmNode(ctx context.Context, tx *Tx, node *swarm.SwarmNode) error {
+	_, err := tx.ExecContext(ctx,
 		`INSERT INTO swarm_nodes (id, agent_id, node_id, hostname, role, status, availability,
 			engine_version, address, task_count, first_seen_at, last_seen_at, last_status_change_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -72,12 +78,17 @@ func (s *SwarmNodeStore) ReplaceNodesForAgent(ctx context.Context, agentID strin
 	keep := make([]string, 0, len(nodes))
 	for _, n := range nodes {
 		n.AgentID = agentID
-		if err := s.UpsertNode(ctx, n); err != nil {
-			return err
-		}
-		keep = append(keep, uid.SwarmNode(agentID, n.NodeID))
+		n.ID = uid.SwarmNode(agentID, n.NodeID)
+		keep = append(keep, n.ID)
 	}
-	return deleteNotInForAgent(ctx, s.writer, "swarm_nodes", agentID, keep)
+	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		for _, n := range nodes {
+			if err := upsertSwarmNode(ctx, tx, n); err != nil {
+				return err
+			}
+		}
+		return deleteNotInForAgent(ctx, tx, "swarm_nodes", agentID, keep)
+	})
 }
 
 // ListNodes returns swarm nodes. When agentID is non-empty only that agent's

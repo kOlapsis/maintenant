@@ -5,8 +5,10 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -157,3 +159,55 @@ func (c *recordingPushClient) CloseSend() error                      { return ni
 func (c *recordingPushClient) Context() context.Context              { return context.Background() }
 func (c *recordingPushClient) SendMsg(any) error                     { return nil }
 func (c *recordingPushClient) RecvMsg(any) error                     { return nil }
+
+type failingSnapshotSource struct {
+	fakeSnapshotSource
+	down atomic.Bool
+}
+
+func (s *failingSnapshotSource) ListNamespaces(context.Context) ([]string, error) {
+	if s.down.Load() {
+		return nil, errors.New("Unauthorized")
+	}
+	return nil, nil
+}
+
+func TestStreamKubernetesTopology_ReportsAClusterThatStopsAnswering(t *testing.T) {
+	prev := kubernetesTopologyInterval
+	kubernetesTopologyInterval = 2 * time.Millisecond
+	t.Cleanup(func() { kubernetesTopologyInterval = prev })
+
+	sink := &captureSink{}
+	spool := NewSpool(t.TempDir(), SpoolConfig{}, testLogger())
+	spool.Attach(sink)
+	t.Cleanup(func() { _ = spool.Close() })
+
+	src := &failingSnapshotSource{}
+	src.down.Store(true)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- streamKubernetesTopology(ctx, &Identity{AgentID: "kube-A"}, src, spool, testLogger()) }()
+
+	last := func() (runtimeReport, bool) {
+		reports := runtimeReports(sink)
+		if len(reports) == 0 {
+			return runtimeReport{}, false
+		}
+		return reports[len(reports)-1], true
+	}
+	kube := agentpb.Runtime_RUNTIME_KUBERNETES
+	require.Eventually(t, func() bool {
+		r, ok := last()
+		return ok && r == runtimeReport{kube, true}
+	}, 5*time.Second, 2*time.Millisecond, "failed snapshots must end up reported")
+
+	src.down.Store(false)
+	require.Eventually(t, func() bool {
+		r, ok := last()
+		return ok && r == runtimeReport{kube, false}
+	}, 5*time.Second, 2*time.Millisecond, "the first snapshot that works again must be reported")
+
+	cancel()
+	require.NoError(t, <-done)
+}

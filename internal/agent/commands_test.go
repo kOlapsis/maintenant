@@ -17,6 +17,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/runtime"
@@ -118,6 +119,66 @@ func TestCommandRunner_SnapshotReturnsLinesAndTerminates(t *testing.T) {
 	assert.True(t, res.GetLast(), "a snapshot answer must be terminal")
 	assert.Empty(t, res.GetErrorCode())
 	assert.Equal(t, []string{"line-1", "line-2"}, res.GetLogs().GetLines())
+}
+
+func TestCommandRunner_SnapshotOfLongLinesIsSplitUnderTheMessageCeiling(t *testing.T) {
+	fetch := make([]string, maxLogLines)
+	for i := range fetch {
+		fetch[i] = strings.Repeat("x", 10*1024)
+	}
+	out := &captureSender{}
+	r := newTestRunner(&logRuntime{fetch: fetch})
+
+	r.Handle(context.Background(), out, logsCmd("req-big", false))
+
+	waitFor(t, func() bool {
+		got := out.snapshot()
+		return len(got) > 0 && got[len(got)-1].GetLast()
+	}, "no terminal result produced")
+
+	results := out.snapshot()
+	for i, res := range results {
+		assert.LessOrEqual(t, proto.Size(res), maxLogResultBytes, "result %d", i)
+		assert.Equal(t, i == len(results)-1, res.GetLast(), "only the final result is terminal (result %d)", i)
+	}
+	lines := out.lines()
+	require.Len(t, lines, maxLogLines)
+	for _, line := range lines {
+		require.Len(t, line, maxLogLineBytes)
+	}
+}
+
+func TestCommandRunner_FollowTruncatesAnOversizedLineAndKeepsStreaming(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer func() { _ = pw.Close() }()
+	out := &captureSender{}
+	r := newTestRunner(&logRuntime{streamData: &trackingReader{Reader: pr}})
+
+	r.Handle(context.Background(), out, logsCmd("req-long", true))
+	go func() { _, _ = pw.Write([]byte(strings.Repeat("y", 100*1024) + "\nafter\n")) }()
+
+	waitFor(t, func() bool {
+		got := out.snapshot()
+		return len(out.lines()) == 2 || (len(got) > 0 && got[len(got)-1].GetLast())
+	}, "the lines never arrived")
+
+	lines := out.lines()
+	require.Len(t, lines, 2)
+	assert.Equal(t, strings.Repeat("y", maxLogLineBytes), lines[0])
+	assert.Equal(t, "after", lines[1])
+	for _, res := range out.snapshot() {
+		assert.False(t, res.GetLast(), "a line too long must not end the follow")
+	}
+	r.CancelAll()
+}
+
+func TestTruncateLogLine_NeverCutsInsideACharacter(t *testing.T) {
+	line := strings.Repeat("a", maxLogLineBytes-1) + "é" + "tail"
+
+	got := truncateLogLine(line)
+
+	assert.Equal(t, strings.Repeat("a", maxLogLineBytes-1), got)
+	assert.Equal(t, "short", truncateLogLine("short"))
 }
 
 func TestCommandRunner_SnapshotReportsRuntimeError(t *testing.T) {

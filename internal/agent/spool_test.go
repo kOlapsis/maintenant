@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -935,4 +936,42 @@ func TestSpoolReportsCatchUpThenGoesQuiet(t *testing.T) {
 	// An agent in step with the server must not chatter.
 	spool.reportStatus(false)
 	assert.Len(t, sink.reportedStatuses(), 2)
+}
+
+func unreachableRuntimeEvent() *agentpb.AgentEvent {
+	evt := runtimeEvent("agent-1", RuntimeDocker)
+	evt.GetRuntime().Unreachable = true
+	return evt
+}
+
+func TestSpoolRestatesTheRuntimeStateOnEveryNewStream(t *testing.T) {
+	for name, cfg := range map[string]SpoolConfig{"spool enabled": testSpoolConfig(), "spool disabled": {}} {
+		t.Run(name, func(t *testing.T) {
+			spool := NewSpool(t.TempDir(), cfg, testLogger())
+			defer func() { _ = spool.Close() }()
+
+			first := &captureSink{}
+			spool.Attach(first)
+			require.NoError(t, spool.Send(unreachableRuntimeEvent()))
+			spool.Detach()
+
+			second := &captureSink{}
+			spool.Attach(second)
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			go func() { done <- spool.Drain(ctx) }()
+
+			require.Eventually(t, func() bool {
+				for _, ev := range second.events() {
+					if ev.GetRuntime().GetUnreachable() {
+						return true
+					}
+				}
+				return false
+			}, 5*time.Second, 2*time.Millisecond, "a new stream must learn that the runtime is still unreachable")
+
+			cancel()
+			require.NoError(t, <-done)
+		})
+	}
 }

@@ -38,7 +38,7 @@ func (s *OAuthServer) handleAuthorizationCode(w http.ResponseWriter, r *http.Req
 
 	// Validate client credentials
 	if clientID != s.clientID || !s.VerifyClientSecret(clientSecret) {
-		s.logger.Warn("token request with invalid client credentials", "client_id", clientID)
+		s.logger.Warn("token request with invalid client credentials", "client_id", truncateForLog(clientID))
 		tokenError(w, http.StatusUnauthorized, "invalid_client", "invalid client credentials")
 		return
 	}

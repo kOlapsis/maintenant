@@ -222,7 +222,7 @@ The official Docker image uses a multi-stage build:
 
 1. **Stage 1**: Node.js 22 builds the Vue 3 SPA
 2. **Stage 2**: Go 1.26 compiles the binary with the frontend embedded
-3. **Stage 3**: Alpine 3.21 minimal runtime (read-only binary, health check included)
+3. **Stage 3**: Alpine 3.24 minimal runtime (read-only binary, health check included)
 
 The image is available at `ghcr.io/kolapsis/maintenant`, for `linux/amd64` and `linux/arm64`.
 
@@ -247,7 +247,7 @@ The image runs `docker-entrypoint.sh`, then `/app/maintenant`. A first argument 
 - **Started as root (the default)**: the entrypoint creates the data directory if needed and hands it, without recursing and never `/`, to uid 65534. That is the directory of `MAINTENANT_DB` and `/data/shm` for a server, and `MAINTENANT_DATA_DIR` for an agent. The mode, the database path and the data directory are read from `MAINTENANT_MODE`, `MAINTENANT_DB`, `MAINTENANT_DATA_DIR` or the matching `--mode`, `--db` and `--data-dir` flags. It also adds the Docker socket's group, then drops to uid and gid 65534 (`nobody`) with `setpriv`. This is why named volumes and fresh bind mounts, which arrive owned by root, work with no manual `chown`.
 - **Started as a non-root user** (`runAsUser` in Kubernetes, `user:` in Compose): the entrypoint runs the binary directly. It changes no ownership and detects no group, so the data volume must already be writable by that user (`fsGroup` in Kubernetes) and the Docker socket's group must be added by the orchestrator (`group_add`).
 
-The image health check runs `/app/maintenant healthcheck` every 30 seconds (5 seconds timeout, 30 seconds start period, 3 retries). For a server it calls `/api/v1/health` on `MAINTENANT_ADDR` (a wildcard address is probed through `127.0.0.1`) and expects a 200. For an agent, which has no port, it checks that the liveness file in `MAINTENANT_DATA_DIR` was refreshed in the last 60 seconds. Schema migrations run before the listener opens, so a very large database can report `unhealthy` until they finish.
+The image health check runs `/app/maintenant healthcheck` every 30 seconds (5 seconds timeout, 30 seconds start period, 3 retries). For a server it calls `/api/v1/health` on `MAINTENANT_ADDR` (a wildcard address is probed through `127.0.0.1`) and expects a 200. For an agent, which has no port, it checks that the liveness file in `MAINTENANT_DATA_DIR` was refreshed in the last 60 seconds. The health check reads only these two environment variables, never the flags given to the server: inside the container, set the listen address and the data directory with `MAINTENANT_ADDR` and `MAINTENANT_DATA_DIR`, not with `--addr` and `--data-dir`, or the container stays `unhealthy`. Schema migrations run before the listener opens, so a very large database can report `unhealthy` until they finish.
 
 ---
 

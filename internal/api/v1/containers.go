@@ -19,6 +19,8 @@ type ContainerNameLister interface {
 	ListContainerNames(ctx context.Context, externalID string) ([]string, error)
 }
 
+const maxListLimit = 500
+
 // SecurityInsightProvider provides security insight counts for containers.
 type SecurityInsightProvider interface {
 	InsightCount(containerID string) (int, string)
@@ -105,10 +107,17 @@ func (h *ContainerHandler) SetAgentSessions(s agentLiveness) {
 	h.sessions = s
 }
 
-// agentOffline reports whether a remote agent has no live stream. The local
-// runtime (empty/LocalAgent) is governed by the runtime checker, not sessions.
-func (h *ContainerHandler) agentOffline(agentID string) bool {
-	return agentID != "" && agentID != uid.LocalAgent && h.sessions != nil && !h.sessions.IsConnected(agentID)
+// agentStaleCause reports why a remote agent's containers are stale: no live
+// stream, or a live one whose runtime stopped answering. The local runtime
+// (empty/LocalAgent) is governed by the runtime checker, not sessions.
+func (h *ContainerHandler) agentStaleCause(agentID string) (offline, runtimeUnreachable bool) {
+	if agentID == "" || agentID == uid.LocalAgent || h.sessions == nil {
+		return false, false
+	}
+	if !h.sessions.IsConnected(agentID) {
+		return true, false
+	}
+	return false, h.sessions.RuntimeUnreachable(agentID)
 }
 
 // SetAgentDirectory sets the agent directory for enriching remote containers with
@@ -169,6 +178,7 @@ func (h *ContainerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 		AgentLabel              *string `json:"agent_label,omitempty"`
 		Stale                   *bool   `json:"stale,omitempty"`
 		AgentOffline            *bool   `json:"agent_offline,omitempty"`
+		RuntimeUnreachable      *bool   `json:"runtime_unreachable,omitempty"`
 	}
 	type enrichedGroup struct {
 		Name       string              `json:"name"`
@@ -206,10 +216,12 @@ func (h *ContainerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
-			if h.agentOffline(c.AgentID) {
-				t := true
-				ec.Stale = &t
-				ec.AgentOffline = &t
+			t := true
+			switch offline, unreachable := h.agentStaleCause(c.AgentID); {
+			case offline:
+				ec.Stale, ec.AgentOffline = &t, &t
+			case unreachable:
+				ec.Stale, ec.RuntimeUnreachable = &t, &t
 			}
 			eg.Containers = append(eg.Containers, ec)
 		}
@@ -307,9 +319,13 @@ func (h *ContainerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	if h.runtimeChecker != nil && !h.runtimeChecker.IsConnected() {
 		detail["stale"] = true
 	}
-	if h.agentOffline(c.AgentID) {
+	switch offline, unreachable := h.agentStaleCause(c.AgentID); {
+	case offline:
 		detail["stale"] = true
 		detail["agent_offline"] = true
+	case unreachable:
+		detail["stale"] = true
+		detail["runtime_unreachable"] = true
 	}
 
 	WriteJSON(w, http.StatusOK, detail)
@@ -329,9 +345,11 @@ func (h *ContainerHandler) HandleTransitions(w http.ResponseWriter, r *http.Requ
 
 	if s := r.URL.Query().Get("since"); s != "" {
 		t, err := time.Parse(time.RFC3339, s)
-		if err == nil {
-			opts.Since = &t
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid 'since' timestamp")
+			return
 		}
+		opts.Since = &t
 	} else {
 		since := time.Now().Add(-24 * time.Hour)
 		opts.Since = &since
@@ -339,14 +357,16 @@ func (h *ContainerHandler) HandleTransitions(w http.ResponseWriter, r *http.Requ
 
 	if u := r.URL.Query().Get("until"); u != "" {
 		t, err := time.Parse(time.RFC3339, u)
-		if err == nil {
-			opts.Until = &t
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid 'until' timestamp")
+			return
 		}
+		opts.Until = &t
 	}
 
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if n, err := strconv.Atoi(l); err == nil && n > 0 {
-			opts.Limit = n
+			opts.Limit = min(n, maxListLimit)
 		}
 	}
 

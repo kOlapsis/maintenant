@@ -11,7 +11,7 @@ Give your users a clean status page. Incident management with timeline updates, 
 
 ## How It Works
 
-maintenant serves the public status page through the same Vue SPA as the admin UI. The page loads its content from `/status/api`, follows changes through an SSE stream (`/status/events`), and reads its look from a settings document (`/status/settings.json`) that is served with a 30-second cache.
+maintenant serves the public status page through the same Vue SPA as the admin UI. The page loads its content from `/status/api`, follows changes through an SSE stream (`/status/events`), and reads its look from a settings document (`/status/settings.json`) that is served with a 30-second cache. The snapshot of `/status/api` and the incidents of `/status/feed.atom` are computed at most once every 2 seconds and shared between visitors; a change announced on the stream is in the next snapshot.
 
 The status page displays:
 
@@ -137,11 +137,11 @@ Each monitor is first mapped to a status:
 | Monitor | Operational | Degraded | Major Outage |
 |---------|-------------|----------|--------------|
 | Container | `running` and not `unhealthy`, or `completed` | running but `unhealthy` | any other state (`exited`, `restarting`, `paused`, `created`, `dead`) |
-| Endpoint | `up`, or not checked yet | `degraded` (served over a certificate that is not trusted) | `down` |
-| Heartbeat | `up` | `new`, `started`, `paused` | `down` |
+| Endpoint | `up`, or not checked yet | `degraded` (served over a certificate that is not trusted) | `down`, or `unknown` after a check (its container is stopped) |
+| Heartbeat | `up`, `started`, `new`, `paused` | never | `down` |
 | Certificate | `valid` | `expiring` | `expired`, `error`, `unknown` |
 
-A monitor that no longer exists counts as operational.
+A monitor that no longer exists counts as operational, and so does an endpoint or a certificate that is no longer monitored (its label was removed or its container deleted).
 
 A component with several monitors (or a match-all component) combines them:
 
@@ -240,7 +240,7 @@ An Atom feed of the ongoing incidents and of those resolved in the last 30 days,
 
 A component with `auto_incident: true` opens incidents by itself from alerts, in every edition, as long as it is visible: a hidden component opens and updates no incident, although an incident opened while it was visible still resolves. Every alert event about one of the component's monitors (or about any monitor of the type, for a match-all component) is handled like this:
 
-- **A problem alert while the component is not operational** opens an incident titled `<component name> - <alert message>`, status `investigating`, with severity `critical` for a critical alert, `major` for a warning and `minor` otherwise. If an incident is already open for the component, the alert message is added to its timeline instead.
+- **A problem alert while the component is not operational** opens an incident titled `<component name> - <status label>` (for example `API Gateway - Major Outage`), status `investigating`, with severity `critical` for a critical alert, `major` for a warning and `minor` otherwise. Its first update reads `Auto-detected: <status label>`. If an incident is already open for the component, an update with the same wording is added to its timeline instead. The alert message, which can contain a monitored URL, is never published.
 - **A recovery while the component is operational again** adds a `resolved` update, "Auto-resolved: all monitors operational".
 - **A component with a status override is left alone**, which includes every component under an active maintenance window.
 
@@ -385,7 +385,7 @@ Subscriptions are open only when both conditions hold, and the page reports the 
 | `MAINTENANT_SMTP_FROM` | `maintenant@localhost` | Sender address. |
 | `MAINTENANT_SMTP_ALLOW_PLAINTEXT` | `false` | Lets a server without STARTTLS receive mail in clear. Logged as a warning at startup. |
 
-The same server sends the emails of the email alert channel. Port 465 uses implicit TLS. On any other port, maintenant requires STARTTLS, and a send fails if the negotiation does not succeed. A server that does not offer STARTTLS gets nothing and the send fails, unless `MAINTENANT_SMTP_ALLOW_PLAINTEXT=true`: the mail then goes without encryption, and the client still refuses to send credentials unless the server is `localhost`. Any send gives up after 30 seconds. Subjects are MIME-encoded, so a title with accents or other non-ASCII characters arrives intact. The SMTP tab of `/status-admin` shows whether SMTP is configured and sends a test email (`POST /api/v1/status/smtp/test` with `{"to": "you@example.com"}`, from Personal; `400 not_configured` without `MAINTENANT_SMTP_HOST`, `502 smtp_failed` when the server refuses); the Subscribers tab warns when SMTP is missing.
+The same server sends the emails of the email alert channel. Port 465 uses implicit TLS. On any other port, maintenant requires STARTTLS, and a send fails if the negotiation does not succeed. A server that does not offer STARTTLS gets nothing and the send fails, unless `MAINTENANT_SMTP_ALLOW_PLAINTEXT=true`: the mail then goes without encryption, and the client still refuses to send credentials unless the server is `localhost`. Any send gives up after 30 seconds. Subjects are MIME-encoded, so a title with accents or other non-ASCII characters arrives intact. The SMTP tab of `/status-admin` shows whether SMTP is configured and sends a test email (`POST /api/v1/status/smtp/test` with `{"to": "you@example.com"}`, from Personal; `400 not_configured` without `MAINTENANT_SMTP_HOST`, `502 smtp_failed` when the server refuses or the send has not completed within 8 seconds); the Subscribers tab warns when SMTP is missing.
 
 ```bash
 # List subscribers (emails are masked)

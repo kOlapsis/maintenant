@@ -5,8 +5,10 @@ package swarm
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	dockerswarm "github.com/moby/moby/api/types/swarm"
 )
 
@@ -16,33 +18,34 @@ import (
 // ingest service under the LocalAgent id). disc supplies services and tasks;
 // client supplies nodes.
 func SnapshotFromClient(ctx context.Context, disc *ServiceDiscovery, client ServiceClient) (TopologySnapshot, error) {
-	services, err := disc.DiscoverAll(ctx)
+	services, tasks, err := disc.discover(ctx)
 	if err != nil {
 		return TopologySnapshot{}, err
+	}
+	nodes, err := client.NodeList(ctx)
+	if err != nil && !cerrdefs.IsPermissionDenied(err) {
+		return TopologySnapshot{}, fmt.Errorf("list nodes: %w", err)
+	}
+
+	tasksByService := make(map[string][]SwarmTask, len(services))
+	taskCounts := make(map[string]int)
+	for _, t := range tasks {
+		if t.Status.State == dockerswarm.TaskStateRunning {
+			taskCounts[t.NodeID]++
+		}
+		if isReportedTask(t) {
+			tasksByService[t.ServiceID] = append(tasksByService[t.ServiceID], *mapTask(t))
+		}
 	}
 
 	var snap TopologySnapshot
 	for _, svc := range services {
 		snap.Services = append(snap.Services, *svc)
-		for _, t := range disc.GetTasksForService(svc.ServiceID) {
-			snap.Tasks = append(snap.Tasks, *t)
-		}
+		snap.Tasks = append(snap.Tasks, tasksByService[svc.ServiceID]...)
 	}
-
-	nodes, err := client.NodeList(ctx)
-	if err == nil {
-		taskCounts := make(map[string]int)
-		if tasks, terr := client.TaskList(ctx); terr == nil {
-			for _, t := range tasks {
-				if t.Status.State == "running" {
-					taskCounts[t.NodeID]++
-				}
-			}
-		}
-		now := time.Now()
-		for _, n := range nodes {
-			snap.Nodes = append(snap.Nodes, mapDockerNode(n, taskCounts[n.ID], now))
-		}
+	now := time.Now()
+	for _, n := range nodes {
+		snap.Nodes = append(snap.Nodes, mapDockerNode(n, taskCounts[n.ID], now))
 	}
 
 	return snap, nil

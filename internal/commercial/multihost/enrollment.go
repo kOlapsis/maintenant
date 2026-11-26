@@ -137,8 +137,11 @@ func (impl *ingestImpl) RegisterAgent(ctx context.Context, req *agentpb.Register
 	// and inserts in a single write transaction, which is what makes concurrent
 	// enrollment unable to exceed the cap.
 	hostLimit := extension.Limit(extension.ResourceAgentHosts)
+	repeated := false
 	if err := impl.deps.AgentStore.EnrollAtomic(ctx, hostLimit, req.GetEnrollmentToken(), a); err != nil {
 		switch {
+		case errors.Is(err, agent.ErrAlreadyEnrolled):
+			repeated = true
 		case errors.Is(err, agent.ErrHostLimitReached):
 			// Capacity, not authentication — the code stays distinct from the
 			// token failures below (FR-027).
@@ -156,21 +159,23 @@ func (impl *ingestImpl) RegisterAgent(ctx context.Context, req *agentpb.Register
 		}
 	}
 
-	logger.Info("agent.registered",
-		"agent_id", a.AgentID,
-		"hostname", a.Hostname,
-		"label", a.Label,
-		"runtime", a.DetectedRuntime,
-		"version", a.AgentVersion,
-	)
+	if !repeated {
+		logger.Info("agent.registered",
+			"agent_id", a.AgentID,
+			"hostname", a.Hostname,
+			"label", a.Label,
+			"runtime", a.DetectedRuntime,
+			"version", a.AgentVersion,
+		)
 
-	impl.deps.Broadcaster.BroadcastEvent(event.AgentCreated, map[string]any{
-		"agent_id": a.AgentID,
-		"hostname": a.Hostname,
-		"label":    a.Label,
-		"runtime":  a.DetectedRuntime,
-		"status":   a.Status,
-	})
+		impl.deps.Broadcaster.BroadcastEvent(event.AgentCreated, map[string]any{
+			"agent_id": a.AgentID,
+			"hostname": a.Hostname,
+			"label":    a.Label,
+			"runtime":  a.DetectedRuntime,
+			"status":   a.Status,
+		})
+	}
 
 	return &agentpb.RegisterResponse{
 		ServerTime: timestamppb.New(now),
@@ -226,6 +231,9 @@ func (impl *ingestImpl) Push(stream pushStream) error {
 	if err != nil {
 		return err
 	}
+	if impl.perIP != nil {
+		impl.perIP.Refund(peerIP(stream.Context()))
+	}
 
 	// Phase 3: open session with a cancellable context.
 	// sessions.CloseStream() calls cancel() which unblocks the recv loop below.
@@ -248,15 +256,7 @@ func (impl *ingestImpl) Push(stream pushStream) error {
 
 	// Phase 4: async recv so we can select on session cancellation.
 	recvCh := make(chan recvResult, 1)
-	go func() {
-		for {
-			msg, err := stream.Recv()
-			recvCh <- recvResult{msg, err}
-			if err != nil {
-				return
-			}
-		}
-	}()
+	go forwardRecv(stream, recvCh, streamCtx.Done())
 
 	s := &pushSession{impl: impl, stream: stream, agentID: ag.AgentID, lastSeenUpd: connectedAt}
 	s.acks = newAckTracker(time.Now())
@@ -268,6 +268,20 @@ func (impl *ingestImpl) Push(stream pushStream) error {
 		closeReason = reasonResend
 	}
 	return err
+}
+
+func forwardRecv(stream pushStream, out chan<- recvResult, done <-chan struct{}) {
+	for {
+		msg, err := stream.Recv()
+		select {
+		case out <- recvResult{msg, err}:
+		case <-done:
+			return
+		}
+		if err != nil {
+			return
+		}
+	}
 }
 
 func receiveAuth(stream pushStream) (*agentpb.AuthResponse, error) {

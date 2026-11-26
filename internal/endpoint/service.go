@@ -30,6 +30,8 @@ var (
 	ErrCheckInProgress = errors.New("a check is already running for this endpoint")
 )
 
+const manualCheckRecordTimeout = 10 * time.Second
+
 // LicenseChecker determines license-gated capabilities for endpoints.
 type LicenseChecker interface {
 	CanCreateEndpoint(currentCount int) bool
@@ -75,6 +77,10 @@ type Service struct {
 	onEndpointRemoved EndpointRemovedCallback
 	ctx               context.Context
 	limitMu           sync.Mutex
+	life              context.Context
+	end               context.CancelFunc
+	runMu             sync.Mutex // no Add once Stop has begun
+	running           sync.WaitGroup
 
 	// manualChecks holds the endpoint ids with an on-demand check in flight.
 	manualChecks sync.Map
@@ -95,6 +101,7 @@ func NewService(d Deps) *Service {
 	if lc == nil {
 		lc = DefaultLicenseChecker{}
 	}
+	life, end := context.WithCancel(context.Background())
 	return &Service{
 		store:             d.Store,
 		engine:            d.Engine,
@@ -103,6 +110,8 @@ func NewService(d Deps) *Service {
 		onEvent:           d.EventCallback,
 		alertCallback:     d.AlertCallback,
 		onEndpointRemoved: d.EndpointRemovedCallback,
+		life:              life,
+		end:               end,
 	}
 }
 
@@ -127,7 +136,7 @@ func (s *Service) Start(ctx context.Context) {
 	s.ctx = ctx
 	s.limitMu.Unlock()
 	s.applyLimitLogged(ctx)
-	go func() {
+	s.running.Go(func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
 		for {
@@ -138,7 +147,7 @@ func (s *Service) Start(ctx context.Context) {
 				s.applyLimitLogged(ctx)
 			}
 		}
-	}()
+	})
 	eps, err := s.store.ListEndpoints(ctx, ListEndpointsOpts{Source: string(SourceStandalone)})
 	if err != nil {
 		s.logger.Error("load standalone endpoints", "error", err)
@@ -149,8 +158,12 @@ func (s *Service) Start(ctx context.Context) {
 	}
 }
 
-// Stop shuts down the check engine.
+// Stop cancels the manual checks, waits for them and for the slot allocation loop, which ends with the context of Start, then shuts down the check engine.
 func (s *Service) Stop() {
+	s.runMu.Lock()
+	s.end()
+	s.runMu.Unlock()
+	s.running.Wait()
 	s.engine.Stop()
 }
 
@@ -341,6 +354,16 @@ func (s *Service) CheckNow(ctx context.Context, endpointID string) (*Endpoint, e
 	}
 	defer s.manualChecks.Delete(endpointID)
 
+	s.runMu.Lock()
+	if err := s.life.Err(); err != nil {
+		s.runMu.Unlock()
+		return nil, fmt.Errorf("endpoint service stopped: %w", err)
+	}
+	s.running.Add(1)
+	s.runMu.Unlock()
+	defer s.running.Done()
+	ctx = s.life
+
 	var result CheckResult
 	switch ep.EndpointType {
 	case TypeHTTP:
@@ -350,12 +373,17 @@ func (s *Service) CheckNow(ctx context.Context, endpointID string) (*Endpoint, e
 	default:
 		return nil, fmt.Errorf("unsupported endpoint type %q", ep.EndpointType)
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("endpoint service stopped: %w", err)
+	}
 
 	s.logger.Info("endpoint: on-demand check", "endpoint_id", endpointID,
 		"target", ep.Target, "success", result.Success)
-	s.ProcessCheckResult(ctx, endpointID, result)
+	recordCtx, cancel := context.WithTimeout(ctx, manualCheckRecordTimeout)
+	defer cancel()
+	s.ProcessCheckResult(recordCtx, endpointID, result)
 
-	return s.store.GetEndpointByID(ctx, endpointID)
+	return s.store.GetEndpointByID(recordCtx, endpointID)
 }
 
 // ProcessCheckResult handles a check result: updates the endpoint state and persists the result.

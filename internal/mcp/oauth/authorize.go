@@ -4,8 +4,18 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
+
+const maxLoggedValueLen = 200
+
+func truncateForLog(v string) string {
+	if len(v) <= maxLoggedValueLen {
+		return v
+	}
+	return strings.ToValidUTF8(v[:maxLoggedValueLen], "")
+}
 
 // HandleAuthorize handles the authorization endpoint.
 // GET /oauth/authorize — validates client credentials, PKCE, auto-approves, redirects with code.
@@ -21,7 +31,7 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 
 	// Validate redirect_uri before any redirect to prevent open redirect.
 	if redirectURI == "" {
-		s.logger.Warn("authorization request missing redirect_uri", "client_id", clientID)
+		s.logger.Warn("authorization request missing redirect_uri", "client_id", truncateForLog(clientID))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{
@@ -33,7 +43,7 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 
 	target := s.redirectTarget(redirectURI)
 	if _, err := url.ParseRequestURI(redirectURI); err != nil || target == nil {
-		s.logger.Warn("authorization request with invalid or disallowed redirect_uri", "redirect_uri", redirectURI, "client_id", clientID)
+		s.logger.Warn("authorization request with invalid or disallowed redirect_uri", "redirect_uri", truncateForLog(redirectURI), "client_id", truncateForLog(clientID))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{
@@ -51,7 +61,7 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	// Validate client_id only — client_secret is never sent to the authorize endpoint.
 	// Secret verification happens at the /token endpoint.
 	if clientID != s.clientID {
-		s.logger.Warn("authorization request with unknown client_id", "client_id", clientID)
+		s.logger.Warn("authorization request with unknown client_id", "client_id", truncateForLog(clientID))
 		oauthRedirectError(w, r, target, state, "unauthorized_client", "unknown client")
 		return
 	}

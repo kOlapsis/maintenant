@@ -14,6 +14,7 @@ export interface Container {
   // below is last-known, not live. The UI degrades it to offline.
   stale?: boolean
   agent_offline?: boolean
+  runtime_unreachable?: boolean
   state: string
   health_status: string | null
   has_health_check: boolean

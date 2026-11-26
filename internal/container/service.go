@@ -103,6 +103,8 @@ type Service struct {
 	agentDetailsMu sync.RWMutex
 	agentDetails   map[agentContainerKey]AgentDetails
 
+	agentRows AgentRowBudget
+
 	localStarts sync.Map // external ID -> time.Time of the last start event
 
 	localMu sync.Mutex // serializes local runtime events against Reconcile

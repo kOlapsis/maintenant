@@ -5,7 +5,9 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -223,6 +225,47 @@ func TestDeliveryQueue_ADeliveryWaitsForTheEarlierOneOfItsStream(t *testing.T) {
 	ok, err = channels.ClaimDelivery(ctx, resolved, time.Now().Add(time.Minute))
 	require.NoError(t, err)
 	assert.True(t, ok)
+}
+
+func TestDeliveryQueue_ABusyChannelLeavesRoomForTheOthers(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+	channels, _, busy := seedDeliveryStream(t, db)
+	quiet, err := channels.InsertChannel(ctx, &alert.NotificationChannel{Name: "quiet", Type: "webhook", URL: "https://example.com/quiet", Enabled: true})
+	require.NoError(t, err)
+
+	alerts := NewAlertStore(db)
+	newAlert := func(entityID string) string {
+		id, err := alerts.InsertAlert(ctx, &alert.Alert{
+			Source: "test", AlertType: "down", Severity: alert.SeverityCritical, Status: alert.StatusActive, Message: "down",
+			EntityType: "endpoint", EntityID: entityID, EntityName: entityID, AgentID: uid.LocalAgent, FiredAt: time.Now(),
+		})
+		require.NoError(t, err)
+		return id
+	}
+	var busyIDs []string
+	for i := range 150 {
+		busyIDs = append(busyIDs, insertPending(t, channels, newAlert(fmt.Sprintf("busy-%d", i)), busy, alert.EventFired).ID)
+	}
+	_, err = db.Writer().Exec(ctx, `UPDATE notification_deliveries SET next_attempt_at = next_attempt_at - 60 WHERE channel_id = ?`, busy)
+	require.NoError(t, err)
+	waiting := insertPending(t, channels, newAlert("quiet"), quiet, alert.EventFired)
+
+	due, err := channels.ListDueDeliveries(ctx, time.Now().Add(time.Minute), 100)
+	require.NoError(t, err)
+	var ids []string
+	for _, d := range due {
+		ids = append(ids, d.ID)
+	}
+	assert.True(t, slices.Contains(ids, waiting.ID), "a channel with 150 older due deliveries must not hide the due delivery of another channel")
+	assert.Len(t, ids, 100)
+	var busyOrder []string
+	for _, id := range ids {
+		if id != waiting.ID {
+			busyOrder = append(busyOrder, id)
+		}
+	}
+	assert.Equal(t, busyIDs[:99], busyOrder, "one channel's deliveries keep their order, oldest due first")
 }
 
 func readMigration(t *testing.T, version, direction string) string {

@@ -4,6 +4,7 @@
 -->
 
 <script setup lang="ts">
+import { staleShort, staleTitle } from '@/utils/staleCause'
 import type {Container} from '@/services/containerApi'
 import {useResourcesStore} from '@/stores/resources'
 import {useUpdatesStore} from '@/stores/updates'
@@ -126,8 +127,8 @@ function getStateStyle(state: string) {
           <span
             v-if="container.stale"
             class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold text-mnt-sev-unknown bg-mnt-sev-unknown"
-            :title="`Agent offline · last known: ${container.state}`"
-          >offline</span>
+            :title="staleTitle(container, container.state)"
+          >{{ staleShort(container) }}</span>
           <span
             v-else
             class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold"

@@ -14,6 +14,7 @@ import { useHostLabel } from '@/composables/useHostLabel'
 import { useFleetRuntimes } from '@/composables/useFleetRuntimes'
 import { buildUnifiedAttention } from '@/composables/attentionAggregator'
 import { apiFetch } from '@/services/apiFetch'
+import { staleLabel } from '@/utils/staleCause'
 import { sseBus } from '@/services/sseBus'
 import type { Container } from '@/services/containerApi'
 import type { Endpoint } from '@/services/endpointApi'
@@ -47,7 +48,7 @@ export interface UnifiedMonitor {
 }
 
 function containerStatus(c: Container): { status: UnifiedStatus; label: string } {
-  if (c.stale) return { status: 'unknown', label: 'Agent offline' }
+  if (c.stale) return { status: 'unknown', label: staleLabel(c) }
   if (c.state === 'paused') return { status: 'paused', label: 'Paused' }
   if (c.state === 'completed') return { status: 'paused', label: 'Completed' }
   if (c.state === 'running') {
@@ -95,7 +96,7 @@ function certStatus(c: CertMonitor): { status: UnifiedStatus; label: string } {
 // "the service you monitor" — so it maps onto the same unified status set.
 function workloadStatus(w: K8sWorkload): { status: UnifiedStatus; label: string } {
   // The reporting agent is offline — its last-known status is no longer live.
-  if (w.stale) return { status: 'unknown', label: 'Agent offline' }
+  if (w.stale) return { status: 'unknown', label: staleLabel(w) }
   switch (w.status) {
     case 'healthy':
       return { status: 'ok', label: 'Healthy' }
@@ -390,6 +391,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
   function onAgentConnectivityChanged() {
     containers.fetchContainers()
     endpoints.fetchEndpoints()
+    onWorkloadTopologyChanged()
   }
 
   function connectAllSSE() {
@@ -403,6 +405,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     sseBus.on('kubernetes.topology_changed', onWorkloadTopologyChanged)
     sseBus.on('agent.connected', onAgentConnectivityChanged)
     sseBus.on('agent.disconnected', onAgentConnectivityChanged)
+    sseBus.on('agent.updated', onAgentConnectivityChanged)
 
     // Refresh sparklines every 60s
     if (!sparklineInterval) {
@@ -422,6 +425,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     sseBus.off('kubernetes.topology_changed', onWorkloadTopologyChanged)
     sseBus.off('agent.connected', onAgentConnectivityChanged)
     sseBus.off('agent.disconnected', onAgentConnectivityChanged)
+    sseBus.off('agent.updated', onAgentConnectivityChanged)
 
     if (sparklineInterval) {
       clearInterval(sparklineInterval)

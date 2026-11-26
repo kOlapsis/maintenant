@@ -67,6 +67,7 @@ type Service struct {
 	licenseChecker LicenseChecker
 	baseURL        string
 	createMu       sync.Mutex
+	running        sync.WaitGroup
 }
 
 // NewService creates a new heartbeat service with all dependencies.
@@ -266,7 +267,11 @@ func (s *Service) DeleteHeartbeat(ctx context.Context, id string) error {
 
 // --- Ping Processing ---
 
+const pingTimeout = 5 * time.Second
+
 func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpMethod string, payload *string, agentID *string) (*Heartbeat, error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pingTimeout)
+	defer cancel()
 	h, err := s.store.GetHeartbeatByPingToken(ctx, token)
 	if err != nil {
 		return nil, err
@@ -385,6 +390,8 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 }
 
 func (s *Service) ProcessStartPing(ctx context.Context, token string, sourceIP, httpMethod string) (*Heartbeat, error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pingTimeout)
+	defer cancel()
 	h, err := s.store.GetHeartbeatByPingToken(ctx, token)
 	if err != nil {
 		return nil, err
@@ -460,6 +467,8 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCod
 	if exitCode < 0 || exitCode > 255 {
 		return nil, ErrInvalidExitCode
 	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pingTimeout)
+	defer cancel()
 
 	h, err := s.store.GetHeartbeatByPingToken(ctx, token)
 	if err != nil {
@@ -609,7 +618,7 @@ func (s *Service) StartDeadlineChecker(ctx context.Context) {
 	} else if n > 0 {
 		s.logger.Info("heartbeat: deadlines passed while stopped postponed", "count", n)
 	}
-	go func() {
+	s.running.Go(func() {
 		s.logger.Info("heartbeat: deadline checker started")
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
@@ -623,7 +632,12 @@ func (s *Service) StartDeadlineChecker(ctx context.Context) {
 				s.checkDeadlines(ctx)
 			}
 		}
-	}()
+	})
+}
+
+// Wait blocks until the deadline checker has returned, which follows the end of its context.
+func (s *Service) Wait() {
+	s.running.Wait()
 }
 
 func (s *Service) checkDeadlines(ctx context.Context) {

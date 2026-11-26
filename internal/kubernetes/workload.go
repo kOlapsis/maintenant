@@ -394,9 +394,31 @@ func (r *Runtime) listPodEvents(ctx context.Context, ns, name string) ([]K8sEven
 	return r.fetchEvents(ctx, ns, fieldSelector)
 }
 
-// ListAllEvents returns recent events across all allowed namespaces, each tagged
-// with the object it concerns, so the server can persist them per-agent and
-// serve them back on workload/pod detail views.
+const maxSnapshotEvents = 100 // at most 1.9 KB each on the wire
+
+func eventLastSeen(e *corev1.Event) time.Time {
+	switch {
+	case !e.LastTimestamp.IsZero():
+		return e.LastTimestamp.Time
+	case e.Series != nil && !e.Series.LastObservedTime.IsZero():
+		return e.Series.LastObservedTime.Time
+	case !e.EventTime.IsZero():
+		return e.EventTime.Time
+	}
+	return e.CreationTimestamp.Time
+}
+
+func eventFirstSeen(e *corev1.Event) time.Time {
+	switch {
+	case !e.FirstTimestamp.IsZero():
+		return e.FirstTimestamp.Time
+	case !e.EventTime.IsZero():
+		return e.EventTime.Time
+	}
+	return e.CreationTimestamp.Time
+}
+
+// ListAllEvents returns a capped list of events across all allowed namespaces, warnings first then newest first.
 func (r *Runtime) ListAllEvents(ctx context.Context) ([]K8sEventRef, error) {
 	cs, err := r.client()
 	if err != nil {
@@ -423,14 +445,25 @@ func (r *Runtime) ListAllEvents(ctx context.Context) ([]K8sEventRef, error) {
 				Reason:    e.Reason,
 				Message:   e.Message,
 				Source:    source,
-				FirstSeen: e.FirstTimestamp.Time,
-				LastSeen:  e.LastTimestamp.Time,
+				FirstSeen: eventFirstSeen(e),
+				LastSeen:  eventLastSeen(e),
 				Count:     e.Count,
 			},
 			InvolvedKind:      e.InvolvedObject.Kind,
 			InvolvedNamespace: e.InvolvedObject.Namespace,
 			InvolvedName:      e.InvolvedObject.Name,
 		})
+	}
+
+	sort.SliceStable(result, func(i, j int) bool {
+		wi, wj := result[i].Type == corev1.EventTypeWarning, result[j].Type == corev1.EventTypeWarning
+		if wi != wj {
+			return wi
+		}
+		return result[i].LastSeen.After(result[j].LastSeen)
+	})
+	if len(result) > maxSnapshotEvents {
+		result = result[:maxSnapshotEvents]
 	}
 	return result, nil
 }
@@ -459,8 +492,8 @@ func (r *Runtime) fetchEvents(ctx context.Context, ns, fieldSelector string) ([]
 			Reason:    e.Reason,
 			Message:   e.Message,
 			Source:    source,
-			FirstSeen: e.FirstTimestamp.Time,
-			LastSeen:  e.LastTimestamp.Time,
+			FirstSeen: eventFirstSeen(e),
+			LastSeen:  eventLastSeen(e),
 			Count:     e.Count,
 		})
 	}

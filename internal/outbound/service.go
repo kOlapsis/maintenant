@@ -177,22 +177,20 @@ func (s *Service) SendNow(ctx context.Context, id string) (*OutboundHeartbeat, e
 	return s.Get(ctx, id)
 }
 
-// Start runs the send loop until ctx is cancelled.
+// Start runs the send loop until ctx is cancelled and the sends in flight have returned.
 func (s *Service) Start(ctx context.Context) {
-	go func() {
-		s.logger.Info("outbound heartbeat: sender started")
-		ticker := time.NewTicker(tickInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				s.wg.Wait()
-				return
-			case <-ticker.C:
-				s.sendDue(ctx)
-			}
+	s.logger.Info("outbound heartbeat: sender started")
+	ticker := time.NewTicker(tickInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			s.wg.Wait()
+			return
+		case <-ticker.C:
+			s.sendDue(ctx)
 		}
-	}()
+	}
 }
 
 func (s *Service) sendDue(ctx context.Context) {

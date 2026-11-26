@@ -31,7 +31,7 @@ func (s *Service) startRollupLoop(ctx context.Context) {
 func (s *Service) runRollups(ctx context.Context) {
 	now := time.Now().UTC()
 
-	hourlyStart := now.Add(-s.rawWindow).Truncate(time.Hour)
+	hourlyStart := now.Add(-s.rawWindow).Truncate(time.Hour).Add(time.Hour)
 	currentHour := now.Truncate(time.Hour)
 	hourlyBuckets := 0
 	for b := hourlyStart; b.Before(currentHour); b = b.Add(time.Hour) {
@@ -54,7 +54,7 @@ func (s *Service) runRollups(ctx context.Context) {
 
 func (s *Service) rollupHourly(ctx context.Context, now time.Time) {
 	currentHour := now.Truncate(time.Hour)
-	backfillStart := now.Add(-s.rawWindow).Truncate(time.Hour)
+	backfillStart := now.Add(-s.rawWindow).Truncate(time.Hour).Add(time.Hour)
 
 	for bucket := backfillStart; bucket.Before(currentHour); bucket = bucket.Add(time.Hour) {
 		bucketEnd := bucket.Add(time.Hour)

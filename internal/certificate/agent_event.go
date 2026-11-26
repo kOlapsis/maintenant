@@ -8,7 +8,10 @@ import (
 	"fmt"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
+	"github.com/kolapsis/maintenant/internal/container"
 )
+
+var maxAgentLabelMonitors = container.MaxAgentRows
 
 // HandleAgentEvent records a TLS certificate scan pushed by a remote agent.
 //
@@ -29,6 +32,9 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		return err
 	}
 	if monitor == nil {
+		if err := s.reserveAgentLabelMonitor(ctx, agentID); err != nil {
+			return err
+		}
 		monitor = &CertMonitor{
 			Hostname:             host,
 			Port:                 port,
@@ -52,17 +58,25 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	return err
 }
 
-// agentCertToRaw adapts a pushed CertificateInfo into the raw scan-result shape
-// the local pipeline expects. The agent reports the leaf certificate only (no
-// full chain or OCSP validation); chain and hostname are treated as acceptable
-// because the agent could not have read the cert without a successful handshake.
+func (s *Service) reserveAgentLabelMonitor(ctx context.Context, agentID string) error {
+	return s.agentRows.Reserve(ctx, agentID, "certificate monitor", maxAgentLabelMonitors, s.logger, func(ctx context.Context) (int, error) {
+		held, err := s.store.ListMonitors(ctx, ListCertificatesOpts{Source: string(SourceLabel), AgentFilter: &agentID, IncludeInactive: true})
+		if err != nil {
+			return 0, fmt.Errorf("count agent cert monitors: %w", err)
+		}
+		return len(held), nil
+	}, nil)
+}
+
+// agentCertToRaw adapts a pushed CertificateInfo into a scan result, taking chain and hostname as valid when the agent does not report them.
 func agentCertToRaw(ev *agentpb.CertificateInfo) *CheckCertificateResult {
 	raw := &CheckCertificateResult{
 		SubjectCN:     ev.GetSubjectCn(),
 		IssuerCN:      ev.GetIssuerCn(),
 		SANs:          ev.GetSanDns(),
-		ChainValid:    true,
-		HostnameMatch: true,
+		ChainValid:    ev.ChainValid == nil || ev.GetChainValid(),
+		ChainError:    ev.GetChainError(),
+		HostnameMatch: ev.HostnameMatch == nil || ev.GetHostnameMatch(),
 	}
 	if nb := ev.GetNotBefore(); nb != nil {
 		raw.NotBefore = nb.AsTime()

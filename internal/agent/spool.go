@@ -180,6 +180,9 @@ func (s *Spool) Detach() {
 func (s *Spool) Send(evt *agentpb.AgentEvent) error {
 	if !s.cfg.Enabled() {
 		s.mu.Lock()
+		if kind, ok := snapshotOf(evt); ok {
+			s.snapshots[kind] = evt
+		}
 		sink := s.sink
 		s.mu.Unlock()
 		if sink == nil {
@@ -498,12 +501,12 @@ func (s *Spool) Close() error {
 
 // Drain sends everything queued on the attached stream, oldest first.
 func (s *Spool) Drain(ctx context.Context) error {
+	s.resendSnapshots()
 	if !s.cfg.Enabled() {
 		<-ctx.Done()
 		return nil
 	}
 
-	s.resendSnapshots()
 	s.reportStatus(true)
 
 	ticker := time.NewTicker(spoolDrainInterval)

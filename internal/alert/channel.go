@@ -64,7 +64,7 @@ func (s *webhookSender) Send(ctx context.Context, ch *NotificationChannel, event
 
 func (s *webhookSender) post(ctx context.Context, ch *NotificationChannel, body []byte) error {
 	s.logger.Debug("alert notifier: sending webhook",
-		"url", ch.URL,
+		"channel_id", ch.ID,
 		"channel_type", ch.Type,
 	)
 	req, err := s.request(ctx, ch, body)

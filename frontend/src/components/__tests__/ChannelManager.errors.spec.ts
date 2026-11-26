@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises, RouterLinkStub } from '@vue/test-utils'
 import ChannelManager from '@/components/ChannelManager.vue'
+import { ApiError } from '@/services/apiFetch'
 
 const { updateChannel, deleteChannel, testChannel, fetchChannels, confirm } = vi.hoisted(() => ({
   updateChannel: vi.fn(),
@@ -72,6 +73,20 @@ describe('ChannelManager failures', () => {
     await button(wrapper, 'Delete').trigger('click')
     await flushPromises()
     expect(wrapper.find('[role="alert"]').text()).toContain('HTTP 403')
+  })
+
+  it('names the escalation policies that keep a channel from being deleted', async () => {
+    deleteChannel.mockRejectedValue(
+      new ApiError(409, { code: 'CHANNEL_IN_USE', message: 'channel is used by escalation policies: night shift' }, 'channel is used by escalation policies: night shift'),
+    )
+    const wrapper = mountManager()
+    await button(wrapper, 'Delete').trigger('click')
+    await flushPromises()
+    expect(confirm.mock.calls[0]![0].message).not.toContain('escalation policies referencing')
+    expect(confirm.mock.calls[0]![0].message).toContain('cannot be deleted')
+    const alert = wrapper.find('[role="alert"]').text()
+    expect(alert).toContain('night shift')
+    expect(alert).toContain('Remove the channel from them')
   })
 
   it('sends one request for two quick deletes', async () => {

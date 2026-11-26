@@ -27,11 +27,14 @@ func rebuildEscalationDeliveriesStatusCheck(ctx context.Context, db *sql.DB, log
     status        TEXT NOT NULL ` + escalationDeliveryStatusConstraint + `,
     error         TEXT,
     attempt_started_at BIGINT NOT NULL DEFAULT 0,
-    sent_at       BIGINT
+    sent_at       BIGINT,
+    attempts      INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at BIGINT NOT NULL DEFAULT 0,
+    created_at    BIGINT NOT NULL DEFAULT 0
 )`},
 			{"copy rows", `INSERT INTO escalation_deliveries_new
-				(id, run_id, level_index, channel_id, status, error, attempt_started_at, sent_at)
-				SELECT id, run_id, level_index, channel_id, status, error, attempt_started_at, sent_at
+				(id, run_id, level_index, channel_id, status, error, attempt_started_at, sent_at, attempts, next_attempt_at, created_at)
+				SELECT id, run_id, level_index, channel_id, status, error, attempt_started_at, sent_at, attempts, next_attempt_at, created_at
 				FROM escalation_deliveries`},
 			{"drop old table", `DROP TABLE escalation_deliveries`},
 			{"rename", `ALTER TABLE escalation_deliveries_new RENAME TO escalation_deliveries`},

@@ -122,9 +122,6 @@ func (m *mockStore) ReserveDelivery(_ context.Context, _ *esc.Delivery) (bool, e
 	return true, nil
 }
 func (m *mockStore) UpdateDelivery(_ context.Context, _ *esc.Delivery) error { return nil }
-func (m *mockStore) SelectOrphanPendingDeliveries(_ context.Context, _ time.Time) ([]*esc.Delivery, error) {
-	return nil, nil
-}
 
 // --- channel store mock ---
 

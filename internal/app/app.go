@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -84,14 +85,16 @@ type App struct {
 	escalationStore *store.EscalationStore
 	escalationSvc   escalation.Service
 	escalationRun   func(context.Context)
+	stopped         <-chan struct{}
 
 	// HTTP
-	broker        *v1.SSEBroker
-	statusBroker  *v1.SSEBroker
-	router        *v1.Router
-	statusHandler *status.Handler
-	srv           *http.Server
-	endStreams    context.CancelFunc
+	broker          *v1.SSEBroker
+	statusBroker    *v1.SSEBroker
+	router          *v1.Router
+	statusHandler   *status.Handler
+	srv             *http.Server
+	endStreams      context.CancelFunc
+	mcpOAuthCleanup func(context.Context)
 
 	// Stores (needed for retention cleanup and reconciliation)
 	alertStore     alert.AlertStore
@@ -865,6 +868,20 @@ func (a *App) warnDefaultAllowedHosts() {
 		"hosts", slices.Sorted(maps.Keys(a.cfg.AllowedHostSet())))
 }
 
+// warnMissingTrustedProxies warns when a public https URL is configured without any trusted proxy.
+func (a *App) warnMissingTrustedProxies() {
+	if proxies, _ := a.cfg.ParseTrustedProxies(); len(proxies) > 0 {
+		return
+	}
+	for _, u := range []string{a.cfg.BaseURL, a.cfg.StatusURL} {
+		if strings.HasPrefix(strings.ToLower(u), "https://") {
+			a.logger.Warn("MAINTENANT_TRUSTED_PROXIES is not set while the public URL is https: behind a reverse proxy, all visitors share one rate limit",
+				"url", u)
+			return
+		}
+	}
+}
+
 // Start begins all background services and the HTTP server.
 // It blocks until ctx is canceled, then performs a graceful shutdown.
 func (a *App) Start(ctx context.Context) error {
@@ -885,6 +902,7 @@ func (a *App) Start(ctx context.Context) error {
 		defer func() { _ = ln.Close() }()
 		httpLn = ln
 		a.warnDefaultAllowedHosts()
+		a.warnMissingTrustedProxies()
 	}
 
 	// Derived so an early return (e.g. a failed gRPC listener below) cancels every
@@ -892,6 +910,7 @@ func (a *App) Start(ctx context.Context) error {
 	// the caller's own context is cancelled.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	a.stopped = ctx.Done()
 
 	// Outlives ctx: Shutdown stops it only once the agent streams can no longer write.
 	writerCtx, stopWriter := context.WithCancel(context.WithoutCancel(ctx))
@@ -899,8 +918,6 @@ func (a *App) Start(ctx context.Context) error {
 	a.stopWriter = stopWriter
 	a.db.StartWriter(writerCtx)
 
-	// Registered after the writer starts: on SQLite every write goes through it.
-	a.startInstanceHeartbeat(ctx)
 	a.startStorageSupervisor(ctx)
 
 	if a.licenseMgr != nil {
@@ -911,6 +928,9 @@ func (a *App) Start(ctx context.Context) error {
 	if err := a.enforceModeGate(); err != nil {
 		return err
 	}
+
+	// Registered after the writer starts: on SQLite every write goes through it.
+	a.startInstanceHeartbeat(ctx)
 
 	a.alertEngine.Start(ctx)
 	if a.escalationRun != nil {
@@ -923,7 +943,7 @@ func (a *App) Start(ctx context.Context) error {
 	a.endpointSvc.Start(ctx)
 	a.heartbeatSvc.StartDeadlineChecker(ctx)
 	if !a.cfg.DemoMode {
-		a.outboundSvc.Start(ctx)
+		a.background.Go(func() { a.outboundSvc.Start(ctx) })
 	}
 
 	// Telemetry: best-effort. Self-exits on ctx cancellation; panics are
@@ -969,10 +989,15 @@ func (a *App) Start(ctx context.Context) error {
 	a.startRuntimeSupervisor(ctx)
 
 	if err := a.startAgentServer(ctx); err != nil {
+		cancel()
+		_ = a.Shutdown()
 		return err
 	}
 
 	a.startMCPSocket(ctx)
+	if a.mcpOAuthCleanup != nil {
+		a.background.Go(func() { a.mcpOAuthCleanup(ctx) })
+	}
 	a.startHTTPServer(httpLn)
 
 	// Wait for shutdown
@@ -1120,13 +1145,12 @@ func (a *App) startHTTPServer(httpLn net.Listener) {
 	}
 }
 
+var shutdownGrace = 10 * time.Second
+
 // Shutdown performs a graceful shutdown of all services.
 func (a *App) Shutdown() error {
 	a.shuttingDown.Store(true)
 	a.logger.Info("shutting down maintenant")
-
-	a.endpointSvc.Stop()
-	a.logger.Info("endpoint check engine stopped")
 
 	// 10s shutdown grace covers the SHM SDK's 10s HTTP timeout in flight,
 	// so an in-progress telemetry snapshot does not extend the deadline (FR-011).
@@ -1143,14 +1167,12 @@ func (a *App) Shutdown() error {
 	}
 
 	// A grace of its own: a slow HTTP drain must not leave the rest an expired context.
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
 
 	if a.stopAgents != nil {
 		a.stopAgents(shutdownCtx)
 	}
-
-	_ = a.rt.Close()
 
 	// The cleanup deletes in batches and only notices the cancellation between
 	// them, so closing the database under it would abort a pass mid-write.
@@ -1168,13 +1190,16 @@ func (a *App) Shutdown() error {
 	if err := a.notifier.Wait(shutdownCtx); err != nil {
 		a.logger.Warn("alert notifier still sending at shutdown, closing the database anyway")
 	}
+	_ = a.rt.Close()
 
 	a.stopWriter()
 
 	// Drop this instance's row before closing: a clean restart must not see
 	// its own previous run as a peer until the stale purge catches up.
 	if a.instanceStore != nil {
-		if err := a.instanceStore.Deregister(shutdownCtx, a.instanceID); err != nil {
+		deregisterCtx, cancelDeregister := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelDeregister()
+		if err := a.instanceStore.Deregister(deregisterCtx, a.instanceID); err != nil {
 			a.logger.Warn("instance deregistration failed, a restart may report itself as a peer until the stale purge runs",
 				"error", err)
 		}
@@ -1186,7 +1211,7 @@ func (a *App) Shutdown() error {
 	return nil
 }
 
-// waitBackground waits for the loops started with a.background and the Swarm manager's loops, until ctx expires.
+// waitBackground waits for the loops started with a.background, the Swarm manager's loops and the goroutines of the services, until ctx expires.
 func (a *App) waitBackground(ctx context.Context) {
 	stopped := make(chan struct{})
 	go func() {
@@ -1194,6 +1219,13 @@ func (a *App) waitBackground(ctx context.Context) {
 		if m := a.swarmMgr.Load(); m != nil {
 			m.loops.Wait()
 		}
+		a.endpointSvc.Stop()
+		a.heartbeatSvc.Wait()
+		a.updateSvc.Wait()
+		a.alertEngine.Wait()
+		a.statusSvc.Wait() // after every alert producer
+		a.subscriberSvc.Wait()
+		a.telemetrySvc.Wait()
 		close(stopped)
 	}()
 	select {

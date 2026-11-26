@@ -83,7 +83,7 @@ func (h *AlertTriggerHandler) HandleCreateTrigger(w http.ResponseWriter, r *http
 		WriteError(w, http.StatusBadRequest, "INVALID_BODY", "invalid JSON body")
 		return
 	}
-	if err := validateTriggerInput(&input); err != nil {
+	if err := validateTriggerInput(&input, nil); err != nil {
 		WriteError(w, http.StatusBadRequest, "validation_failed", err.Error())
 		return
 	}
@@ -160,7 +160,7 @@ func (h *AlertTriggerHandler) HandleUpdateTrigger(w http.ResponseWriter, r *http
 		WriteError(w, http.StatusBadRequest, "INVALID_BODY", "invalid JSON body")
 		return
 	}
-	if err := validateTriggerInput(&input); err != nil {
+	if err := validateTriggerInput(&input, existing); err != nil {
 		WriteError(w, http.StatusBadRequest, "validation_failed", err.Error())
 		return
 	}
@@ -237,8 +237,8 @@ func (h *AlertTriggerHandler) HandleDeleteTrigger(w http.ResponseWriter, r *http
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// validateTriggerInput enforces field-level rules common to create and update.
-func validateTriggerInput(t *triggerInput) error {
+// validateTriggerInput enforces the field-level rules of a create, or of an update of stored.
+func validateTriggerInput(t *triggerInput, stored *alert.AlertTrigger) error {
 	if t.Name == "" {
 		return errors.New("field=name: required")
 	}
@@ -255,7 +255,7 @@ func validateTriggerInput(t *triggerInput) error {
 		}
 		seen[id] = true
 	}
-	return alert.ValidateSeverityFilter(t.FilterSeverities)
+	return alert.ValidateTriggerFilters(t.FilterSeverities, t.FilterSources, t.FilterScopes, stored)
 }
 
 // refuseAdvancedFilters writes the edition refusal when a request sets a scope

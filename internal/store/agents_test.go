@@ -166,6 +166,81 @@ func TestEnrollAtomic_TokenExpired(t *testing.T) {
 	assert.ErrorIs(t, err, agent.ErrTokenExpired)
 }
 
+func TestEnrollAtomic_SameAgentAndKeyMayRepeatItsEnrollment(t *testing.T) {
+	store := NewAgentStore(openTestDB(t))
+	ctx := context.Background()
+
+	const cleartext = "mnt_enr_lostanswer"
+	require.NoError(t, store.InsertToken(ctx,
+		tokenFor(cleartext, time.Now().UTC(), time.Now().UTC().Add(time.Hour))))
+	require.NoError(t, store.EnrollAtomic(ctx, 1, cleartext, enrollAgentRecord("agent-retry")))
+
+	require.ErrorIs(t, store.EnrollAtomic(ctx, 1, cleartext, enrollAgentRecord("agent-retry")), agent.ErrAlreadyEnrolled,
+		"the agent whose answer was lost is recognised, even with the cap it filled itself")
+
+	active, _, err := store.CountByStatus(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, active)
+}
+
+func TestEnrollAtomic_ARevokedAgentCannotRepeatItsEnrollment(t *testing.T) {
+	store := NewAgentStore(openTestDB(t))
+	ctx := context.Background()
+
+	const cleartext = "mnt_enr_revokedretry"
+	require.NoError(t, store.InsertToken(ctx,
+		tokenFor(cleartext, time.Now().UTC(), time.Now().UTC().Add(time.Hour))))
+	require.NoError(t, store.EnrollAtomic(ctx, -1, cleartext, enrollAgentRecord("agent-revoked")))
+	require.NoError(t, store.Revoke(ctx, "agent-revoked", "admin"))
+
+	assert.ErrorIs(t, store.EnrollAtomic(ctx, -1, cleartext, enrollAgentRecord("agent-revoked")), agent.ErrTokenAlreadyConsumed)
+
+	stored, err := store.Get(ctx, "agent-revoked")
+	require.NoError(t, err)
+	assert.Equal(t, "revoked", stored.Status)
+}
+
+func TestEnrollAtomic_ConsumedTokenStaysRefusedForAnotherKeyOrAgent(t *testing.T) {
+	store := NewAgentStore(openTestDB(t))
+	ctx := context.Background()
+
+	const cleartext = "mnt_enr_replayed"
+	require.NoError(t, store.InsertToken(ctx,
+		tokenFor(cleartext, time.Now().UTC(), time.Now().UTC().Add(time.Hour))))
+	require.NoError(t, store.EnrollAtomic(ctx, -1, cleartext, enrollAgentRecord("agent-first")))
+
+	otherKey := enrollAgentRecord("agent-first")
+	otherKey.PublicKey = []byte("anotherkeyplaceholder1234567890")
+	assert.ErrorIs(t, store.EnrollAtomic(ctx, -1, cleartext, otherKey), agent.ErrTokenAlreadyConsumed)
+	assert.ErrorIs(t, store.EnrollAtomic(ctx, -1, cleartext, enrollAgentRecord("agent-second")), agent.ErrTokenAlreadyConsumed)
+
+	stored, err := store.Get(ctx, "agent-first")
+	require.NoError(t, err)
+	assert.Equal(t, enrollAgentRecord("agent-first").PublicKey, stored.PublicKey)
+}
+
+func TestGcExpiredTokens_RemovesConsumedTokensAfter90Days(t *testing.T) {
+	store := NewAgentStore(openTestDB(t))
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	for name, consumedAgo := range map[string]time.Duration{"old": 91 * 24 * time.Hour, "recent": 89 * 24 * time.Hour} {
+		tok := tokenFor("mnt_enr_consumed_"+name, now.Add(-100*24*time.Hour), now.Add(-99*24*time.Hour))
+		require.NoError(t, store.InsertToken(ctx, tok))
+		_, err := store.writer.Exec(ctx,
+			`UPDATE enrollment_tokens SET consumed_at = ?, consumed_by_agent_id = ? WHERE id = ?`,
+			now.Add(-consumedAgo).Unix(), "agent-"+name, tok.TokenID)
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, store.GcExpiredTokens(ctx))
+
+	_, err := store.GetByToken(ctx, "mnt_enr_consumed_old")
+	assert.ErrorIs(t, err, agent.ErrTokenNotFound)
+	_, err = store.GetByToken(ctx, "mnt_enr_consumed_recent")
+	assert.NoError(t, err)
+}
+
 func TestAgentStore_Delete_CascadePurge(t *testing.T) {
 	db := openTestDB(t)
 	store := NewAgentStore(db)

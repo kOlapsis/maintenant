@@ -82,7 +82,22 @@ func (r *Runtime) Name() string {
 }
 
 func (r *Runtime) DiscoverAll(ctx context.Context) ([]*cmodel.Container, error) {
-	return r.client.DiscoverAll(ctx)
+	containers, err := r.client.DiscoverAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	present := make(map[string]struct{}, len(containers))
+	for _, c := range containers {
+		present[c.ExternalID] = struct{}{}
+	}
+	r.mu.Lock()
+	for id := range r.prev {
+		if _, ok := present[id]; !ok {
+			delete(r.prev, id)
+		}
+	}
+	r.mu.Unlock()
+	return containers, nil
 }
 
 // DiscoverAllWithLabels delegates to the underlying Docker client for endpoint label discovery.

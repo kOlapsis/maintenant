@@ -413,3 +413,137 @@ func TestRunCollector_StartsAgainOnceALostRuntimeAnswers(t *testing.T) {
 		t.Fatal("the collector did not stop with its context")
 	}
 }
+
+type runtimeReport struct {
+	kind        agentpb.Runtime
+	unreachable bool
+}
+
+func runtimeReports(sink *captureSink) []runtimeReport {
+	var out []runtimeReport
+	for _, ev := range sink.events() {
+		if r := ev.GetRuntime(); r != nil {
+			out = append(out, runtimeReport{r.GetKind(), r.GetUnreachable()})
+		}
+	}
+	return out
+}
+
+func TestRunCollector_ReportsALostRuntimeUnreachableUntilItAnswers(t *testing.T) {
+	lost := make(chan runtime.RuntimeEvent)
+	close(lost)
+	back := make(chan runtime.RuntimeEvent, 1)
+	back <- runtime.RuntimeEvent{Action: "start", ExternalID: "c2", Name: "web", Timestamp: time.Now()}
+	rt := &lostRuntime{streams: []chan runtime.RuntimeEvent{lost, back}}
+	rt.up.Store(true)
+	link := newRuntimeLink(rt, RuntimeDocker)
+	_, err := link.attach(context.Background())
+	require.NoError(t, err)
+
+	sink := &captureSink{}
+	spool := NewSpool(t.TempDir(), SpoolConfig{}, testLogger())
+	spool.Attach(sink)
+	t.Cleanup(func() { _ = spool.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- runCollector(ctx, &Identity{AgentID: "agent-1"}, link, "", spool, testLogger()) }()
+
+	require.Eventually(t, func() bool {
+		for _, ev := range sink.events() {
+			if ev.GetContainer().GetContainerId() == "c2" {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 5*time.Millisecond)
+
+	docker := agentpb.Runtime_RUNTIME_DOCKER
+	assert.Equal(t, []runtimeReport{{docker, false}, {docker, true}, {docker, false}}, runtimeReports(sink),
+		"the loss is reported with the runtime kind an older server requires, then the return")
+
+	cancel()
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the collector did not stop with its context")
+	}
+}
+
+type failingRuntime struct {
+	runtime.Runtime
+	down atomic.Bool
+}
+
+func (r *failingRuntime) DiscoverAll(context.Context) ([]*cmodel.Container, error) {
+	if r.down.Load() {
+		return nil, errors.New("docker does not answer")
+	}
+	return nil, nil
+}
+
+func TestRuntimeWatch_ReportsUnreachableAfterThreeFailuresAndTheReturn(t *testing.T) {
+	sink := &captureSink{}
+	spool := NewSpool(t.TempDir(), SpoolConfig{}, testLogger())
+	spool.Attach(sink)
+	t.Cleanup(func() { _ = spool.Close() })
+	w := &runtimeWatch{agentID: "agent-1", label: RuntimeKubernetes, spool: spool, logger: testLogger()}
+
+	w.observe(false)
+	w.observe(false)
+	w.observe(true)
+	w.observe(false)
+	w.observe(false)
+	assert.Empty(t, runtimeReports(sink), "two failures in a row are not a lost runtime")
+
+	w.observe(false)
+	w.observe(false)
+	kube := agentpb.Runtime_RUNTIME_KUBERNETES
+	assert.Equal(t, []runtimeReport{{kube, true}}, runtimeReports(sink), "the third failure in a row is reported once")
+
+	w.observe(true)
+	w.observe(true)
+	assert.Equal(t, []runtimeReport{{kube, true}, {kube, false}}, runtimeReports(sink))
+}
+
+func TestStreamInventory_ReportsARuntimeThatStopsAnswering(t *testing.T) {
+	prev := containerInventoryInterval
+	containerInventoryInterval = 2 * time.Millisecond
+	t.Cleanup(func() { containerInventoryInterval = prev })
+
+	sink := &captureSink{}
+	spool := NewSpool(t.TempDir(), SpoolConfig{}, testLogger())
+	spool.Attach(sink)
+	t.Cleanup(func() { _ = spool.Close() })
+
+	rt := &failingRuntime{}
+	rt.down.Store(true)
+	id := &Identity{AgentID: "agent-1"}
+	watch := &runtimeWatch{agentID: id.AgentID, label: RuntimeDocker, spool: spool, logger: testLogger()}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- streamInventory(ctx, id, rt, watch, spool, testLogger()) }()
+
+	last := func() (runtimeReport, bool) {
+		reports := runtimeReports(sink)
+		if len(reports) == 0 {
+			return runtimeReport{}, false
+		}
+		return reports[len(reports)-1], true
+	}
+	require.Eventually(t, func() bool {
+		r, ok := last()
+		return ok && r.unreachable
+	}, 5*time.Second, 2*time.Millisecond, "failed discoveries must end up reported")
+
+	rt.down.Store(false)
+	require.Eventually(t, func() bool {
+		r, ok := last()
+		return ok && !r.unreachable
+	}, 5*time.Second, 2*time.Millisecond, "the first discovery that works again must be reported")
+
+	cancel()
+	require.NoError(t, <-done)
+}
