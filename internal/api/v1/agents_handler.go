@@ -645,6 +645,7 @@ type rejectionReporter interface {
 // agentView renders a for the API with what the session registry knows of it.
 func (h *AgentHandler) agentView(a *agent.Agent, connectionState string, table eol.Table) map[string]any {
 	p := AgentPayload(a, connectionState, h.spoolForAgent(a.AgentID), table)
+	p["runtime_unreachable"] = h.sessions != nil && h.sessions.IsConnected(a.AgentID) && h.sessions.RuntimeUnreachable(a.AgentID)
 	if r, ok := h.sessions.(rejectionReporter); ok {
 		p["rejected_events"] = r.RejectedEvents(a.AgentID)
 	}
