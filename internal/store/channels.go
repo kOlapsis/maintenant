@@ -238,15 +238,19 @@ func (s *ChannelStoreImpl) DropDelivery(ctx context.Context, d *alert.Notificati
 	return res.RowsAffected == 1, nil
 }
 
-// ListDueDeliveries lists up to limit pending deliveries due at now, oldest due first, without those that wait
-// behind an earlier pending delivery of the same alert to the same channel.
+// ListDueDeliveries lists up to limit pending deliveries due at now, without those that wait behind an earlier pending
+// delivery of the same alert to the same channel, taking the oldest due of each channel in turn so that no channel
+// fills the list while another has one due.
 func (s *ChannelStoreImpl) ListDueDeliveries(ctx context.Context, now time.Time, limit int) ([]*alert.NotificationDelivery, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+deliveryColumns+` FROM notification_deliveries d
-		WHERE d.status = ? AND d.next_attempt_at <= ?
-		AND NOT EXISTS (SELECT 1 FROM notification_deliveries p
-			WHERE p.alert_id = d.alert_id AND p.channel_id = d.channel_id AND p.status = ? AND p.id < d.id)
-		ORDER BY d.next_attempt_at, d.id LIMIT ?`,
+		`SELECT `+deliveryColumns+` FROM (
+			SELECT q.*, ROW_NUMBER() OVER (PARTITION BY q.channel_id ORDER BY q.next_attempt_at, q.id) AS channel_rank
+			FROM notification_deliveries q
+			WHERE q.status = ? AND q.next_attempt_at <= ?
+			AND NOT EXISTS (SELECT 1 FROM notification_deliveries p
+				WHERE p.alert_id = q.alert_id AND p.channel_id = q.channel_id AND p.status = ? AND p.id < q.id)
+		) d
+		ORDER BY d.channel_rank, d.next_attempt_at, d.id LIMIT ?`,
 		alert.DeliveryPending, now.Unix(), alert.DeliveryPending, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list due deliveries: %w", err)

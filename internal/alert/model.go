@@ -302,7 +302,7 @@ type ChannelStore interface {
 
 // DeliveryQueue is the durable queue a ChannelStore keeps of its pending deliveries.
 type DeliveryQueue interface {
-	// ListDueDeliveries lists up to limit pending deliveries due at now, without those that wait behind a pending delivery of the same alert to the same channel.
+	// ListDueDeliveries lists up to limit pending deliveries due at now, without those that wait behind a pending delivery of the same alert to the same channel, taking the oldest due of each channel in turn.
 	ListDueDeliveries(ctx context.Context, now time.Time, limit int) ([]*NotificationDelivery, error)
 	// ClaimDelivery holds the attempt due at d.NextAttemptAt until until, and reports false when d has moved on or waits behind an earlier delivery.
 	ClaimDelivery(ctx context.Context, d *NotificationDelivery, until time.Time) (bool, error)
