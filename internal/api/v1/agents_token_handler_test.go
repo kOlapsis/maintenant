@@ -168,3 +168,33 @@ func TestRevokeAgent_ASecondRevocationChangesNothing(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, revoke(uid.LocalAgent).Code)
 	assert.Equal(t, http.StatusNotFound, revoke("unknown").Code)
 }
+
+type closingSessions struct{ closed []string }
+
+func (*closingSessions) IsConnected(string) bool               { return false }
+func (*closingSessions) RuntimeUnreachable(string) bool        { return false }
+func (*closingSessions) GRPCServerCertificate() (string, bool) { return "", false }
+func (c *closingSessions) Close(agentID, reason string) {
+	c.closed = append(c.closed, agentID+":"+reason)
+}
+
+func TestRevokeAgent_ASecondRevocationStillClosesTheSession(t *testing.T) {
+	h, agents := newTokenTestHandler(t)
+	h.broker = NewSSEBroker(h.logger)
+	sessions := &closingSessions{}
+	h.sessions = sessions
+	require.NoError(t, agents.Insert(context.Background(), &agent.Agent{
+		AgentID: "web-01", PublicKey: []byte("pubkeyplaceholder12345678901234"), Hostname: "web-01",
+		OSArch: "linux/amd64", DetectedRuntime: "docker", Status: "active", CreatedAt: time.Now(),
+	}))
+
+	for range 2 {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/web-01/revoke", nil)
+		req.SetPathValue("id", "web-01")
+		h.HandleRevokeAgent(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	assert.Equal(t, []string{"web-01:revoked", "web-01:revoked"}, sessions.closed)
+}

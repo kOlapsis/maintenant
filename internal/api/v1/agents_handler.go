@@ -501,6 +501,9 @@ func (h *AgentHandler) HandleRevokeAgent(w http.ResponseWriter, r *http.Request)
 	if err := h.store.Revoke(r.Context(), agentID, "admin"); err != nil {
 		if errors.Is(err, agent.ErrAgentNotFound) {
 			if a, getErr := h.store.Get(r.Context(), agentID); getErr == nil && a.Status == "revoked" {
+				if h.sessions != nil {
+					h.sessions.Close(agentID, "revoked")
+				}
 				WriteJSON(w, http.StatusOK, h.revokedView(a))
 				return
 			}
