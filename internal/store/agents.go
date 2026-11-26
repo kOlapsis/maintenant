@@ -508,11 +508,12 @@ func (s *AgentStore) StaleAgents(ctx context.Context, threshold time.Duration) (
 	return ids, rows.Err()
 }
 
-// GcExpiredTokens removes unconsumed tokens that expired more than 7 days ago.
+// GcExpiredTokens removes unconsumed tokens that expired more than 7 days ago and tokens consumed more than 90 days ago.
 func (s *AgentStore) GcExpiredTokens(ctx context.Context) error {
-	cutoff := time.Now().Add(-7 * 24 * time.Hour).Unix()
+	now := time.Now()
 	_, err := s.writer.Exec(ctx,
-		`DELETE FROM enrollment_tokens WHERE expires_at < ? AND consumed_at IS NULL`, cutoff)
+		`DELETE FROM enrollment_tokens WHERE (expires_at < ? AND consumed_at IS NULL) OR consumed_at < ?`,
+		now.Add(-7*24*time.Hour).Unix(), now.Add(-90*24*time.Hour).Unix())
 	if err != nil {
 		return fmt.Errorf("gc expired tokens: %w", err)
 	}

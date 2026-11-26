@@ -354,6 +354,7 @@ A background goroutine prunes old data. A pass runs at startup and then hourly (
 | Silence rules | 90 days after they expired or were cancelled |
 | Escalation runs and deliveries | 90 days (nightly at 03:00 local time) |
 | Unconsumed enrollment tokens | 7 days after expiry (hourly pass) |
+| Consumed enrollment tokens | 90 days after their consumption (hourly pass) |
 
 Before the raw transitions, check results and heartbeat pings are deleted, the same pass writes their daily uptime aggregates (`endpoint_uptime_daily`, `heartbeat_uptime_daily`, `container_uptime_daily`). A day whose aggregate could not be written keeps its raw rows until a later pass succeeds. The uptime API serves up to 365 days from the aggregates and computes the days not aggregated yet from the raw rows.
 

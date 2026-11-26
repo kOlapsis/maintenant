@@ -202,6 +202,28 @@ func TestEnrollAtomic_ConsumedTokenStaysRefusedForAnotherKeyOrAgent(t *testing.T
 	assert.Equal(t, enrollAgentRecord("agent-first").PublicKey, stored.PublicKey)
 }
 
+func TestGcExpiredTokens_RemovesConsumedTokensAfter90Days(t *testing.T) {
+	store := NewAgentStore(openTestDB(t))
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	for name, consumedAgo := range map[string]time.Duration{"old": 91 * 24 * time.Hour, "recent": 89 * 24 * time.Hour} {
+		tok := tokenFor("mnt_enr_consumed_"+name, now.Add(-100*24*time.Hour), now.Add(-99*24*time.Hour))
+		require.NoError(t, store.InsertToken(ctx, tok))
+		_, err := store.writer.Exec(ctx,
+			`UPDATE enrollment_tokens SET consumed_at = ?, consumed_by_agent_id = ? WHERE id = ?`,
+			now.Add(-consumedAgo).Unix(), "agent-"+name, tok.TokenID)
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, store.GcExpiredTokens(ctx))
+
+	_, err := store.GetByToken(ctx, "mnt_enr_consumed_old")
+	assert.ErrorIs(t, err, agent.ErrTokenNotFound)
+	_, err = store.GetByToken(ctx, "mnt_enr_consumed_recent")
+	assert.NoError(t, err)
+}
+
 func TestAgentStore_Delete_CascadePurge(t *testing.T) {
 	db := openTestDB(t)
 	store := NewAgentStore(db)

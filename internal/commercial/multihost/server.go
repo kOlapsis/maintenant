@@ -189,8 +189,7 @@ func recoveryStreamInterceptor(logger *slog.Logger) grpc.StreamServerInterceptor
 	}
 }
 
-// StartTokenGC launches a background goroutine that purges unconsumed enrollment
-// tokens older than 7 days. It ticks every hour until ctx is cancelled.
+// StartTokenGC purges stale enrollment tokens every hour until ctx is cancelled.
 func (s *Server) StartTokenGC(ctx context.Context) {
 	go func() {
 		ticker := time.NewTicker(time.Hour)
