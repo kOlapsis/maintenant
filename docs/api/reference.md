@@ -210,7 +210,7 @@ An endpoint has `id`, `endpoint_type` (`http` or `tcp`), `target`, `status` (`up
 - `PUT /api/v1/endpoints/{id}` accepts the same fields, all optional; an omitted or empty field keeps its value and `headers` replaces the whole map. The resulting target is validated for the endpoint type as on creation. Only standalone endpoints can be updated.
 - `GET /api/v1/endpoints/{id}` answers `{ "endpoint", "uptime": { "1h", "24h", "7d", "30d" } }`.
 - `GET /api/v1/endpoints/{id}/checks` takes `limit` (default 50, at most 500), `offset` and `since` (Unix seconds). The answer is `{ "endpoint_id", "checks", "total", "has_more" }`.
-- `POST /api/v1/endpoints/{id}/check` probes synchronously and answers `{ "endpoint", "uptime" }`. On an endpoint with `limited: true` it answers `403 QUOTA_EXCEEDED`.
+- `POST /api/v1/endpoints/{id}/check` probes synchronously and answers `{ "endpoint", "uptime" }`. When the probe has not finished after 8 seconds it answers `202` with `{ "pending": true, "endpoint", "uptime" }`, the endpoint as it stands: the check goes on and its result is recorded. On an endpoint with `limited: true` it answers `403 QUOTA_EXCEEDED`.
 
 Errors:
 

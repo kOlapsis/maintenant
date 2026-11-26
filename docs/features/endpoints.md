@@ -178,7 +178,7 @@ POST /api/v1/endpoints
 | `POST` | `/api/v1/endpoints/{id}/check` | Check now, processed like a scheduled check |
 | `GET` | `/api/v1/endpoints/{id}/uptime/daily` | Daily uptime |
 
-Only endpoints the server probes can be checked on demand: an endpoint probed by a remote agent answers `409 AGENT_PROBED`, and a second check while one is running answers `409 CHECK_IN_PROGRESS`.
+Only endpoints the server probes can be checked on demand: an endpoint probed by a remote agent answers `409 AGENT_PROBED`, and a second check while one is running answers `409 CHECK_IN_PROGRESS`. A check that takes more than 8 seconds answers `202` with `pending: true` and the endpoint as it stands; the check goes on, its result is recorded, and the dashboard shows it when it arrives.
 
 Community is limited to **10 endpoints**, label endpoints included. Personal and Pro have no cap. Above the cap, creation answers `403 QUOTA_EXCEEDED`.
 

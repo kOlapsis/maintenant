@@ -4,7 +4,7 @@
 -->
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import {
   getEndpoint,
@@ -25,6 +25,7 @@ import EndpointEventTimeline from './EndpointEventTimeline.vue'
 import AgentBadge from './AgentBadge.vue'
 import UptimeBar90 from './ui/UptimeBar90.vue'
 import UiButton from './ui/UiButton.vue'
+import InlineAlert from './ui/InlineAlert.vue'
 import LimitChip from './ui/LimitChip.vue'
 
 const props = defineProps<{
@@ -86,6 +87,22 @@ async function loadData() {
 
 const checking = ref(false)
 const checkError = ref<string | null>(null)
+const checkSlow = ref<'running' | 'unseen' | null>(null)
+
+const RESULT_POLL_MS = 2000
+const RESULT_POLL_TRIES = 30
+let unmounted = false
+onUnmounted(() => { unmounted = true })
+
+// A check that changes no status emits no SSE event, so its result is fetched.
+async function waitForCheckResult(before: string | undefined): Promise<Endpoint | null> {
+  for (let i = 0; i < RESULT_POLL_TRIES && !unmounted; i++) {
+    await new Promise((resolve) => setTimeout(resolve, RESULT_POLL_MS))
+    const { endpoint: ep } = await getEndpoint(props.endpointId)
+    if (ep.last_check_at !== before) return ep
+  }
+  return null
+}
 
 // Only endpoints the server probes itself can be re-checked from here: an agent's
 // targets sit on its network, and it re-probes them every 30 seconds anyway.
@@ -95,11 +112,19 @@ async function checkNow() {
   if (checking.value) return
   checking.value = true
   checkError.value = null
+  checkSlow.value = null
   try {
     const res = await checkEndpointNow(props.endpointId)
-    fetched.value = res.endpoint
+    let ep: Endpoint | null = res.endpoint
+    if (res.pending) {
+      checkSlow.value = 'running'
+      ep = await waitForCheckResult(res.endpoint.last_check_at)
+      checkSlow.value = ep ? null : 'unseen'
+      if (!ep) return
+    }
+    fetched.value = ep
     // A check that changes nothing emits no SSE event, so feed the store directly.
-    endpointsStore.applyEndpoint(res.endpoint)
+    endpointsStore.applyEndpoint(ep)
     checks.value = (await listChecks(props.endpointId, { limit: 100 })).checks || []
   } catch (e) {
     checkError.value = e instanceof Error ? e.message : 'Check failed'
@@ -255,6 +280,12 @@ watch(() => props.endpointId, () => {
           {{ checking ? 'Checking…' : 'Check now' }}
         </UiButton>
       </div>
+
+      <InlineAlert v-if="checkSlow" class="mb-6" severity="info" title="Check still running" tag="">
+        {{ checkSlow === 'running'
+          ? 'The target is slow to answer. The result will be recorded and shown here as soon as it arrives.'
+          : 'The result has not arrived yet. It will be recorded and appear in the check history.' }}
+      </InlineAlert>
 
       <div
         v-if="checkError"

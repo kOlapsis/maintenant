@@ -4,6 +4,7 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -221,9 +222,9 @@ func (h *EndpointHandler) HandleListChecks(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// HandleCheckNow handles POST /api/v1/endpoints/{id}/check. It probes the target
-// right away and answers with the refreshed endpoint, so the UI can confirm a fix
-// without waiting for the next scheduled check.
+var manualCheckWait = 8 * time.Second // must stay under the 10 s request limit
+
+// HandleCheckNow handles POST /api/v1/endpoints/{id}/check: it probes the target right away and answers the refreshed endpoint, or 202 with the endpoint as it stands when the check is still running.
 func (h *EndpointHandler) HandleCheckNow(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -231,7 +232,36 @@ func (h *EndpointHandler) HandleCheckNow(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ep, err := h.service.CheckNow(r.Context(), id)
+	type outcome struct {
+		ep  *endpoint.Endpoint
+		err error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		ep, err := h.service.CheckNow(context.WithoutCancel(r.Context()), id)
+		done <- outcome{ep, err}
+	}()
+	wait := time.NewTimer(manualCheckWait)
+	defer wait.Stop()
+
+	var ep *endpoint.Endpoint
+	var err error
+	select {
+	case res := <-done:
+		ep, err = res.ep, res.err
+	case <-wait.C:
+		current, err := h.service.GetEndpoint(r.Context(), id)
+		if err != nil || current == nil {
+			WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get endpoint")
+			return
+		}
+		WriteJSON(w, http.StatusAccepted, map[string]interface{}{
+			"pending":  true,
+			"endpoint": h.markStale(current),
+			"uptime":   h.service.CalculateUptime(r.Context(), id),
+		})
+		return
+	}
 	switch {
 	case errors.Is(err, endpoint.ErrEndpointNotFound):
 		WriteError(w, http.StatusNotFound, "ENDPOINT_NOT_FOUND", "Endpoint not found")
