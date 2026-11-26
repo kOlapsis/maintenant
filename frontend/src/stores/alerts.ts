@@ -64,12 +64,18 @@ export const useAlertsStore = defineStore('alerts', () => {
     }
   }
 
+  let activeRequest = 0
+
   async function fetchActiveAlerts() {
+    const request = ++activeRequest
     activeAlertsError.value = null
     try {
-      activeAlerts.value = await getActiveAlerts()
+      const res = await getActiveAlerts()
+      if (request === activeRequest) activeAlerts.value = res
     } catch (e) {
-      activeAlertsError.value = e instanceof Error ? e.message : 'Failed to fetch active alerts'
+      if (request === activeRequest) {
+        activeAlertsError.value = e instanceof Error ? e.message : 'Failed to fetch active alerts'
+      }
       console.error('Failed to fetch active alerts:', e)
     }
   }

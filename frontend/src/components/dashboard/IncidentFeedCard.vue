@@ -23,7 +23,6 @@ const statusAdmin = useStatusAdminStore()
 
 onMounted(() => {
   alertsStore.fetchAlerts()
-  alertsStore.fetchActiveAlerts()
   if (hasFeature('incidents')) statusAdmin.fetchIncidents()
 })
 

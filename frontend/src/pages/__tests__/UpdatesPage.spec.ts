@@ -179,6 +179,7 @@ function hostBadges(w: VueWrapper | ReturnType<VueWrapper['findComponent']>): st
 
 async function mountPanel(e: ImageUpdate, alerts: Alert[]) {
   api.alerts = alerts
+  await useAlertsStore().fetchActiveAlerts()
   api.details = { [e.container_id]: detail(e) }
   useAgentsStore().agents = [
     enrolled('agent-nas', 'nas-02', 'NAS cave'),

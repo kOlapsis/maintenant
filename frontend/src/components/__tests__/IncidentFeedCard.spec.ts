@@ -56,6 +56,12 @@ describe('IncidentFeedCard', () => {
     expect(wrapper.find('[role="alert"]').text()).toContain('HTTP 503')
   })
 
+  it('leaves the active alerts to the app-wide load', async () => {
+    await mountCard()
+
+    expect(api.getActiveAlerts).not.toHaveBeenCalled()
+  })
+
   it('says nothing is wrong when the list loaded empty', async () => {
     await useAlertsStore().fetchActiveAlerts()
 

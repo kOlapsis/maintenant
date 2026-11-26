@@ -47,7 +47,6 @@ const tabItems = computed<TabNavItem[]>(() => [
 
 onMounted(() => {
   store.fetchAlerts()
-  store.fetchActiveAlerts()
   store.fetchSilenceRules()
   triggersStore.fetchTriggers()
   store.connectSSE()
