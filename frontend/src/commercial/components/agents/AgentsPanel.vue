@@ -200,6 +200,14 @@ function runtimeLabel(rt: string): string {
                 color: agent.connection_state === 'connected' ? 'var(--mnt-status-ok-text)' : 'var(--mnt-text-muted)',
               }"
             >{{ agent.connection_state ?? 'disconnected' }}</span>
+            <StatusBadge
+              v-if="agent.runtime_unreachable"
+              class="ml-1"
+              severity="unknown"
+              label="Runtime unreachable"
+              size="sm"
+              show-label
+            />
             <span
               v-if="agent.spool?.draining"
               class="ml-1 rounded-full px-2 py-0.5 text-xs font-medium"

@@ -5,6 +5,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { shallowMount } from '@vue/test-utils'
 import { ref } from 'vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
 import AgentsPanel from '@/commercial/components/agents/AgentsPanel.vue'
 import type { Agent } from '@/services/agentApi'
 
@@ -17,6 +18,7 @@ const agent: Agent = {
   detected_runtime: 'docker',
   status: 'active',
   connection_state: 'connected',
+  runtime_unreachable: true,
   last_seen_at: null,
   created_at: '2026-09-30T00:00:00Z',
   revoked_at: null,
@@ -75,5 +77,14 @@ describe('AgentsPanel spool badges', () => {
     expect(wrapper.find('[title="42 events waiting to be replayed"]').exists()).toBe(true)
     expect(wrapper.find('[title="Events dropped because the agent\'s spool was full"]').exists()).toBe(true)
     expect(text).not.toMatch(/rattrapage|perdus/)
+  })
+})
+
+describe('AgentsPanel runtime state', () => {
+  it('says when a connected agent cannot reach its runtime', () => {
+    const wrapper = shallowMount(AgentsPanel)
+    const badge = wrapper.findAllComponents(StatusBadge).find((b) => b.props('label') === 'Runtime unreachable')
+
+    expect(badge?.props('severity')).toBe('unknown')
   })
 })
