@@ -15,6 +15,7 @@ import { useFleetRuntimes } from '@/composables/useFleetRuntimes'
 import { buildUnifiedAttention } from '@/composables/attentionAggregator'
 import { apiFetch } from '@/services/apiFetch'
 import { staleLabel } from '@/utils/staleCause'
+import { certDaysRemaining } from '@/utils/certFormat'
 import { sseBus } from '@/services/sseBus'
 import type { Container } from '@/services/containerApi'
 import type { Endpoint } from '@/services/endpointApi'
@@ -79,7 +80,7 @@ function heartbeatStatus(h: Heartbeat): { status: UnifiedStatus; label: string }
 
 function certStatus(c: CertMonitor): { status: UnifiedStatus; label: string } {
   if (c.limited) return { status: 'unknown', label: 'Not monitored' }
-  const days = c.latest_check?.days_remaining
+  const days = certDaysRemaining(c)
   if (days != null) {
     if (days < 3) return { status: 'down', label: `${days}d left` }
     if (days < 30) return { status: 'warning', label: `${days}d left` }
@@ -236,7 +237,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
     for (const c of certificates.certificates) {
       const s = certStatus(c)
-      const days = c.latest_check?.days_remaining
+      const days = certDaysRemaining(c)
       result.push({
         id: `certificate:${c.id}`,
         type: 'certificate',
