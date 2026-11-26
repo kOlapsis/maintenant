@@ -277,19 +277,19 @@ The regex pattern has a syntax error. Check for unbalanced brackets or other Go 
 
 For every update, maintenant writes the command that applies it and the command that puts the previous image back. They are shown in the detail panel of the Updates page, returned as `update_command` and `rollback_command` by `GET /api/v1/updates/container/{container_id}`, and, with Personal, carried by the `update_available` alert so that the Discord, Slack, Teams and email notifications include them. maintenant never runs them: it observes, you decide. Every value is quoted for a POSIX shell, and no command is written when a name, the image reference, a tag or a digest contains a control character or three backticks in a row.
 
-**Docker Compose.** A container with the Compose project and service labels gets commands that start with `cd` to the project's `com.docker.compose.project.working_dir` (`<compose-project-dir>` when the label is missing). There is no `--project-directory` flag. Compose pulls the tag written in the compose file, so when the update changes the tag, the command tells you to edit the file first:
+**Docker Compose.** A container with the Compose project and service labels gets commands that start with `cd` to the project's `com.docker.compose.project.working_dir` (`<compose-project-dir>` when the label is missing). Every `docker compose` call names the project with `-p`, from the `com.docker.compose.project` label, so a project started under another name than its directory is the one that gets updated. There is no `--project-directory` flag and no `-f`: when the project was started from other files than the default one of its directory, add the same `-f` options. Compose pulls the tag written in the compose file, so when the update changes the tag, the command tells you to edit the file first:
 
 ```bash
 # A newer tag (nginx:1.25.3 to 1.27.0)
 cd /srv/app
 # Set the image of service web to nginx:1.27.0 in the compose file, then:
-docker compose pull web
-docker compose up -d web
+docker compose -p app pull web
+docker compose -p app up -d web
 
 # The same tag, republished
 cd /srv/app
-docker compose pull web
-docker compose up -d --force-recreate web
+docker compose -p app pull web
+docker compose -p app up -d --force-recreate web
 ```
 
 **Standalone Docker container.**
@@ -321,10 +321,10 @@ On Kubernetes and Swarm, when the tag is unchanged (a republished floating tag),
 cd /srv/app
 docker pull nginx@sha256:…
 docker tag nginx@sha256:… nginx:latest
-docker compose up -d --pull never --force-recreate web
+docker compose -p app up -d --pull never --force-recreate web
 ```
 
-When the update changed the tag, the rollback tells you to set the image of the service back to the previous reference in the compose file, then to run `docker compose up -d <service>`. Standalone containers get the `docker pull` of the previous reference and the same line telling you to recreate the container with it, Swarm tasks `docker service update --image <previous reference> <service>`, and Kubernetes `kubectl set image` with the previous reference.
+When the update changed the tag, the rollback tells you to set the image of the service back to the previous reference in the compose file, then to run `docker compose -p <project> up -d <service>`. Standalone containers get the `docker pull` of the previous reference and the same line telling you to recreate the container with it, Swarm tasks `docker service update --image <previous reference> <service>`, and Kubernetes `kubectl set image` with the previous reference.
 
 ---
 

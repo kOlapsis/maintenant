@@ -234,14 +234,14 @@ func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag, latestDigest
 
 	// Docker Compose
 	if isCompose(c) {
-		svc := shellQuote(c.OrchestrationUnit)
+		svc, compose := shellQuote(c.OrchestrationUnit), composeCommand(c)
 		// Compose pulls the tag written in the compose file, so a new tag has to be written there first.
 		if latestTag != currentTag {
-			return fmt.Sprintf("cd %s\n# Set the image of service %s to %s in the compose file, then:\ndocker compose pull %s\ndocker compose up -d %s",
-				composeDir(c), svc, shellQuote(repo+":"+latestTag), svc, svc)
+			return fmt.Sprintf("cd %s\n# Set the image of service %s to %s in the compose file, then:\n%s pull %s\n%s up -d %s",
+				composeDir(c), svc, shellQuote(repo+":"+latestTag), compose, svc, compose, svc)
 		}
-		return fmt.Sprintf("cd %s\ndocker compose pull %s\ndocker compose up -d --force-recreate %s",
-			composeDir(c), svc, svc)
+		return fmt.Sprintf("cd %s\n%s pull %s\n%s up -d --force-recreate %s",
+			composeDir(c), compose, svc, compose, svc)
 	}
 
 	return standalonePull(c, repo+":"+latestTag)
@@ -272,14 +272,14 @@ func (s *Service) GenerateRollbackCommand(c ContainerInfo, u *ImageUpdate) strin
 
 	// Docker Compose
 	if isCompose(c) {
-		svc, qref := shellQuote(c.OrchestrationUnit), shellQuote(ref)
+		svc, qref, compose := shellQuote(c.OrchestrationUnit), shellQuote(ref), composeCommand(c)
 		if u.LatestTag == u.CurrentTag {
 			// The compose file keeps the same tag: point that tag back at the previous image locally.
-			return fmt.Sprintf("cd %s\ndocker pull %s\ndocker tag %s %s\ndocker compose up -d --pull never --force-recreate %s",
-				composeDir(c), qref, qref, shellQuote(imageWithoutDigest(u.Image)), svc)
+			return fmt.Sprintf("cd %s\ndocker pull %s\ndocker tag %s %s\n%s up -d --pull never --force-recreate %s",
+				composeDir(c), qref, qref, shellQuote(imageWithoutDigest(u.Image)), compose, svc)
 		}
-		return fmt.Sprintf("cd %s\n# Set the image of service %s back to %s in the compose file, then:\ndocker compose up -d %s",
-			composeDir(c), svc, qref, svc)
+		return fmt.Sprintf("cd %s\n# Set the image of service %s back to %s in the compose file, then:\n%s up -d %s",
+			composeDir(c), svc, qref, compose, svc)
 	}
 
 	return standalonePull(c, ref)
@@ -330,6 +330,11 @@ func podContainer(c ContainerInfo) string {
 
 func isCompose(c ContainerInfo) bool {
 	return c.RuntimeType != "kubernetes" && c.OrchestrationGroup != "" && c.OrchestrationUnit != ""
+}
+
+// composeCommand names the project, so that one started under another name than its directory is the one acted on.
+func composeCommand(c ContainerInfo) string {
+	return "docker compose -p " + shellQuote(c.OrchestrationGroup)
 }
 
 func composeDir(c ContainerInfo) string {

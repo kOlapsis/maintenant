@@ -34,7 +34,7 @@ func TestGenerateRollbackCommand_ComposeSameTag_RetagsThePreviousImage(t *testin
 	assert.Equal(t, "cd /srv/app\n"+
 		"docker pull nginx@sha256:old\n"+
 		"docker tag nginx@sha256:old nginx:latest\n"+
-		"docker compose up -d --pull never --force-recreate web", got)
+		"docker compose -p app up -d --pull never --force-recreate web", got)
 	assert.NotEqual(t, svc.GenerateUpdateCommand(c, "latest", "sha256:new"), got)
 }
 
@@ -47,7 +47,7 @@ func TestGenerateRollbackCommand_ComposeNewTag_PinsThePreviousImage(t *testing.T
 	})
 	assert.Equal(t, "cd /srv/app\n"+
 		"# Set the image of service web back to nginx@sha256:old in the compose file, then:\n"+
-		"docker compose up -d web", byDigest)
+		"docker compose -p app up -d web", byDigest)
 
 	byTag := svc.GenerateRollbackCommand(c, &ImageUpdate{
 		Image: "nginx:1.24.0", CurrentTag: "1.24.0", LatestTag: "1.26.0",
@@ -177,12 +177,12 @@ func TestGenerateUpdateCommand_ComposeNewTagIsWrittenInTheComposeFile(t *testing
 
 	assert.Equal(t, "cd /srv/app\n"+
 		"# Set the image of service web to nginx:1.26.0 in the compose file, then:\n"+
-		"docker compose pull web\n"+
-		"docker compose up -d web", svc.GenerateUpdateCommand(composeWeb("nginx:1.24.0"), "1.26.0", "sha256:new"))
+		"docker compose -p app pull web\n"+
+		"docker compose -p app up -d web", svc.GenerateUpdateCommand(composeWeb("nginx:1.24.0"), "1.26.0", "sha256:new"))
 
 	assert.Equal(t, "cd /srv/app\n"+
-		"docker compose pull web\n"+
-		"docker compose up -d --force-recreate web", svc.GenerateUpdateCommand(composeWeb("nginx:latest"), "latest", "sha256:new"))
+		"docker compose -p app pull web\n"+
+		"docker compose -p app up -d --force-recreate web", svc.GenerateUpdateCommand(composeWeb("nginx:latest"), "latest", "sha256:new"))
 }
 
 func TestScanner_LocallyBuiltImage_IsSkipped(t *testing.T) {

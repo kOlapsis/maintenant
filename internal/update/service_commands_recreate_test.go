@@ -33,6 +33,39 @@ func TestGenerateCommands_StandaloneNeverRecreatesTheContainerBare(t *testing.T)
 	}
 }
 
+func TestGenerateCommands_ComposeNamesItsProject(t *testing.T) {
+	svc := &Service{}
+	c := ContainerInfo{
+		Name: "prod-web-1", OrchestrationGroup: "prod", OrchestrationUnit: "web",
+		ComposeWorkingDir: "/srv/app", RuntimeType: "docker",
+	}
+
+	c.Image = "nginx:1.24.0"
+	assert.Equal(t, "cd /srv/app\n"+
+		"# Set the image of service web to nginx:1.26.0 in the compose file, then:\n"+
+		"docker compose -p prod pull web\n"+
+		"docker compose -p prod up -d web", svc.GenerateUpdateCommand(c, "1.26.0", "sha256:new"))
+	assert.Equal(t, "cd /srv/app\n"+
+		"# Set the image of service web back to nginx@sha256:old in the compose file, then:\n"+
+		"docker compose -p prod up -d web",
+		svc.GenerateRollbackCommand(c, &ImageUpdate{Image: c.Image, CurrentTag: "1.24.0", LatestTag: "1.26.0", PreviousDigest: "sha256:old"}))
+
+	c.Image = "nginx:latest"
+	assert.Equal(t, "cd /srv/app\n"+
+		"docker compose -p prod pull web\n"+
+		"docker compose -p prod up -d --force-recreate web", svc.GenerateUpdateCommand(c, "latest", "sha256:new"))
+	assert.Equal(t, "cd /srv/app\n"+
+		"docker pull nginx@sha256:old\n"+
+		"docker tag nginx@sha256:old nginx:latest\n"+
+		"docker compose -p prod up -d --pull never --force-recreate web",
+		svc.GenerateRollbackCommand(c, &ImageUpdate{Image: c.Image, CurrentTag: "latest", LatestTag: "latest", PreviousDigest: "sha256:old"}))
+
+	c.OrchestrationGroup, c.ComposeWorkingDir = "my app; id", ""
+	assert.Equal(t, "cd <compose-project-dir>\n"+
+		"docker compose -p 'my app; id' pull web\n"+
+		"docker compose -p 'my app; id' up -d --force-recreate web", svc.GenerateUpdateCommand(c, "latest", "sha256:new"))
+}
+
 func TestGenerateCommands_StandaloneQuotesTheNameInTheCommentToo(t *testing.T) {
 	svc := &Service{}
 	c := ContainerInfo{Name: "web; id", Image: "nginx:1.24.0", RuntimeType: "docker"}
