@@ -4,7 +4,7 @@
 -->
 
 <script setup lang="ts">
-import { computed, inject, ref, watch } from 'vue'
+import { computed, inject, onUnmounted, ref, watch } from 'vue'
 import { useAlertsStore } from '@/stores/alerts'
 import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlideOver'
 import { timeAgo } from '@/utils/time'
@@ -14,25 +14,40 @@ import EscalationStatusBadge from '@/commercial/components/escalation/Escalation
 import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
 import ErrorState from '@/components/ui/ErrorState.vue'
 import { useEscalationApi } from '@/commercial/composables/useEscalationApi'
+import { useEdition } from '@/composables/useEdition'
 import type { EscalationRun } from '@/commercial/types/escalation'
 
 const detailSlideOver = inject(detailSlideOverKey)!
 const store = useAlertsStore()
 
 const escalationApi = useEscalationApi()
+const { hasFeature } = useEdition()
 const escalationRuns = ref<Record<string, EscalationRun[]>>({})
+
+const retries = new Map<string, { delay: number; timer: ReturnType<typeof setTimeout> }>()
 
 async function loadEscalationRuns(alertId: string) {
   try {
     const { runs } = await escalationApi.listRunsForAlert(alertId)
-    const shown = runs.findIndex((r) => r.status === 'active')
-    const run = runs[Math.max(shown, 0)]
-    if (run) runs[Math.max(shown, 0)] = await escalationApi.getEscalationRun(run.id)
     escalationRuns.value = { ...escalationRuns.value, [alertId]: runs }
+    const shown = runs.find((r) => r.status === 'active') ?? runs[0]
+    if (shown) {
+      const detail = await escalationApi.getEscalationRun(shown.id)
+      escalationRuns.value = { ...escalationRuns.value, [alertId]: runs.map((r) => (r.id === shown.id ? detail : r)) }
+    }
+    retries.delete(alertId)
   } catch {
-    // 403 in CE or other errors — ignore silently
+    const delay = retries.get(alertId)?.delay ?? 30_000
+    const timer = setTimeout(() => {
+      if (loadedAck.has(alertId)) void loadEscalationRuns(alertId)
+    }, delay)
+    retries.set(alertId, { delay: Math.min(delay * 2, 300_000), timer })
   }
 }
+
+onUnmounted(() => {
+  for (const { timer } of retries.values()) clearTimeout(timer)
+})
 
 const ENTITY_TYPES: ReadonlySet<string> = new Set(['container', 'heartbeat', 'certificate'])
 
@@ -89,8 +104,14 @@ const sections = computed(() =>
 const loadedAck = new Map<string, string>()
 
 watch(
-  () => (Object.values(store.activeAlerts).flat() as Alert[]).map((a) => [a.id, a.acknowledged_at ?? ''] as const),
+  () =>
+    hasFeature('alert_escalation')
+      ? (Object.values(store.activeAlerts).flat() as Alert[]).map((a) => [a.id, a.acknowledged_at ?? ''] as const)
+      : [],
   (alerts) => {
+    for (const id of [...loadedAck.keys()]) {
+      if (!alerts.some(([active]) => active === id)) loadedAck.delete(id)
+    }
     for (const [id, ack] of alerts) {
       if (loadedAck.get(id) === ack) continue
       loadedAck.set(id, ack)

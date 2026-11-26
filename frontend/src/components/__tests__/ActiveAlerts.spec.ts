@@ -1,7 +1,7 @@
 // Copyright 2026 Benjamin Touchard (kOlapsis)
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ActiveAlerts from '@/components/ActiveAlerts.vue'
@@ -23,6 +23,13 @@ vi.mock('@/services/alertApi', async (importOriginal) => {
 vi.mock('@/commercial/composables/useEscalationApi', () => ({
   useEscalationApi: () => ({ listRunsForAlert: api.listRunsForAlert, getEscalationRun: api.getEscalationRun }),
 }))
+
+const edition = vi.hoisted(() => ({ escalation: { value: true } }))
+vi.mock('@/composables/useEdition', async () => {
+  const { ref } = await import('vue')
+  edition.escalation = ref(true)
+  return { useEdition: () => ({ hasFeature: () => edition.escalation.value }) }
+})
 
 vi.mock('@/services/sseBus', () => ({
   sseBus: { on: vi.fn(), off: vi.fn(), connect: vi.fn(), disconnect: vi.fn(), connected: { value: true } },
@@ -69,9 +76,14 @@ function mountList() {
 describe('ActiveAlerts', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    edition.escalation.value = true
     for (const fn of Object.values(api)) fn.mockReset()
     api.listRunsForAlert.mockResolvedValue({ runs: [] })
     api.getEscalationRun.mockResolvedValue({ deliveries: [] })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('says the active alerts could not be loaded', async () => {
@@ -152,5 +164,52 @@ describe('ActiveAlerts', () => {
 
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('a2 is down')
+  })
+
+  it('keeps the escalation when its detail fails, and asks for the detail again later', async () => {
+    vi.useFakeTimers()
+    api.listRunsForAlert.mockResolvedValue({ runs: [run('a1')] })
+    api.getEscalationRun
+      .mockRejectedValueOnce(new Error('HTTP 429'))
+      .mockResolvedValue(run('a1', { deliveries: [{ id: 'd1', status: 'failed' }] }))
+    useAlertsStore().activeAlerts = { critical: [alert('a1')], warning: [], info: [] }
+    const wrapper = mountList()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(wrapper.text()).toContain('On call')
+    expect(wrapper.text()).not.toContain('not delivered')
+
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(wrapper.text()).toContain('1 not delivered')
+    wrapper.unmount()
+  })
+
+  it('stops asking once the page is left', async () => {
+    vi.useFakeTimers()
+    api.listRunsForAlert.mockRejectedValue(new Error('HTTP 503'))
+    useAlertsStore().activeAlerts = { critical: [alert('a1')], warning: [], info: [] }
+    const wrapper = mountList()
+    await vi.advanceTimersByTimeAsync(0)
+
+    wrapper.unmount()
+    await vi.advanceTimersByTimeAsync(600_000)
+
+    expect(api.listRunsForAlert).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks for no escalation until the edition offers it', async () => {
+    edition.escalation.value = false
+    api.listRunsForAlert.mockResolvedValue({ runs: [run('a1')] })
+    api.getEscalationRun.mockResolvedValue(run('a1'))
+    useAlertsStore().activeAlerts = { critical: [alert('a1')], warning: [], info: [] }
+    const wrapper = mountList()
+    await flushPromises()
+    expect(api.listRunsForAlert).not.toHaveBeenCalled()
+
+    edition.escalation.value = true
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('On call')
   })
 })
