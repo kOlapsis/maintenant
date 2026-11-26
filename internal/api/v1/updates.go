@@ -278,12 +278,11 @@ func (h *UpdateHandler) HandleGetContainerUpdate(w http.ResponseWriter, r *http.
 
 // HandleTriggerScan handles POST /api/v1/updates/scan.
 func (h *UpdateHandler) HandleTriggerScan(w http.ResponseWriter, r *http.Request) {
-	if h.service.IsScanning() {
+	_, err := h.service.TriggerScan(r.Context())
+	if errors.Is(err, update.ErrScanInProgress) {
 		WriteError(w, http.StatusConflict, "SCAN_IN_PROGRESS", "A scan is already running")
 		return
 	}
-
-	_, err := h.service.TriggerScan(r.Context())
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to trigger scan")
 		return

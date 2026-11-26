@@ -6,6 +6,7 @@ package update
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -150,20 +151,24 @@ func (s *Service) Start(ctx context.Context) {
 	}
 }
 
+// ErrScanInProgress is returned by TriggerScan while a scan runs.
+var ErrScanInProgress = errors.New("scan already in progress")
+
 // TriggerScan starts an immediate scan. Returns the scan ID.
 // The scan runs with the application-scoped context (not the HTTP request context),
 // so it survives after the triggering request completes.
 func (s *Service) TriggerScan(_ context.Context) (string, error) {
-	s.mu.RLock()
+	s.mu.Lock()
 	ctx, scanning := s.appCtx, s.scanning
-	s.mu.RUnlock()
+	s.scanning = true
+	s.mu.Unlock()
 	if scanning {
-		return "", fmt.Errorf("scan already in progress")
+		return "", ErrScanInProgress
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	s.triggered.Go(func() { s.runScan(ctx) })
+	s.triggered.Go(func() { s.scan(ctx) })
 	return "", nil
 }
 
@@ -411,6 +416,11 @@ func (s *Service) runScan(ctx context.Context) {
 	s.scanning = true
 	s.mu.Unlock()
 
+	s.scan(ctx)
+}
+
+// scan runs one scan for the caller that set s.scanning.
+func (s *Service) scan(ctx context.Context) {
 	defer func() {
 		s.mu.Lock()
 		s.scanning = false
