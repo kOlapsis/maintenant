@@ -79,7 +79,7 @@ func (a *App) wireStatusProvider() {
 			return ContainerStatus(c)
 		case "endpoint":
 			ep, err := a.endpointSvc.GetEndpoint(ctx, monitorID)
-			if err != nil || ep == nil || ep.Limited {
+			if err != nil || ep == nil || ep.Limited || !ep.Active {
 				return status.StatusOperational
 			}
 			return EndpointStatus(ep)
@@ -91,7 +91,7 @@ func (a *App) wireStatusProvider() {
 			return HeartbeatStatus(hb)
 		case "certificate":
 			cert, err := a.certSvc.GetMonitor(ctx, monitorID)
-			if err != nil || cert == nil || cert.Limited {
+			if err != nil || cert == nil || cert.Limited || cert.InactiveSince != nil {
 				return status.StatusOperational
 			}
 			return CertificateStatus(cert)

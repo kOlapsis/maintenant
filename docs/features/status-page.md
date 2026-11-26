@@ -141,7 +141,7 @@ Each monitor is first mapped to a status:
 | Heartbeat | `up`, `started`, `new`, `paused` | never | `down` |
 | Certificate | `valid` | `expiring` | `expired`, `error`, `unknown` |
 
-A monitor that no longer exists counts as operational.
+A monitor that no longer exists counts as operational, and so does an endpoint or a certificate that is no longer monitored (its label was removed or its container deleted).
 
 A component with several monitors (or a match-all component) combines them:
 
