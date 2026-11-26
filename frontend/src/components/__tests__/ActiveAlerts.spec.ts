@@ -25,7 +25,7 @@ vi.mock('@/commercial/composables/useEscalationApi', () => ({
 }))
 
 vi.mock('@/services/sseBus', () => ({
-  sseBus: { on: vi.fn(), off: vi.fn(), connect: vi.fn(), disconnect: vi.fn() },
+  sseBus: { on: vi.fn(), off: vi.fn(), connect: vi.fn(), disconnect: vi.fn(), connected: { value: true } },
 }))
 
 function alert(id: string, over: Partial<Alert> = {}): Alert {
@@ -133,5 +133,24 @@ describe('ActiveAlerts', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('2 not delivered')
+  })
+
+  it('keeps the load error above a live alert and offers to retry', async () => {
+    api.getActiveAlerts.mockRejectedValueOnce(new Error('HTTP 502'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const store = useAlertsStore()
+    await store.fetchActiveAlerts()
+    store.activeAlerts = { critical: [alert('a1')], warning: [], info: [] }
+    const wrapper = mountList()
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').text()).toContain('HTTP 502')
+    expect(wrapper.text()).toContain('a1 is down')
+
+    api.getActiveAlerts.mockResolvedValue({ critical: [alert('a1'), alert('a2')], warning: [], info: [] })
+    await wrapper.findAll('button').find((b) => b.text() === 'Retry')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('a2 is down')
   })
 })

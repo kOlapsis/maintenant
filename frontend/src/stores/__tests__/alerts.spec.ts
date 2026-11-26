@@ -18,14 +18,20 @@ vi.mock('@/services/alertApi', async (importOriginal) => {
 })
 
 const sse = vi.hoisted(() => new Map<string, (e: MessageEvent) => void>())
-vi.mock('@/services/sseBus', () => ({
-  sseBus: {
-    on: (type: string, fn: (e: MessageEvent) => void) => sse.set(type, fn),
-    off: (type: string) => sse.delete(type),
-    connect: () => {},
-    disconnect: () => {},
-  },
-}))
+const stream = vi.hoisted(() => ({ connected: { value: false } }))
+vi.mock('@/services/sseBus', async () => {
+  const { ref } = await import('vue')
+  stream.connected = ref(false)
+  return {
+    sseBus: {
+      on: (type: string, fn: (e: MessageEvent) => void) => sse.set(type, fn),
+      off: (type: string) => sse.delete(type),
+      connect: () => {},
+      disconnect: () => {},
+      connected: stream.connected,
+    },
+  }
+})
 
 function alert(id: string, over: Partial<Alert> = {}): Alert {
   return {
@@ -54,6 +60,7 @@ describe('alerts store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     sse.clear()
+    stream.connected.value = false
     for (const fn of Object.values(api)) fn.mockReset()
     api.listSilenceRules.mockResolvedValue({ rules: [] })
   })
@@ -115,5 +122,51 @@ describe('alerts store', () => {
     emit('alert.silenced', alert('a1', { status: 'silenced' }))
 
     expect(store.alerts.map((a) => [a.id, a.status])).toEqual([['a1', 'silenced']])
+  })
+
+  it('keeps a good answer that arrives after a later request failed', async () => {
+    const first = deferred<unknown>()
+    api.getActiveAlerts.mockReturnValueOnce(first.promise).mockRejectedValueOnce(new Error('HTTP 503'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const store = useAlertsStore()
+
+    const a = store.fetchActiveAlerts()
+    await store.fetchActiveAlerts()
+    expect(store.activeAlertsError).toBe('HTTP 503')
+    first.resolve({ critical: [alert('a1')], warning: [], info: [] })
+    await a
+
+    expect(store.totalActiveCount).toBe(1)
+    expect(store.activeAlertsError).toBeNull()
+  })
+
+  it('reloads the active alerts when the stream connects after a failed load', async () => {
+    api.getActiveAlerts.mockRejectedValueOnce(new Error('HTTP 502'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const store = useAlertsStore()
+    await store.fetchActiveAlerts()
+
+    api.getActiveAlerts.mockResolvedValue({ critical: [alert('a1')], warning: [], info: [] })
+    stream.connected.value = true
+    await vi.waitFor(() => expect(store.totalActiveCount).toBe(1))
+
+    expect(store.activeAlertsError).toBeNull()
+    stream.connected.value = false
+    stream.connected.value = true
+    await Promise.resolve()
+    expect(api.getActiveAlerts).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the load error when a live alert arrives', async () => {
+    api.getActiveAlerts.mockRejectedValue(new Error('HTTP 502'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const store = useAlertsStore()
+    store.connectSSE()
+    await store.fetchActiveAlerts()
+
+    emit('alert.fired', alert('a1'))
+
+    expect(store.totalActiveCount).toBe(1)
+    expect(store.activeAlertsError).toBe('HTTP 502')
   })
 })

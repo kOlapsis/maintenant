@@ -104,13 +104,15 @@ watch(
 <template>
   <div>
     <ErrorState
-      v-if="store.totalActiveCount === 0 && store.activeAlertsError"
+      v-if="store.activeAlertsError"
       title="Active alerts unavailable"
       :message="store.activeAlertsError"
+      retryable
+      @retry="store.retryActiveAlerts()"
     />
 
     <div
-      v-else-if="store.totalActiveCount === 0"
+      v-if="store.totalActiveCount === 0 && !store.activeAlertsError"
       class="rounded-lg border p-6 text-center"
       style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
     >

@@ -28,7 +28,7 @@ vi.mock('@/composables/useEdition', () => ({
 
 // Mock sseBus to prevent real SSE connections
 vi.mock('@/services/sseBus', () => ({
-  sseBus: { on: vi.fn(), off: vi.fn() },
+  sseBus: { on: vi.fn(), off: vi.fn(), connected: { value: true } },
 }))
 
 import { fetchContainerUpdate } from '@/services/updateApi'

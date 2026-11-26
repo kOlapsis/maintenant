@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import {
   listAlerts,
   getActiveAlerts,
@@ -75,13 +75,17 @@ export const useAlertsStore = defineStore('alerts', () => {
   }
 
   let activeRequest = 0
+  let appliedRequest = 0
 
   async function fetchActiveAlerts() {
     const request = ++activeRequest
-    activeAlertsError.value = null
     try {
       const res = await getActiveAlerts()
-      if (request === activeRequest) activeAlerts.value = res
+      if (request > appliedRequest) {
+        appliedRequest = request
+        activeAlerts.value = res
+        activeAlertsError.value = null
+      }
     } catch (e) {
       if (request === activeRequest) {
         activeAlertsError.value = e instanceof Error ? e.message : 'Failed to fetch active alerts'
@@ -89,6 +93,13 @@ export const useAlertsStore = defineStore('alerts', () => {
       console.error('Failed to fetch active alerts:', e)
     }
   }
+
+  watch(
+    () => sseBus.connected.value,
+    (up) => {
+      if (up && activeAlertsError.value) void fetchActiveAlerts()
+    },
+  )
 
   async function fetchSilenceRules(activeOnly = false) {
     silenceLoading.value = true
@@ -283,6 +294,7 @@ export const useAlertsStore = defineStore('alerts', () => {
     activeSilenceCount,
     fetchAlerts,
     fetchActiveAlerts,
+    retryActiveAlerts: fetchActiveAlerts,
     fetchSilenceRules,
     acknowledgeAlert,
     pinAlert,

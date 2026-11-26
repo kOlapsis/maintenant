@@ -19,7 +19,7 @@ vi.mock('@/services/alertApi', async (importOriginal) => {
 })
 
 vi.mock('@/services/sseBus', () => ({
-  sseBus: { on: vi.fn(), off: vi.fn(), connect: vi.fn(), disconnect: vi.fn() },
+  sseBus: { on: vi.fn(), off: vi.fn(), connect: vi.fn(), disconnect: vi.fn(), connected: { value: true } },
 }))
 
 vi.mock('@/composables/useEdition', () => ({
@@ -68,5 +68,26 @@ describe('IncidentFeedCard', () => {
     await useAlertsStore().fetchActiveAlerts()
 
     expect((await mountCard()).text()).toContain('All services operating normally')
+  })
+
+  it('keeps the load error above a live alert and offers to retry', async () => {
+    api.getActiveAlerts.mockRejectedValueOnce(new Error('HTTP 502'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const store = useAlertsStore()
+    await store.fetchActiveAlerts()
+    store.activeAlerts = {
+      critical: [{ id: 'a1', severity: 'critical', message: 'db is down', entity_name: 'db', fired_at: '2026-11-26T10:00:00Z' } as never],
+      warning: [],
+      info: [],
+    }
+    const wrapper = await mountCard()
+    expect(wrapper.find('[role="alert"]').text()).toContain('HTTP 502')
+    expect(wrapper.text()).toContain('db is down')
+
+    api.getActiveAlerts.mockResolvedValue({ critical: [], warning: [], info: [] })
+    await wrapper.findAll('button').find((b) => b.text() === 'Retry')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   })
 })
