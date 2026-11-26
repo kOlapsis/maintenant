@@ -1143,6 +1143,8 @@ func (a *App) startHTTPServer(httpLn net.Listener) {
 	}
 }
 
+var shutdownGrace = 10 * time.Second
+
 // Shutdown performs a graceful shutdown of all services.
 func (a *App) Shutdown() error {
 	a.shuttingDown.Store(true)
@@ -1163,7 +1165,7 @@ func (a *App) Shutdown() error {
 	}
 
 	// A grace of its own: a slow HTTP drain must not leave the rest an expired context.
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
 
 	if a.stopAgents != nil {
@@ -1193,7 +1195,9 @@ func (a *App) Shutdown() error {
 	// Drop this instance's row before closing: a clean restart must not see
 	// its own previous run as a peer until the stale purge catches up.
 	if a.instanceStore != nil {
-		if err := a.instanceStore.Deregister(shutdownCtx, a.instanceID); err != nil {
+		deregisterCtx, cancelDeregister := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelDeregister()
+		if err := a.instanceStore.Deregister(deregisterCtx, a.instanceID); err != nil {
 			a.logger.Warn("instance deregistration failed, a restart may report itself as a peer until the stale purge runs",
 				"error", err)
 		}
