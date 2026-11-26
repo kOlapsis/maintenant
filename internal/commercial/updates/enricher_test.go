@@ -122,8 +122,8 @@ func TestEnrichScansContainerWithoutUpdate(t *testing.T) {
 	results := []update.UpdateResult{{
 		ContainerID:   "c1",
 		ContainerName: "web",
-		Image:         "nginx",
-		CurrentTag:    "1.27.0",
+		Image:         "traefik",
+		CurrentTag:    "v3.1.0",
 		HasUpdate:     false,
 	}}
 	require.NoError(t, enricher.Enrich(context.Background(), results))
@@ -131,9 +131,9 @@ func TestEnrichScansContainerWithoutUpdate(t *testing.T) {
 	eval := store.evaluation("c1")
 	require.NotNil(t, eval, "an up-to-date container must still be evaluated")
 	assert.Equal(t, update.CVEEvaluated, eval.Status)
-	assert.Equal(t, "Debian:12", eval.Ecosystem)
-	assert.Equal(t, "nginx", eval.PackageName)
-	assert.Equal(t, "1.27.0", eval.PackageVersion)
+	assert.Equal(t, "Go", eval.Ecosystem)
+	assert.Equal(t, "github.com/traefik/traefik/v3", eval.PackageName)
+	assert.Equal(t, "3.1.0", eval.PackageVersion)
 
 	require.Len(t, store.storedCVEs(), 1)
 	assert.Empty(t, store.storedRiskRecords(), "risk scoring describes an update that does not exist")
@@ -196,8 +196,8 @@ func TestEnrichRecordsErrorOnQueryFailure(t *testing.T) {
 	results := []update.UpdateResult{{
 		ContainerID:   "c1",
 		ContainerName: "web",
-		Image:         "nginx",
-		CurrentTag:    "1.27.0",
+		Image:         "traefik",
+		CurrentTag:    "v3.1.0",
 	}}
 	require.NoError(t, enricher.Enrich(context.Background(), results))
 

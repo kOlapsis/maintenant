@@ -159,14 +159,16 @@ func (e *ProEnricher) resolveCVEQuery(ctx context.Context, r *update.UpdateResul
 		return nil
 	}
 	resolved := e.ecosystem.Resolve(ctx, r.Image, r.CurrentTag, r.CurrentDigest, nil)
-	if resolved == nil {
+	version, full := update.ReleaseVersion(r.CurrentTag)
+	// An image tag is not the version of a distribution package, so only a module versioned like its image is asked.
+	if resolved == nil || resolved.Ecosystem != goEcosystem || !full {
 		return nil
 	}
 	return &ImageCVEQuery{
 		ContainerID: r.ContainerID,
 		PackageName: resolved.PackageName,
 		Ecosystem:   resolved.Ecosystem,
-		Version:     r.CurrentTag,
+		Version:     version,
 	}
 }
 

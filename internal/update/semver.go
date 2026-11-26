@@ -45,6 +45,13 @@ func ParseTag(tag string) (*semver.Version, error) {
 	return v, nil
 }
 
+// ReleaseVersion returns the major.minor.patch release a tag names, without its "v" prefix and its variant suffix.
+func ReleaseVersion(tag string) (string, bool) {
+	versionPart, _ := splitVariant(tag)
+	version := strings.TrimPrefix(versionPart, "v")
+	return version, plainRelease.MatchString(version) && strings.Count(version, ".") == 2
+}
+
 // semverPrecision counts the numeric components a version part is written with:
 // "v3" → 1, "1.2" → 2, "1.20.1" → 3, "1.2-rc1" → 2.
 // Anything below 3 is a floating tag: the registry moves it to the newest release

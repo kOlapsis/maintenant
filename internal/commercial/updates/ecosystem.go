@@ -20,35 +20,48 @@ import (
 // The package name is used in the OSV query; ecosystem must match OSV format
 // (e.g., "Debian:12", "Alpine:3.19", "Go").
 var ecosystemStaticMap = map[string]struct{ pkg, eco string }{
-	"nginx":      {"nginx", "Debian:12"},
-	"postgres":   {"postgresql-16", "Debian:12"},
-	"redis":      {"redis", "Debian:12"},
-	"mysql":      {"mysql-server-8.0", "Debian:12"},
-	"mariadb":    {"mariadb", "Debian:12"},
-	"node":       {"nodejs", "Debian:12"},
-	"python":     {"python3", "Debian:12"},
-	"golang":     {"golang", "Debian:12"},
-	"httpd":      {"apache2", "Debian:12"},
-	"memcached":  {"memcached", "Debian:12"},
-	"mongo":      {"mongodb", "Debian:12"},
-	"rabbitmq":   {"rabbitmq-server", "Debian:12"},
-	"traefik":    {"traefik", "Go"},
-	"grafana":    {"grafana", "Go"},
-	"prometheus": {"prometheus", "Go"},
+	"nginx":     {"nginx", "Debian:12"},
+	"postgres":  {"postgresql-16", "Debian:12"},
+	"redis":     {"redis", "Debian:12"},
+	"mysql":     {"mysql-server-8.0", "Debian:12"},
+	"mariadb":   {"mariadb", "Debian:12"},
+	"node":      {"nodejs", "Debian:12"},
+	"python":    {"python3", "Debian:12"},
+	"golang":    {"golang", "Debian:12"},
+	"httpd":     {"apache2", "Debian:12"},
+	"memcached": {"memcached", "Debian:12"},
+	"mongo":     {"mongodb", "Debian:12"},
+	"rabbitmq":  {"rabbitmq-server", "Debian:12"},
 }
 
-// languageEcosystemImages lists images that use language-level ecosystems
-// instead of OS-level ecosystems. These bypass OS detection entirely.
-// To add a new entry: append the image short name with its language ecosystem.
-var languageEcosystemImages = map[string]string{
-	"traefik":    "Go",
-	"grafana":    "Go",
-	"prometheus": "Go",
-	"consul":     "Go",
-	"vault":      "Go",
-	"caddy":      "Go",
-	"minio":      "Go",
-	"etcd":       "Go",
+const goEcosystem = "Go"
+
+// goModules maps a repository to the Go module OSV files its advisories under, for images whose tag is the module version; a trailing "/v" takes the major of the tag.
+var goModules = map[string]string{
+	"traefik":                 "github.com/traefik/traefik/v",
+	"ghcr.io/traefik/traefik": "github.com/traefik/traefik/v",
+	"caddy":                   "github.com/caddyserver/caddy/v",
+	"consul":                  "github.com/hashicorp/consul",
+	"hashicorp/consul":        "github.com/hashicorp/consul",
+	"vault":                   "github.com/hashicorp/vault",
+	"hashicorp/vault":         "github.com/hashicorp/vault",
+}
+
+func resolveGoModule(image, tag string) *update.EcosystemResult {
+	repo, _, _ := update.ParseImageRef(image)
+	module, known := goModules[strings.TrimPrefix(repo, "library/")]
+	version, full := update.ReleaseVersion(tag)
+	if !known || !full {
+		return nil
+	}
+	if strings.HasSuffix(module, "/v") {
+		major, _, _ := strings.Cut(version, ".")
+		if major == "0" || major == "1" {
+			return nil
+		}
+		module += major
+	}
+	return &update.EcosystemResult{PackageName: module, Ecosystem: goEcosystem, DetectionMethod: "static"}
 }
 
 // knownScratchImages are images that should return nil (no ecosystem).
@@ -141,7 +154,11 @@ func (r *EcosystemResolver) Resolve(ctx context.Context, image, tag, digest stri
 	r.mu.RUnlock()
 
 	// 2. Static mapping (preserves backward compatibility)
-	if result := r.resolveStatic(shortName); result != nil {
+	result := resolveGoModule(image, tag)
+	if result == nil {
+		result = r.resolveStatic(shortName)
+	}
+	if result != nil {
 		r.cacheResult(cacheKey, result)
 		r.logger.Debug("ecosystem resolved",
 			"image", shortName, "ecosystem", result.Ecosystem,
@@ -255,15 +272,6 @@ func (r *EcosystemResolver) resolveImageNameFallback(shortName string) *update.E
 	// Skip unrecognizable names (hex hashes, single chars)
 	if len(shortName) <= 2 || looksLikeHash(shortName) {
 		return nil
-	}
-
-	// Check if it's a language ecosystem image
-	if eco, ok := languageEcosystemImages[shortName]; ok {
-		return &update.EcosystemResult{
-			PackageName:     shortName,
-			Ecosystem:       eco,
-			DetectionMethod: "image-name-fallback",
-		}
 	}
 
 	return &update.EcosystemResult{

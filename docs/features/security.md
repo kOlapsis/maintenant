@@ -51,14 +51,18 @@ The reported port is the numeric target port of the Service, or the Service port
 
 ## CVE Ecosystem Mapping
 
-The CVE lookup is part of [Update Intelligence](updates.md) and needs the Personal edition. It runs at every update scan, on every running container that is neither ignored nor archived, including the containers left out of update tracking (pinned, `maintenant.update.enabled: "false"`, excluded images) and those with no update pending. To look an image up in [OSV.dev](https://osv.dev), maintenant first has to work out which packages and which ecosystem (`Debian:12`, `Alpine:3.20`, `Ubuntu:22.04`, `Go`) the image belongs to. It tries, in order, and stops at the first answer:
+The CVE lookup is part of [Update Intelligence](updates.md) and needs the Personal edition. It runs at every update scan, on every running container that is neither ignored nor archived, including the containers left out of update tracking (pinned, `maintenant.update.enabled: "false"`, excluded images) and those with no update pending. To look an image up in [OSV.dev](https://osv.dev), maintenant needs the exact name of a package and the version of it that runs. An image tag gives both only for software published as a Go module under the version of its image:
 
-1. **Known image table**: about fifteen common images are mapped directly. `nginx`, `postgres`, `redis`, `mysql`, `mariadb`, `node`, `python`, `golang`, `httpd`, `memcached`, `mongo` and `rabbitmq` map to Debian 12 packages; `traefik`, `grafana` and `prometheus` map to Go.
-2. **Image labels from the registry**: for images of Docker Hub, `ghcr.io`, `quay.io`, `gcr.io` and `public.ecr.aws`, the `org.opencontainers.image.base.name` label names the base image (Debian, Ubuntu, Alpine, CentOS or Fedora) and its version. The fetch gives up after 5 seconds.
-3. **Tag suffix**: a tag such as `1.25-alpine`, `alpine3.19`, `16-bookworm` or `jammy` names the distribution.
-4. **Image name**: `consul`, `vault`, `caddy`, `minio` and `etcd` map to Go; any other name is assumed to be a Debian 12 package of the same name. Names that are two characters or shorter, look like a hash, or are `scratch` get no ecosystem.
+| Image | Go module asked to OSV.dev |
+|-------|----------------------------|
+| `traefik`, `ghcr.io/traefik/traefik` | `github.com/traefik/traefik/v2` or `/v3`, from the major version of the tag (version 1 is not covered) |
+| `caddy` | `github.com/caddyserver/caddy/v2` |
+| `consul`, `hashicorp/consul` | `github.com/hashicorp/consul` |
+| `vault`, `hashicorp/vault` | `github.com/hashicorp/vault` |
 
-An image with no ecosystem is recorded as *unsupported* and does not count in the posture score. A lookup that fails is recorded as an error. The lookup asks OSV.dev about one package, ecosystem and version (the image tag) per image; it does not open the image layers, so read the result as an indication rather than as a scan.
+The tag must name a full release (`v3.1.2`, `2.8.4-alpine`): `latest` or `v3` does not say which version runs.
+
+Every other image is recorded as *unsupported* and does not count in the posture score. maintenant does not open the image layers, so it does not know the versions of the distribution packages an image carries, and a tag such as `nginx:1.25-alpine` is not the version of a Debian or Alpine package. A lookup that fails is recorded as an error. The result covers the vulnerabilities of the software itself, not those of the base image under it.
 
 ---
 

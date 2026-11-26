@@ -321,7 +321,7 @@ Real-time CPU, memory, network and disk I/O per container and per host, top-cons
 
 ### [Network security insights](https://docs.maintenant.dev/features/security/)
 
-Flags what should not be there: ports bound to `0.0.0.0`, exposed database ports, host-network mode, privileged containers, Kubernetes Services of type NodePort or LoadBalancer, and database ports exposed through them. **Personal** adds CVE enrichment (each image is mapped to its software ecosystem through OCI manifest inspection), a risk score per container and a unified security posture dashboard.
+Flags what should not be there: ports bound to `0.0.0.0`, exposed database ports, host-network mode, privileged containers, Kubernetes Services of type NodePort or LoadBalancer, and database ports exposed through them. **Personal** adds CVE enrichment (known vulnerabilities of the Traefik, Caddy, Consul and Vault release a container runs), a risk score per container and a unified security posture dashboard.
 
 ### [Alert engine](https://docs.maintenant.dev/features/alerts/)
 

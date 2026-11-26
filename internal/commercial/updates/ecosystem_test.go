@@ -34,9 +34,6 @@ func TestResolve_StaticMapping(t *testing.T) {
 		{"mysql", "mysql-server-8.0", "Debian:12"},
 		{"mariadb", "mariadb", "Debian:12"},
 		{"httpd", "apache2", "Debian:12"},
-		{"traefik", "traefik", "Go"},
-		{"grafana", "grafana", "Go"},
-		{"prometheus", "prometheus", "Go"},
 	}
 
 	for _, tt := range tests {
@@ -144,14 +141,17 @@ func TestResolve_CacheInvalidatedByDigestChange(t *testing.T) {
 	assert.False(t, cached, "new digest should not be cached yet")
 }
 
-func TestResolve_LanguageEcosystemFallback(t *testing.T) {
+func TestResolve_GoModule(t *testing.T) {
 	r := NewEcosystemResolver(nil, testLogger())
 
-	// consul is in languageEcosystemImages but not in ecosystemStaticMap
-	result := r.Resolve(context.Background(), "consul", "1.18", "sha256:abc", nil)
+	result := r.Resolve(context.Background(), "consul", "1.18.3", "sha256:abc", nil)
 	require.NotNil(t, result)
 	assert.Equal(t, "Go", result.Ecosystem)
-	assert.Equal(t, "consul", result.PackageName)
+	assert.Equal(t, "github.com/hashicorp/consul", result.PackageName)
+
+	floating := r.Resolve(context.Background(), "consul", "1.18", "sha256:abc", nil)
+	require.NotNil(t, floating)
+	assert.NotEqual(t, "Go", floating.Ecosystem)
 }
 
 func TestResolve_ContextCancelled(t *testing.T) {
