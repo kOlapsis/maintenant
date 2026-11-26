@@ -244,10 +244,13 @@ func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag, latestDigest
 			composeDir(c), svc, svc)
 	}
 
-	// Standalone Docker container
-	ref, name := shellQuote(repo+":"+latestTag), shellQuote(c.Name)
-	return fmt.Sprintf("docker pull %s\ndocker stop %s && docker rm %s\ndocker run -d --name %s %s",
-		ref, name, name, name, ref)
+	return standalonePull(c, repo+":"+latestTag)
+}
+
+// standalonePull pulls ref and leaves the recreation of a standalone container to the operator, who alone knows its options.
+func standalonePull(c ContainerInfo, ref string) string {
+	ref = shellQuote(ref)
+	return fmt.Sprintf("docker pull %s\n# Recreate %s with the options it was started with, using %s", ref, shellQuote(c.Name), ref)
 }
 
 // GenerateRollbackCommand produces a shell command that puts a container back on the image it ran before the update, or "" when that image cannot be named.
@@ -279,10 +282,7 @@ func (s *Service) GenerateRollbackCommand(c ContainerInfo, u *ImageUpdate) strin
 			composeDir(c), svc, qref, svc)
 	}
 
-	// Standalone Docker container
-	ref, name := shellQuote(ref), shellQuote(c.Name)
-	return fmt.Sprintf("docker pull %s\ndocker stop %s && docker rm %s\ndocker run -d --name %s %s",
-		ref, name, name, name, ref)
+	return standalonePull(c, ref)
 }
 
 // previousImageRef names the image a container ran before an update: by digest when known,

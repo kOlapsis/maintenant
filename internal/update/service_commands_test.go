@@ -64,8 +64,7 @@ func TestGenerateRollbackCommand_Standalone(t *testing.T) {
 	})
 
 	assert.Equal(t, "docker pull ghcr.io/acme/web@sha256:old\n"+
-		"docker stop web && docker rm web\n"+
-		"docker run -d --name web ghcr.io/acme/web@sha256:old", got)
+		"# Recreate web with the options it was started with, using ghcr.io/acme/web@sha256:old", got)
 }
 
 func TestGenerateRollbackCommand_Kubernetes(t *testing.T) {
@@ -265,8 +264,7 @@ func TestRunScan_PersistsThePreviousImageAndCarriesAlertOn(t *testing.T) {
 	assert.Equal(t, AlertOnCritical, detected["alert_on"])
 	assert.Equal(t, "agent-1", detected["agent_id"])
 	assert.Equal(t, "docker pull nginx@sha256:running\n"+
-		"docker stop web && docker rm web\n"+
-		"docker run -d --name web nginx@sha256:running", detected["rollback_command"])
+		"# Recreate web with the options it was started with, using nginx@sha256:running", detected["rollback_command"])
 }
 
 func TestUpdateConfig_TrackLevel(t *testing.T) {

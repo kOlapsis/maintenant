@@ -296,11 +296,10 @@ docker compose up -d --force-recreate web
 
 ```bash
 docker pull nginx:1.27.0
-docker stop web && docker rm web
-docker run -d --name web nginx:1.27.0
+# Recreate web with the options it was started with, using nginx:1.27.0
 ```
 
-This form only names the image. The `docker run` line carries none of the original options (ports, volumes, environment): use it as a template, or recreate the container the way you created it.
+maintenant does not know the options the container was started with (ports, volumes, environment, network, restart policy), so it pulls the image and leaves the recreation to you. It never prints a `docker stop`, `docker rm` or `docker run` line.
 
 **Docker Swarm.** A task gets the command that points its service at the new image, and Swarm replaces the tasks with its rolling update:
 
@@ -325,7 +324,7 @@ docker tag nginx@sha256:… nginx:latest
 docker compose up -d --pull never --force-recreate web
 ```
 
-When the update changed the tag, the rollback tells you to set the image of the service back to the previous reference in the compose file, then to run `docker compose up -d <service>`. Standalone containers use `docker pull`, `stop`, `rm` and `run` with the previous reference, Swarm tasks `docker service update --image <previous reference> <service>`, and Kubernetes `kubectl set image` with the previous reference.
+When the update changed the tag, the rollback tells you to set the image of the service back to the previous reference in the compose file, then to run `docker compose up -d <service>`. Standalone containers get the `docker pull` of the previous reference and the same line telling you to recreate the container with it, Swarm tasks `docker service update --image <previous reference> <service>`, and Kubernetes `kubectl set image` with the previous reference.
 
 ---
 
@@ -357,7 +356,7 @@ The **Software lifecycle** block of the Updates page lists every running contain
 
 With Personal, update intelligence goes beyond digest comparison. Each scan enriches what it found:
 
-- **CVE details**: known vulnerabilities of the version the container runs, from [OSV.dev](https://osv.dev) (results are cached for 24 hours). The lookup covers every running container that is neither ignored nor archived and whose image is one of the [supported images](security.md#cve-ecosystem-mapping), whether or not an update is pending, and including the containers left out of update tracking (pinned, `maintenant.update.enabled: "false"`, excluded images). For a CVE with a known fix, the detail of an update says whether the update fixes it (`is_fixed_by_update`) and gives the update command for the fixed version (`fix_command`, in the form of the runtime: Compose, `docker run`, `docker service update --image <ref> <service>` on Swarm or `kubectl set image`). The fixed version is the one that closes the affected range the running version sits in. `fix_command` writes it the way the running tag is written, with its variant suffix and its `v` prefix (`1.25.3-alpine` and a fix in `1.25.4` give `1.25.4-alpine`), and is empty when the fixed version is not a plain release number newer than the one that runs. Any other image is recorded as unsupported, never as free of CVEs.
+- **CVE details**: known vulnerabilities of the version the container runs, from [OSV.dev](https://osv.dev) (results are cached for 24 hours). The lookup covers every running container that is neither ignored nor archived and whose image is one of the [supported images](security.md#cve-ecosystem-mapping), whether or not an update is pending, and including the containers left out of update tracking (pinned, `maintenant.update.enabled: "false"`, excluded images). For a CVE with a known fix, the detail of an update says whether the update fixes it (`is_fixed_by_update`) and gives the update command for the fixed version (`fix_command`, in the form of the runtime: Compose, `docker pull` for a standalone container, `docker service update --image <ref> <service>` on Swarm or `kubectl set image`). The fixed version is the one that closes the affected range the running version sits in. `fix_command` writes it the way the running tag is written, with its variant suffix and its `v` prefix (`1.25.3-alpine` and a fix in `1.25.4` give `1.25.4-alpine`), and is empty when the fixed version is not a plain release number newer than the one that runs. Any other image is recorded as unsupported, never as free of CVEs.
 - **Risk scoring**: the CVEs the update fixes raise the [risk score](#risk-score): the highest severity gives critical 90, high 65, medium 40 or low 20, plus 10 when the container is publicly exposed, and restarts during the last day add up to 10. Risk levels are `critical` from 81, `high` from 61, `moderate` from 31 and `low` below.
 - **Changelog**: the release notes of the new version. maintenant reads the source repository from the image's `org.opencontainers.image.source` (or `org.label-schema.vcs-url`) label, and when it is on GitHub, takes the release whose tag is the new tag, with or without a `v` prefix. It returns the link, a summary of up to 500 characters and a `has_breaking_changes` flag set from the keywords "breaking change", "breaking:", "migration required" and "incompatible". When none of the five latest releases carries that tag, only the link to the source repository is returned. Set the `GITHUB_TOKEN` environment variable to raise GitHub's rate limit.
 
