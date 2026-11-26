@@ -394,7 +394,7 @@ func (r *Runtime) listPodEvents(ctx context.Context, ns, name string) ([]K8sEven
 	return r.fetchEvents(ctx, ns, fieldSelector)
 }
 
-const maxSnapshotEvents = 200
+const maxSnapshotEvents = 100 // at most 1.9 KB each on the wire
 
 func eventLastSeen(e *corev1.Event) time.Time {
 	switch {
@@ -418,8 +418,7 @@ func eventFirstSeen(e *corev1.Event) time.Time {
 	return e.CreationTimestamp.Time
 }
 
-// ListAllEvents returns the most recent events across all allowed namespaces,
-// newest first, each tagged with the object it concerns.
+// ListAllEvents returns a capped list of events across all allowed namespaces, warnings first then newest first.
 func (r *Runtime) ListAllEvents(ctx context.Context) ([]K8sEventRef, error) {
 	cs, err := r.client()
 	if err != nil {
@@ -457,6 +456,10 @@ func (r *Runtime) ListAllEvents(ctx context.Context) ([]K8sEventRef, error) {
 	}
 
 	sort.SliceStable(result, func(i, j int) bool {
+		wi, wj := result[i].Type == corev1.EventTypeWarning, result[j].Type == corev1.EventTypeWarning
+		if wi != wj {
+			return wi
+		}
 		return result[i].LastSeen.After(result[j].LastSeen)
 	})
 	if len(result) > maxSnapshotEvents {

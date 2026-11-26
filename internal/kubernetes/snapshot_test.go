@@ -7,9 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/agentpb"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -97,11 +101,63 @@ func TestListAllEvents_KeepsTheMostRecent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListAllEvents: %v", err)
 	}
-	if len(events) != 200 {
-		t.Fatalf("got %d events, want 200", len(events))
+	if len(events) != 100 {
+		t.Fatalf("got %d events, want 100", len(events))
 	}
-	if events[0].Reason != "r249" || events[len(events)-1].Reason != "r050" {
-		t.Fatalf("kept %s..%s, want r249..r050", events[0].Reason, events[len(events)-1].Reason)
+	if events[0].Reason != "r249" || events[len(events)-1].Reason != "r150" {
+		t.Fatalf("kept %s..%s, want r249..r150", events[0].Reason, events[len(events)-1].Reason)
+	}
+}
+
+func TestListAllEvents_KeepsWarningsFirst(t *testing.T) {
+	base := time.Unix(1_700_000_000, 0)
+	objs := make([]kruntime.Object, 0, 310)
+	for i := range 310 {
+		typ := corev1.EventTypeNormal
+		if i < 10 {
+			typ = corev1.EventTypeWarning
+		}
+		objs = append(objs, &corev1.Event{
+			ObjectMeta:     metav1.ObjectMeta{Name: fmt.Sprintf("e%03d", i), Namespace: "default"},
+			InvolvedObject: corev1.ObjectReference{Kind: "Pod", Namespace: "default", Name: "web"},
+			Type:           typ,
+			Reason:         fmt.Sprintf("r%03d", i),
+			LastTimestamp:  metav1.NewTime(base.Add(time.Duration(i) * time.Second)),
+		})
+	}
+	r := newStreamRuntime(t, fake.NewClientset(objs...))
+
+	events, err := r.ListAllEvents(context.Background())
+	if err != nil {
+		t.Fatalf("ListAllEvents: %v", err)
+	}
+	if len(events) != 100 {
+		t.Fatalf("got %d events, want 100", len(events))
+	}
+	if events[0].Reason != "r009" || events[9].Reason != "r000" {
+		t.Fatalf("warnings are %s..%s, want r009..r000", events[0].Reason, events[9].Reason)
+	}
+	if events[10].Reason != "r309" || events[99].Reason != "r220" {
+		t.Fatalf("others are %s..%s, want r309..r220", events[10].Reason, events[99].Reason)
+	}
+}
+
+func TestMaxSnapshotEvents_StaysUnderAQuarterOfTheMessageLimit(t *testing.T) {
+	long := func(n int) string { return strings.Repeat("x", n) }
+	largest := &agentpb.K8SEventMsg{
+		Type:              corev1.EventTypeWarning,
+		Reason:            long(128),
+		Message:           long(1024),
+		Source:            long(63 + 1 + 253),
+		FirstSeen:         timestamppb.Now(),
+		LastSeen:          timestamppb.Now(),
+		Count:             1 << 30,
+		InvolvedKind:      long(63),
+		InvolvedNamespace: long(63),
+		InvolvedName:      long(253),
+	}
+	if total := maxSnapshotEvents * proto.Size(largest); total > 1<<20/4 {
+		t.Fatalf("%d events of %d bytes weigh %d bytes, over a quarter of 1 MiB", maxSnapshotEvents, proto.Size(largest), total)
 	}
 }
 
@@ -129,8 +185,8 @@ func TestListAllEvents_DatesEventsCarryingOnlyAnEventTime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListAllEvents: %v", err)
 	}
-	if len(events) != 200 {
-		t.Fatalf("got %d events, want 200", len(events))
+	if len(events) != 100 {
+		t.Fatalf("got %d events, want 100", len(events))
 	}
 	for i := range 60 {
 		want := fmt.Sprintf("r%03d", 249-i)
