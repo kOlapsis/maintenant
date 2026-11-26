@@ -661,6 +661,12 @@ func mapPod(pod *corev1.Pod) K8sPod {
 		})
 	}
 
+	for _, c := range pod.Status.Conditions {
+		if statusReason == "" && c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse && c.Reason == corev1.PodReasonUnschedulable {
+			statusReason = c.Reason
+		}
+	}
+
 	workloadRef := podWorkloadRef(pod)
 
 	return K8sPod{
@@ -681,7 +687,11 @@ func mapPod(pod *corev1.Pod) K8sPod {
 
 // isPodBackOff reports whether a waiting reason means the kubelet keeps failing to run the container.
 func isPodBackOff(reason string) bool {
-	return reason == "CrashLoopBackOff" || reason == "ImagePullBackOff" || reason == "ErrImagePull"
+	switch reason {
+	case "CrashLoopBackOff", "ImagePullBackOff", "ErrImagePull", "CreateContainerConfigError", "InvalidImageName":
+		return true
+	}
+	return false
 }
 
 // podWorkloadRef returns the owning workload ID for a pod, the Deployment for a

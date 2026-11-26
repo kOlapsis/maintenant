@@ -282,7 +282,8 @@ func (c *K8sAlertChecker) checkPods(pods []K8sPod, workloads []K8sWorkload, now 
 			"node_name":     pod.NodeName,
 		}
 
-		pending := pod.Status == string(corev1.PodPending) && !crashLooping && !replicated[pod.WorkloadRef]
+		cannotStart := pod.Status == string(corev1.PodPending) && pod.StatusReason != ""
+		pending := cannotStart && !crashLooping && !replicated[pod.WorkloadRef]
 		c.checkPending(pod, st, ignored, pending, details, now)
 
 		switch {

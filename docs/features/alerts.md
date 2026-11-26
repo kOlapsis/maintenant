@@ -34,7 +34,7 @@ maintenant raises alerts from every monitoring subsystem. An alert is identified
 | `swarm` | `update_rollback`, `update_stalled` | `swarm_service` | Warning | A rolling update of the service completes |
 | `kubernetes` | `replica_health` | `workload` | Warning, Critical with no ready replica | The workload has all its replicas ready |
 | `kubernetes` | `crash_loop` | `pod` | Critical | The pod stops crash-looping |
-| `kubernetes` | `pod_pending` | `pod` | Warning | The pod leaves `Pending` |
+| `kubernetes` | `pod_pending` | `pod` | Warning | The pod can start |
 | `kubernetes` | `node_condition` | `node` | Critical when not Ready, Warning under memory, disk or PID pressure | The node has no problem left |
 
 Removing the object an alert is about resolves the alert. A container labelled `maintenant.ignore`, a Swarm service labelled with it and a Kubernetes workload annotated with it raise none. The Swarm service alerts read the label on the service itself (`deploy.labels` in a stack file), not on its task containers.
@@ -87,7 +87,7 @@ Swarm alerts come from the Swarm cluster the server is connected to, and Kuberne
 - **`update_rollback`** and **`update_stalled`** follow the rolling update status of a service: a rollback that completed, or an update that paused.
 - **`replica_health`** (Kubernetes) fires after a workload has been under-replicated for 5 minutes, and escalates to Critical when no replica is ready. Jobs and workloads with no desired replica are not checked.
 - **`crash_loop`** (Kubernetes) fires for a pod in `CrashLoopBackOff`, or that restarted 3 times in 10 minutes. Init containers count.
-- **`pod_pending`** (Kubernetes) fires for a pod that no Deployment, StatefulSet or DaemonSet owns once it has been `Pending` for 5 minutes. The pods of those controllers are covered by `replica_health`.
+- **`pod_pending`** (Kubernetes) fires for a pod that no Deployment, StatefulSet or DaemonSet owns once it has been unable to start for 5 minutes: unschedulable, or a container stuck on `ImagePullBackOff`, `ErrImagePull`, `CreateContainerConfigError` or `InvalidImageName`. A pod that is still starting (init containers, image pull) raises nothing. The pods of those controllers are covered by `replica_health`.
 - **`node_condition`** is one alert per node. A node whose Ready condition is False or Unknown counts as not ready. If the nodes cannot be listed, no node alert is raised or resolved.
 
 The Kubernetes alerts are evaluated every 30 seconds.
