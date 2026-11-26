@@ -20,6 +20,9 @@ import (
 // ErrSubscriptionsDisabled is returned when no mailer is configured or the running edition does not open subscribers.
 var ErrSubscriptionsDisabled = errors.New("email subscriptions are not enabled")
 
+// ErrUnknownToken is returned for a confirmation or unsubscribe token that matches no subscriber, or has expired.
+var ErrUnknownToken = errors.New("unknown or expired token")
+
 // SubscriberService manages email subscriptions for status updates.
 type SubscriberService struct {
 	store  SubscriberStore
@@ -102,11 +105,11 @@ func (s *SubscriberService) sendConfirmation(ctx context.Context, email, token s
 // Confirm validates a confirmation token and activates the subscription.
 func (s *SubscriberService) Confirm(ctx context.Context, token string) error {
 	sub, err := s.store.GetSubscriberByToken(ctx, token)
-	if err != nil || sub == nil {
-		return fmt.Errorf("invalid or expired token")
+	if err != nil {
+		return fmt.Errorf("look up confirmation token: %w", err)
 	}
-	if sub.ConfirmExpires != nil && sub.ConfirmExpires.Before(time.Now()) {
-		return fmt.Errorf("confirmation token expired")
+	if sub == nil || (sub.ConfirmExpires != nil && sub.ConfirmExpires.Before(time.Now())) {
+		return ErrUnknownToken
 	}
 	s.logger.Info("status: subscription confirmed", "email", sub.Email)
 	return s.store.ConfirmSubscriber(ctx, sub.ID)
@@ -115,8 +118,11 @@ func (s *SubscriberService) Confirm(ctx context.Context, token string) error {
 // Unsubscribe removes a subscriber by their unsubscribe token.
 func (s *SubscriberService) Unsubscribe(ctx context.Context, token string) error {
 	sub, err := s.store.GetSubscriberByUnsubToken(ctx, token)
-	if err != nil || sub == nil {
-		return fmt.Errorf("invalid unsubscribe token")
+	if err != nil {
+		return fmt.Errorf("look up unsubscribe token: %w", err)
+	}
+	if sub == nil {
+		return ErrUnknownToken
 	}
 	s.logger.Info("status: unsubscribed", "email", sub.Email)
 	return s.store.DeleteSubscriber(ctx, sub.ID)

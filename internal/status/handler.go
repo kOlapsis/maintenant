@@ -330,8 +330,12 @@ func (h *Handler) HandleConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.subscribers.Confirm(r.Context(), token); err != nil {
-		writeSimpleHTML(w, http.StatusBadRequest, "Error", err.Error())
+	if err := h.service.subscribers.Confirm(r.Context(), token); errors.Is(err, ErrUnknownToken) {
+		writeSimpleHTML(w, http.StatusOK, "Subscription", "This subscription is already confirmed, or the link has expired.")
+		return
+	} else if err != nil {
+		h.logger.Error("confirm subscription failed", "error", err)
+		writeSimpleHTML(w, http.StatusInternalServerError, "Error", "The subscription could not be confirmed. Please try again later.")
 		return
 	}
 
@@ -351,8 +355,12 @@ func (h *Handler) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.subscribers.Unsubscribe(r.Context(), token); err != nil {
-		writeSimpleHTML(w, http.StatusBadRequest, "Error", err.Error())
+	if err := h.service.subscribers.Unsubscribe(r.Context(), token); errors.Is(err, ErrUnknownToken) {
+		writeSimpleHTML(w, http.StatusOK, "Unsubscribed", "This address is already unsubscribed, or the link is not valid.")
+		return
+	} else if err != nil {
+		h.logger.Error("unsubscribe failed", "error", err)
+		writeSimpleHTML(w, http.StatusInternalServerError, "Error", "The unsubscription could not be recorded. Please try again later.")
 		return
 	}
 
@@ -361,7 +369,6 @@ func (h *Handler) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 
 // writeSimpleHTML renders a minimal HTML page for confirm/unsubscribe results.
 func writeSimpleHTML(w http.ResponseWriter, statusCode int, title, message string) {
-	// Escaped: message can carry an error string derived from request input.
 	t, m := html.EscapeString(title), html.EscapeString(message)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(statusCode)
