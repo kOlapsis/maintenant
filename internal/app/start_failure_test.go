@@ -22,6 +22,11 @@ func TestStart_FailureLeavesNoInstanceRow(t *testing.T) {
 		cfg.Mode = "server"
 		a, err := New(cfg, logger)
 		require.NoError(t, err)
+		t.Cleanup(func() {
+			a.background.Wait()
+			_ = a.rt.Close()
+			_ = a.db.Close()
+		})
 
 		require.ErrorContains(t, a.Start(context.Background()), "mode requires")
 		assert.Zero(t, instanceRows(t, cfg.DBPath, a.instanceID))
