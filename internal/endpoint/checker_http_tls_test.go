@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kolapsis/maintenant/internal/trust"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 func httpEndpoint(target string) *Endpoint {
@@ -35,13 +37,9 @@ func httpEndpoint(target string) *Endpoint {
 
 // Issue #36: a host answering over a certificate signed by an unknown authority
 // is not down. It must report as degraded, keep counting as a success, and still
-// surrender its certificate chain so expiry monitoring keeps working. The probe
-// never gets far enough to learn an HTTP status: it stops at the handshake.
+// surrender its certificate chain so expiry monitoring keeps working.
 func TestCheckHTTP_UntrustedCertificateIsDegradedNotDown(t *testing.T) {
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
+	srv, callCount, _ := recordingServer(t)
 
 	// httptest's certificate is signed by an authority nothing trusts, which is
 	// exactly the reporter's internal-PKI situation.
@@ -52,9 +50,12 @@ func TestCheckHTTP_UntrustedCertificateIsDegradedNotDown(t *testing.T) {
 	assert.Contains(t, result.DegradedReason, "unknown authority")
 	assert.Contains(t, result.ErrorMessage, "unknown authority",
 		"the reason must reach the UI through last_error")
-	assert.Nil(t, result.HTTPStatus, "a handshake-only probe never learns an HTTP status")
-	assert.NotEmpty(t, result.TLSPeerCertificates,
+	require.NotNil(t, result.HTTPStatus)
+	assert.Equal(t, http.StatusOK, *result.HTTPStatus)
+	assert.Equal(t, 1, callCount())
+	require.NotEmpty(t, result.TLSPeerCertificates,
 		"the chain must still be captured, or expiry monitoring silently stops for these hosts")
+	assert.Equal(t, srv.Certificate().Raw, result.TLSPeerCertificates[0].Raw)
 }
 
 // The same host, trusted: no retry, no degradation.
@@ -92,21 +93,101 @@ func TestCheckHTTP_UnreachableHostStaysDown(t *testing.T) {
 	assert.Contains(t, result.ErrorMessage, "request failed")
 }
 
-// An untrusted certificate is reported as degraded regardless of what the
-// application behind it would have answered: the request is never sent, so a
-// 500 the handler is ready to return is never observed.
-func TestCheckHTTP_UntrustedCertificate_AppStatusNeverObserved(t *testing.T) {
+func TestCheckHTTP_UntrustedCertificate_BadStatusIsAFailedCheck(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer srv.Close()
 
 	result := CheckHTTP(context.Background(), httpEndpoint(srv.URL), nil)
 
-	assert.True(t, result.Success, "the handshake succeeded; the never-sent request cannot fail it")
+	assert.False(t, result.Success)
+	require.NotNil(t, result.HTTPStatus)
+	assert.Equal(t, http.StatusServiceUnavailable, *result.HTTPStatus)
+	assert.Contains(t, result.ErrorMessage, "unexpected status 503")
+	assert.Contains(t, result.ErrorMessage, "unknown authority")
+	assert.Equal(t, StatusDown, statusForResult(result))
+	require.NotEmpty(t, result.TLSPeerCertificates)
+
+	store := newMemStore()
+	svc := NewService(Deps{Store: store, Engine: noopEngine(), Logger: noopLogger()})
+	id := seedEndpoint(t, store, &Endpoint{
+		ExternalID: "ctr-untrusted", LabelKey: "k1",
+		EndpointType: TypeHTTP, Target: srv.URL,
+		Status: StatusDegraded, AlertState: AlertNormal,
+		Config: DefaultConfig(), Active: true,
+		AgentID: uid.LocalAgent,
+	})
+
+	ep, err := svc.CheckNow(context.Background(), id)
+	require.NoError(t, err)
+	assert.Equal(t, StatusDown, ep.Status)
+	assert.Equal(t, 1, ep.ConsecutiveFailures)
+}
+
+func TestCheckHTTP_UntrustedCertificate_TransportFailureKeepsURLSecretsOut(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err == nil {
+			_ = conn.Close()
+		}
+	}))
+	defer srv.Close()
+
+	result := CheckHTTP(context.Background(), httpEndpoint(srv.URL+"/probe/s3cret-path?token=s3cret-query"), nil)
+
+	assert.False(t, result.Success)
+	assert.Nil(t, result.HTTPStatus)
+	assert.Contains(t, result.ErrorMessage, "request failed")
+	assert.Contains(t, result.ErrorMessage, "unknown authority")
+	assert.NotContains(t, result.ErrorMessage, "s3cret")
+	assert.NotContains(t, result.ErrorMessage, "token")
+}
+
+func TestCheckHTTP_UntrustedCertificate_CredentialsInURLAreNeverSent(t *testing.T) {
+	srv, callCount, _ := recordingServer(t)
+	target := strings.Replace(srv.URL, "https://", "https://probe:s3cret@", 1)
+
+	result := CheckHTTP(context.Background(), httpEndpoint(target), nil)
+
+	assert.Equal(t, 0, callCount())
+	assert.True(t, result.Success)
 	assert.True(t, result.Degraded)
 	assert.Nil(t, result.HTTPStatus)
-	assert.Contains(t, result.ErrorMessage, "unknown authority")
+}
+
+func TestCheckHTTP_UntrustedCertificate_Redirects(t *testing.T) {
+	other, otherCalls, _ := recordingServer(t)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/elsewhere":
+			http.Redirect(w, r, other.URL+"/login", http.StatusFound)
+		case "/here":
+			http.Redirect(w, r, "/ok", http.StatusFound)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+
+	t.Run("to another host is not followed", func(t *testing.T) {
+		result := CheckHTTP(context.Background(), httpEndpoint(srv.URL+"/elsewhere"), nil)
+
+		assert.Equal(t, 0, otherCalls())
+		assert.True(t, result.Success)
+		assert.True(t, result.Degraded)
+		require.NotNil(t, result.HTTPStatus)
+		assert.Equal(t, http.StatusFound, *result.HTTPStatus)
+	})
+
+	t.Run("on the same host is followed", func(t *testing.T) {
+		result := CheckHTTP(context.Background(), httpEndpoint(srv.URL+"/here"), nil)
+
+		assert.True(t, result.Success)
+		assert.True(t, result.Degraded)
+		require.NotNil(t, result.HTTPStatus)
+		assert.Equal(t, http.StatusOK, *result.HTTPStatus)
+	})
 }
 
 // With verification switched off per endpoint, nothing is degraded.

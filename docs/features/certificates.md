@@ -101,7 +101,9 @@ A host that answers normally but presents a certificate maintenant cannot valida
 
 The certificate is still collected in this state, so expiry monitoring keeps working on internal-PKI hosts even before you configure the CA.
 
-To tell "degraded" from "down" after a certificate is rejected, the endpoint probe only completes a TLS handshake to capture the chain. It never resends the HTTP request, so headers and URL secrets never reach a peer whose identity was not verified. A degraded result therefore carries no HTTP status: the application behind the certificate is never actually reached.
+After a certificate is rejected, the endpoint probe completes a TLS handshake to capture the chain, then sends the request once more without verifying the certificate and judges the answer against `expected-status`. A matching status is **degraded**. Any other status, or a request that fails, is a failed check: it counts towards the failure threshold and the endpoint goes **down** like any other, with the HTTP reason followed by the certificate reason. On this request a redirect is followed only on the same host; a redirect to another host is not followed and the endpoint stays degraded.
+
+An endpoint with custom headers, or with credentials in its URL (`https://user:password@host`), is not sent again: these never reach a peer whose identity was not verified. While its certificate is not trusted, such an endpoint is judged on its TLS answer only. It stays degraded whatever the application behind would answer, and its result carries no HTTP status. The path and the query string of the URL are sent on the unverified request.
 
 A host that is genuinely unreachable (timeout, DNS failure, connection refused) remains **down**.
 
