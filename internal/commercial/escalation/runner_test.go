@@ -279,6 +279,8 @@ func (s *runStore) InsertDelivery(_ context.Context, d *esc.Delivery) (string, e
 	}
 	d.ID = uid.New()
 	cp := *d
+	cp.CreatedAt = d.AttemptStartedAt
+	cp.NextAttemptAt = time.Unix(d.NextAttemptAt.Unix(), 0)
 	s.deliveries[d.ID] = &cp
 	return d.ID, nil
 }
@@ -306,17 +308,46 @@ func (s *runStore) UpdateDelivery(_ context.Context, d *esc.Delivery) error {
 	return nil
 }
 
-func (s *runStore) SelectOrphanPendingDeliveries(_ context.Context, before time.Time) ([]*esc.Delivery, error) {
+func (s *runStore) SelectDueDeliveries(_ context.Context, now time.Time) ([]*esc.Delivery, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []*esc.Delivery
 	for _, d := range s.deliveries {
-		if d.Status == esc.DeliveryStatusPending && d.AttemptStartedAt.Before(before) {
+		if d.Status == esc.DeliveryStatusPending && !d.NextAttemptAt.After(now) {
 			cp := *d
 			out = append(out, &cp)
 		}
 	}
 	return out, nil
+}
+
+// ClaimDelivery mirrors the SQL claim, the alert checks aside: the runner reads the alert before claiming.
+func (s *runStore) ClaimDelivery(_ context.Context, d *esc.Delivery, at, until time.Time) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	row, ok := s.deliveries[d.ID]
+	if !ok || row.Status != esc.DeliveryStatusPending || row.NextAttemptAt.Unix() != d.NextAttemptAt.Unix() {
+		return false, nil
+	}
+	if run := s.runs[row.RunID]; row.LevelIndex >= 0 && (run == nil || (run.Status != esc.RunStatusActive && run.Status != esc.RunStatusExhausted)) {
+		return false, nil
+	}
+	row.Attempts++
+	row.AttemptStartedAt, row.NextAttemptAt = at, time.Unix(until.Unix(), 0)
+	d.Attempts, d.AttemptStartedAt, d.NextAttemptAt = row.Attempts, row.AttemptStartedAt, row.NextAttemptAt
+	return true, nil
+}
+
+func (s *runStore) SettleDelivery(_ context.Context, d *esc.Delivery, claim time.Time) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	row, ok := s.deliveries[d.ID]
+	if !ok || row.Status != esc.DeliveryStatusPending || row.NextAttemptAt.Unix() != claim.Unix() {
+		return false, nil
+	}
+	row.Status, row.Error, row.SentAt = d.Status, d.Error, d.SentAt
+	row.NextAttemptAt = time.Unix(d.NextAttemptAt.Unix(), 0)
+	return true, nil
 }
 
 // --- alert store mock ---
@@ -435,29 +466,59 @@ type senderCall struct {
 type fakeSender struct {
 	mu       sync.Mutex
 	calls    []senderCall
+	sent     []senderCall
 	failFor  map[string]bool // channel IDs that should fail
+	errFor   map[string]error
 	sendErr  error
 	delivers atomic.Int32
 }
 
 func newFakeSender() *fakeSender {
-	return &fakeSender{failFor: map[string]bool{}}
+	return &fakeSender{failFor: map[string]bool{}, errFor: map[string]error{}}
 }
 
 func (f *fakeSender) SendEventNow(_ context.Context, _ string, a *alert.Alert, ch *alert.NotificationChannel) error {
 	f.delivers.Add(1)
 	f.mu.Lock()
-	f.calls = append(f.calls, senderCall{AlertID: a.ID, ChannelID: ch.ID, Message: a.Message})
-	failing := f.failFor[ch.ID]
-	staticErr := f.sendErr
-	f.mu.Unlock()
-	if staticErr != nil {
-		return staticErr
-	}
-	if failing {
+	defer f.mu.Unlock()
+	call := senderCall{AlertID: a.ID, ChannelID: ch.ID, Message: a.Message}
+	f.calls = append(f.calls, call)
+	switch {
+	case f.sendErr != nil:
+		return f.sendErr
+	case f.errFor[ch.ID] != nil:
+		return f.errFor[ch.ID]
+	case f.failFor[ch.ID]:
 		return errors.New("simulated send failure")
 	}
+	f.sent = append(f.sent, call)
 	return nil
+}
+
+// down makes every send to a channel fail as an unreachable destination would, or lets it through again.
+func (f *fakeSender) down(channelID string, down bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failFor[channelID] = down
+}
+
+func (f *fakeSender) refuse(channelID string, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.errFor[channelID] = err
+}
+
+// delivered returns the messages that reached a channel, in order.
+func (f *fakeSender) delivered(channelID string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for _, c := range f.sent {
+		if c.ChannelID == channelID {
+			out = append(out, c.Message)
+		}
+	}
+	return out
 }
 
 func (f *fakeSender) snapshot() []senderCall {
@@ -561,6 +622,20 @@ func (h *harness) waitForDeliveries(t *testing.T, n int) {
 	require.Eventually(t, func() bool {
 		return int(h.sender.delivers.Load()) >= n
 	}, 2*time.Second, 5*time.Millisecond, "expected %d deliveries within timeout", n)
+	h.settle()
+}
+
+// settle returns once every send the runner started has recorded its outcome.
+func (h *harness) settle() { h.runner.sending.Wait() }
+
+// minutes runs one evaluation a minute for n minutes, each one settled.
+func (h *harness) minutes(t *testing.T, n int) {
+	t.Helper()
+	for range n {
+		h.advance(time.Minute)
+		require.NoError(t, h.runner.EvaluateCycle(context.Background()))
+		h.settle()
+	}
 }
 
 // --- shared fixtures ---
@@ -1017,31 +1092,22 @@ func TestRunner_OneChannelFailureDoesNotBlockOthers(t *testing.T) {
 	})
 	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
 
-	h.sender.failFor["2"] = true
+	h.sender.down("2", true)
 	h.advance(61 * time.Second)
 	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
 	h.waitForDeliveries(t, 2)
 
 	deliveries := h.store.listDeliveries()
 	require.Len(t, deliveries, 2)
-
-	// Wait for async UpdateDelivery to land.
-	require.Eventually(t, func() bool {
-		for _, d := range h.store.listDeliveries() {
-			if d.Status == esc.DeliveryStatusPending {
-				return false
-			}
-		}
-		return true
-	}, time.Second, 5*time.Millisecond, "both deliveries must leave pending status")
-
-	statuses := map[string]string{}
-	for _, d := range h.store.listDeliveries() {
+	byChannel := map[string]*esc.Delivery{}
+	for _, d := range deliveries {
 		require.NotNil(t, d.ChannelID)
-		statuses[*d.ChannelID] = d.Status
+		byChannel[*d.ChannelID] = d
 	}
-	assert.Equal(t, esc.DeliveryStatusSent, statuses["1"])
-	assert.Equal(t, esc.DeliveryStatusFailed, statuses["2"])
+	assert.Equal(t, esc.DeliveryStatusSent, byChannel["1"].Status)
+	assert.Equal(t, esc.DeliveryStatusPending, byChannel["2"].Status, "the failing channel waits for its retry")
+	assert.Equal(t, "simulated send failure", byChannel["2"].Error)
+	assert.True(t, byChannel["2"].NextAttemptAt.After(h.clock()))
 }
 
 func TestRunner_DisabledChannelMarksDeliveryFailed(t *testing.T) {

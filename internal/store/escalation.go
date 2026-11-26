@@ -549,23 +549,6 @@ func (s *EscalationStore) UpdateDelivery(ctx context.Context, d *escalation.Deli
 	return nil
 }
 
-// SelectOrphanPendingDeliveries returns deliveries stuck in 'pending' for longer
-// than the runner's orphan timeout. The runner decides whether to retry or abandon.
-func (s *EscalationStore) SelectOrphanPendingDeliveries(ctx context.Context, before time.Time) ([]*escalation.Delivery, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+escalationDeliveryColumns+`
-		FROM escalation_deliveries d
-		LEFT JOIN notification_channels c ON c.id = d.channel_id
-		WHERE d.status = 'pending' AND d.attempt_started_at < ?
-		ORDER BY d.attempt_started_at ASC`,
-		before.Unix(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("select orphan pending deliveries: %w", err)
-	}
-	return scanEscalationDeliveries(rows)
-}
-
 // PurgeRunsAndDeliveriesOlderThan deletes terminated runs (ended_at < before) in batches of 1000.
 // Cascade delete handles escalation_deliveries automatically.
 func (s *EscalationStore) PurgeRunsAndDeliveriesOlderThan(ctx context.Context, before time.Time) error {

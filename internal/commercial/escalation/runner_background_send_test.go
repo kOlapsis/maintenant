@@ -146,6 +146,7 @@ func TestRunnerStopEndsBackgroundSendsAndKeepsTheirOutcome(t *testing.T) {
 	}
 	ds := h.deliveries(h.onlyRun(a).ID)
 	require.Len(t, ds, 1)
-	assert.Equal(t, esc.DeliveryStatusFailed, ds[0].Status, "the cancelled send still records its outcome")
-	assert.Contains(t, ds[0].Error, "context canceled")
+	assert.Equal(t, esc.DeliveryStatusPending, ds[0].Status, "the cancelled send is left for a retry after the restart")
+	assert.Contains(t, ds[0].Error, "context canceled", "the cancelled send still records its outcome")
+	assert.True(t, ds[0].NextAttemptAt.Before(h.clock().Add(time.Minute)), "the retry does not wait for the claim of the cancelled attempt")
 }

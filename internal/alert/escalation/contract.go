@@ -73,7 +73,6 @@ type Store interface {
 	// ReserveDelivery inserts like InsertDelivery while the run is active and its alert active and unacknowledged, and reports whether it did.
 	ReserveDelivery(ctx context.Context, d *Delivery) (bool, error)
 	UpdateDelivery(ctx context.Context, d *Delivery) error
-	SelectOrphanPendingDeliveries(ctx context.Context, before time.Time) ([]*Delivery, error)
 }
 
 // DeliveryQueue is the durable queue of escalation deliveries waiting for an attempt.
