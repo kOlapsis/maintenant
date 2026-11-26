@@ -4,6 +4,9 @@
 package main
 
 import (
+	"bytes"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +15,22 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/app"
 )
+
+func TestWarnMistypedBooleans_NamesEachVariableOnce(t *testing.T) {
+	t.Setenv("MAINTENANT_DISABLE_TELEMETRY", "ture")
+	t.Setenv("MAINTENANT_MCP", "treu")
+	t.Setenv("MAINTENANT_PROXY_LABELS", "yes")
+	var out bytes.Buffer
+
+	cfg, _ := loadConfig(nil)
+	warnMistypedBooleans(cfg, slog.New(slog.NewJSONHandler(&out, nil)))
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	require.Len(t, lines, 2)
+	assert.Equal(t, 1, strings.Count(out.String(), `"variable":"MAINTENANT_DISABLE_TELEMETRY","value":"ture"`))
+	assert.Equal(t, 1, strings.Count(out.String(), `"variable":"MAINTENANT_MCP","value":"treu"`))
+	assert.Contains(t, lines[0], `"level":"WARN"`)
+}
 
 func TestLoadConfig_FlagOverridesAMalformedEnvironment(t *testing.T) {
 	t.Setenv("MAINTENANT_RETENTION_SNAPSHOTS", "7d")

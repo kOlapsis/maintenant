@@ -69,6 +69,7 @@ func main() {
 		logger.Info("demo mode enabled: instance is read-only")
 	}
 
+	warnMistypedBooleans(cfg, logger)
 	validateStartup(cfg, logger)
 
 	// --copy-store-to runs the copy and exits: the binary has
@@ -153,6 +154,14 @@ func runMCPStdio(cfg app.Config, logger *slog.Logger) {
 	if err != nil {
 		logger.Error("MCP stdio relay failed", "error", err)
 		os.Exit(1)
+	}
+}
+
+func warnMistypedBooleans(cfg app.Config, logger *slog.Logger) {
+	for _, s := range cfg.MistypedBooleans {
+		logger.Warn("boolean setting is not a recognised value and is read as false",
+			"variable", s.Name, "value", s.Raw,
+			"accepted", "1, t, true, y, yes, on, 0, f, false, n, no, off")
 	}
 }
 

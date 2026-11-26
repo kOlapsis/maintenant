@@ -6,7 +6,7 @@ Three options exist only as flags: `--copy-store-to` and `--yes` (copy an instal
 
 Conventions used below:
 
-- A boolean is true for `1`, `t`, `true`, `y`, `yes` or `on` (case-insensitive). Any other value, including an empty one, is false.
+- A boolean is true for `1`, `t`, `true`, `y`, `yes` or `on` (case-insensitive). `0`, `f`, `false`, `n`, `no`, `off` and an empty value are false. Any other value is also read as false, and the startup logs a warning naming the variable and the value.
 - Durations use Go syntax: `30s`, `5m`, `24h`.
 - A value that cannot be parsed falls back to the default. The settings that stop the startup on an invalid value say so in their row.
 
