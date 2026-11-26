@@ -222,7 +222,7 @@ The official Docker image uses a multi-stage build:
 
 1. **Stage 1**: Node.js 22 builds the Vue 3 SPA
 2. **Stage 2**: Go 1.26 compiles the binary with the frontend embedded
-3. **Stage 3**: Alpine 3.21 minimal runtime (read-only binary, health check included)
+3. **Stage 3**: Alpine 3.24 minimal runtime (read-only binary, health check included)
 
 The image is available at `ghcr.io/kolapsis/maintenant`, for `linux/amd64` and `linux/arm64`.
 

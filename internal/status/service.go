@@ -119,7 +119,6 @@ func NewService(d Deps) *Service {
 		subscribers:       d.Subscribers,
 	}
 	if d.PublicBroadcaster != nil {
-		// The page refetches its snapshot on these events: drop the cached one before they leave.
 		s.publicBroadcaster = func(eventType string, data any) {
 			s.publicGen.Add(1)
 			d.PublicBroadcaster(eventType, data)

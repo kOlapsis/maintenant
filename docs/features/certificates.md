@@ -230,7 +230,7 @@ Domains are comma-separated. Port defaults to `443` if omitted, and a scheme or 
 
 With `MAINTENANT_PROXY_LABELS=true`, the HTTPS hostname of the route retained for the container (see [Endpoints from reverse proxy labels](endpoints.md#endpoints-from-reverse-proxy-labels)) is added to `maintenant.tls.certificates` for you, merged with any value you already set. Sites served with `tls internal` are left out, since their certificate comes from Caddy's local CA. See [Reverse proxy labels](../guides/docker-labels.md#reverse-proxy-labels-traefik-caddy).
 
-On a host monitored by a [remote agent](multihost.md), the agent scans the labelled domains every 60 seconds and checks the chain and the hostname itself, then reports the leaf certificate with both results. Expiry, chain and hostname alerts work as usual; only OCSP is not checked for those monitors. An agent too old to report these results sends none, and the server then treats the chain and the hostname as valid.
+On a host monitored by a [remote agent](multihost.md), the agent scans the labelled domains every 60 seconds and checks the chain and the hostname itself, then reports the leaf certificate with both results. The agent uses its own trust store: an internal certificate signed by a private CA is reported as an invalid chain unless that CA is given to the agent through `MAINTENANT_CA_CERT`, as for the server. Expiry, chain and hostname alerts work as usual; only OCSP is not checked for those monitors. An agent too old to report these results sends none, and the server then treats the chain and the hostname as valid.
 
 ---
 
