@@ -77,7 +77,10 @@ type Service struct {
 	onEndpointRemoved EndpointRemovedCallback
 	ctx               context.Context
 	limitMu           sync.Mutex
-	limitLoop         sync.WaitGroup
+	life              context.Context
+	end               context.CancelFunc
+	runMu             sync.Mutex // no Add once Stop has begun
+	running           sync.WaitGroup
 
 	// manualChecks holds the endpoint ids with an on-demand check in flight.
 	manualChecks sync.Map
@@ -98,6 +101,7 @@ func NewService(d Deps) *Service {
 	if lc == nil {
 		lc = DefaultLicenseChecker{}
 	}
+	life, end := context.WithCancel(context.Background())
 	return &Service{
 		store:             d.Store,
 		engine:            d.Engine,
@@ -106,6 +110,8 @@ func NewService(d Deps) *Service {
 		onEvent:           d.EventCallback,
 		alertCallback:     d.AlertCallback,
 		onEndpointRemoved: d.EndpointRemovedCallback,
+		life:              life,
+		end:               end,
 	}
 }
 
@@ -130,7 +136,7 @@ func (s *Service) Start(ctx context.Context) {
 	s.ctx = ctx
 	s.limitMu.Unlock()
 	s.applyLimitLogged(ctx)
-	s.limitLoop.Go(func() {
+	s.running.Go(func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
 		for {
@@ -152,9 +158,12 @@ func (s *Service) Start(ctx context.Context) {
 	}
 }
 
-// Stop waits for the slot allocation loop, which ends with the context of Start, then shuts down the check engine.
+// Stop cancels the manual checks, waits for them and for the slot allocation loop, which ends with the context of Start, then shuts down the check engine.
 func (s *Service) Stop() {
-	s.limitLoop.Wait()
+	s.runMu.Lock()
+	s.end()
+	s.runMu.Unlock()
+	s.running.Wait()
 	s.engine.Stop()
 }
 
@@ -345,8 +354,15 @@ func (s *Service) CheckNow(ctx context.Context, endpointID string) (*Endpoint, e
 	}
 	defer s.manualChecks.Delete(endpointID)
 
-	// The probe is bounded by the endpoint's own timeout, not by the request.
-	ctx = context.WithoutCancel(ctx)
+	s.runMu.Lock()
+	if err := s.life.Err(); err != nil {
+		s.runMu.Unlock()
+		return nil, fmt.Errorf("endpoint service stopped: %w", err)
+	}
+	s.running.Add(1)
+	s.runMu.Unlock()
+	defer s.running.Done()
+	ctx = s.life
 
 	var result CheckResult
 	switch ep.EndpointType {
@@ -356,6 +372,9 @@ func (s *Service) CheckNow(ctx context.Context, endpointID string) (*Endpoint, e
 		result = CheckTCP(ctx, ep, s.logger)
 	default:
 		return nil, fmt.Errorf("unsupported endpoint type %q", ep.EndpointType)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("endpoint service stopped: %w", err)
 	}
 
 	s.logger.Info("endpoint: on-demand check", "endpoint_id", endpointID,
