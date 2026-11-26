@@ -6,6 +6,7 @@ package alert
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"log/slog"
@@ -110,6 +111,7 @@ func WithBaseURL(baseURL string) NotifierOption {
 // (dev only, via MAINTENANT_ALLOW_PRIVATE_WEBHOOKS).
 func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bool, opts ...NotifierOption) *Notifier {
 	client := ssrf.NewHTTPClient(webhookTimeout, allowPrivate)
+	client.CheckRedirect = keepBodyRedirects
 	queue, _ := channelStore.(DeliveryQueue)
 	n := &Notifier{
 		channelStore:    channelStore,
@@ -134,6 +136,18 @@ func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bo
 		n.subQueues[i] = make(chan NotificationJob, notifierChannelBuffer)
 	}
 	return n
+}
+
+// keepBodyRedirects follows a 307 or 308, which resend the method and the body, and stops on any other redirect.
+func keepBodyRedirects(req *http.Request, via []*http.Request) error {
+	switch req.Response.StatusCode {
+	case http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	return http.ErrUseLastResponse
 }
 
 // HTTPClient returns the SSRF-guarded client the notifier delivers webhooks with.
