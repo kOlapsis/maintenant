@@ -118,7 +118,7 @@ func (c *K8sAlertChecker) Resume(active []*alert.Alert) {
 				c.pods[a.EntityID] = st
 			}
 			if a.AlertType == alertTypeCrashLoop {
-				st.alerted = true
+				st.alerted, st.backoffAt = true, now
 			} else {
 				st.pendingAlerted = true
 			}

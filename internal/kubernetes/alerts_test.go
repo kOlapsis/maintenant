@@ -205,6 +205,27 @@ func TestCheck_CrashLoopBackOffHoldsThroughTheRunsBetweenBackoffs(t *testing.T) 
 	assert.True(t, recovered[0].IsRecover)
 }
 
+func TestResume_CrashLoopSeenBetweenTwoBackoffsStaysOpen(t *testing.T) {
+	h := newCheckerHarness()
+	h.c.Resume([]*alert.Alert{
+		{Source: "kubernetes", AlertType: "crash_loop", EntityType: "pod", EntityID: "shop/api-7d9f-x", Severity: alert.SeverityCritical},
+	})
+	running := K8sPod{Name: "api-7d9f-x", Namespace: "shop", Status: "Running", RestartCount: 6}
+	backoff := running
+	backoff.StatusReason = "CrashLoopBackOff"
+
+	assert.Empty(t, h.check(TopologySnapshot{Pods: []K8sPod{running}}), "the first check after a restart can fall between two backoffs")
+	h.advance(time.Minute)
+	assert.Empty(t, h.check(TopologySnapshot{Pods: []K8sPod{backoff}}), "the open alert is not raised again")
+
+	h.advance(30 * time.Second)
+	h.check(TopologySnapshot{Pods: []K8sPod{running}})
+	h.advance(defaultCrashLoopWindow)
+	recovered := h.check(TopologySnapshot{Pods: []K8sPod{running}})
+	require.Len(t, recovered, 1)
+	assert.True(t, recovered[0].IsRecover)
+}
+
 func TestCheck_NodeConditionsShareOneAlert(t *testing.T) {
 	h := newCheckerHarness()
 	pressured := K8sNode{Name: "worker-1", Status: "ready", Conditions: []K8sCondition{

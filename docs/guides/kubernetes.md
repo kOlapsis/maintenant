@@ -214,7 +214,7 @@ The server raises four Kubernetes alerts for the cluster it runs in or is pointe
 - `crash_loop` is per pod.
 - `node_condition` is one alert per node, however many conditions it reports. A node whose Ready condition is `Unknown` counts as not Ready.
 - If the nodes cannot be listed (for instance an RBAC denial), no `node_condition` alert is raised or resolved.
-- After a restart, maintenant takes over the open Kubernetes alerts and resolves those whose condition is gone.
+- After a restart, maintenant takes over the open Kubernetes alerts and resolves those whose condition is gone. The `crash_loop` alert of a pod that still exists counts as seen in `CrashLoopBackOff` at the restart, so it resolves after 10 minutes without a backoff and is never resolved then raised again by a check that falls between two backoffs.
 - A Kubernetes agent reports its cluster for display only: these alerts exist for the server's own cluster.
 
 ---
