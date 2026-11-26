@@ -345,8 +345,7 @@ func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric stri
 		return nil, fmt.Errorf("invalid metric: %s", metric)
 	}
 
-	// Rank existing containers only, filtered by host through the owning agent
-	// (rollups carry no agent_id column and outlive their container).
+	// Rollups outlive their container and carry no agent_id.
 	knownContainers := "SELECT id FROM containers"
 	if agentID != nil {
 		knownContainers += " WHERE agent_id = ?"

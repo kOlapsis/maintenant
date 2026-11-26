@@ -57,7 +57,7 @@ type AgentRowBudget struct {
 	agents map[string]*agentRowCount
 }
 
-// Reserve accounts for one more row about to be stored for agentID, or refuses it with agentevent.ErrInvalid once the agent holds limit of them; count reads the stored number, at most once a minute per agent, and makeRoom, when set, deletes rows the agent can lose and returns how many.
+// Reserve accounts for one more row of agentID, or refuses it once the agent holds limit of them.
 func (b *AgentRowBudget) Reserve(ctx context.Context, agentID, kind string, limit int, logger *slog.Logger, count, makeRoom func(context.Context) (int, error)) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -151,7 +151,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	return s.handleAgentEvent(ctx, agentID, ev, meta, nil)
 }
 
-// handleAgentEvent appends a container the server does not hold to unknown instead of adding it, when unknown is set.
+// handleAgentEvent defers a container the server does not hold into unknown, when set.
 func (s *Service) handleAgentEvent(ctx context.Context, agentID string, ev *agentpb.ContainerEvent, meta agentevent.Meta, unknown *[]*agentpb.ContainerEvent) error {
 	externalID := ev.GetContainerId()
 	if externalID == "" {
@@ -306,7 +306,7 @@ func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *
 		}
 	}
 
-	// New containers go last: making room for one must not delete an archived container this inventory brings back.
+	// Added last: making room must not delete an archived container this inventory brings back.
 	var refused error
 	for _, c := range unknown {
 		err := s.addAgentContainer(ctx, agentID, c, meta)

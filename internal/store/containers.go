@@ -208,12 +208,12 @@ func (s *ContainerStore) CountAgentContainers(ctx context.Context, agentID strin
 	return count, nil
 }
 
-// DeleteOldestArchivedContainers removes up to limit archived containers of agentID, the longest archived first, with the rows that depend on them.
+// DeleteOldestArchivedContainers removes the limit longest-archived containers of agentID.
 func (s *ContainerStore) DeleteOldestArchivedContainers(ctx context.Context, agentID string, limit int) (int64, error) {
 	return s.deleteArchivedBatch(ctx, limit, `agent_id = ?`, agentID)
 }
 
-// deleteArchivedBatch removes, in one transaction, up to limit dated archived containers matching where, the longest archived first, with the rows that depend on them.
+// deleteArchivedBatch removes the limit longest-archived containers matching where, in one transaction.
 func (s *ContainerStore) deleteArchivedBatch(ctx context.Context, limit int, where string, arg interface{}) (int64, error) {
 	var deleted int64
 	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
@@ -378,7 +378,7 @@ func (s *ContainerStore) deleteTransitionsBefore(ctx context.Context, before tim
 
 var archivedPurgeBatch = 100
 
-// DeleteArchivedContainersBefore removes the containers archived before the cutoff with the rows that depend on them, a bounded number per transaction.
+// DeleteArchivedContainersBefore removes the containers archived before the cutoff, in batches.
 func (s *ContainerStore) DeleteArchivedContainersBefore(ctx context.Context, before time.Time) (int64, error) {
 	cutoff := before.Unix()
 	deleted, _, err := runBatchedDelete(ctx, batchOpts{batchSize: archivedPurgeBatch}, func(ctx context.Context, batchSize int) (int64, error) {
