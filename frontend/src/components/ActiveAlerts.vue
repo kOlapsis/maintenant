@@ -4,7 +4,7 @@
 -->
 
 <script setup lang="ts">
-import { computed, inject, ref, onMounted } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import { useAlertsStore } from '@/stores/alerts'
 import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlideOver'
 import { timeAgo } from '@/utils/time'
@@ -24,8 +24,11 @@ const escalationRuns = ref<Record<string, EscalationRun[]>>({})
 
 async function loadEscalationRuns(alertId: string) {
   try {
-    const res = await escalationApi.listRunsForAlert(alertId)
-    escalationRuns.value = { ...escalationRuns.value, [alertId]: res.runs }
+    const { runs } = await escalationApi.listRunsForAlert(alertId)
+    const shown = runs.findIndex((r) => r.status === 'active')
+    const run = runs[Math.max(shown, 0)]
+    if (run) runs[Math.max(shown, 0)] = await escalationApi.getEscalationRun(run.id)
+    escalationRuns.value = { ...escalationRuns.value, [alertId]: runs }
   } catch {
     // 403 in CE or other errors — ignore silently
   }
@@ -83,10 +86,19 @@ const sections = computed(() =>
     .filter((s) => s.alerts.length > 0),
 )
 
-onMounted(() => {
-  const allAlerts = Object.values(store.activeAlerts).flat() as Alert[]
-  allAlerts.forEach((alert) => loadEscalationRuns(alert.id))
-})
+const loadedAck = new Map<string, string>()
+
+watch(
+  () => (Object.values(store.activeAlerts).flat() as Alert[]).map((a) => [a.id, a.acknowledged_at ?? ''] as const),
+  (alerts) => {
+    for (const [id, ack] of alerts) {
+      if (loadedAck.get(id) === ack) continue
+      loadedAck.set(id, ack)
+      loadEscalationRuns(id)
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
