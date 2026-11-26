@@ -492,14 +492,12 @@ func (s *Sessions) SpoolStatus(agentID string) *agentproto.SpoolState {
 	}
 }
 
-// SetRuntimeUnreachable records whether agentID declared that its container runtime stopped answering.
-func (s *Sessions) SetRuntimeUnreachable(agentID string, unreachable bool) {
+// SetRuntimeUnreachable records whether agentID declared that its container runtime stopped answering, and reports whether that changed.
+func (s *Sessions) SetRuntimeUnreachable(agentID string, unreachable bool) bool {
 	s.mu.RLock()
 	stream, ok := s.active[agentID]
 	s.mu.RUnlock()
-	if ok {
-		stream.runtimeUnreachable.Store(unreachable)
-	}
+	return ok && stream.runtimeUnreachable.Swap(unreachable) != unreachable
 }
 
 // RuntimeUnreachable reports whether the connected agentID last declared its container runtime unreachable.

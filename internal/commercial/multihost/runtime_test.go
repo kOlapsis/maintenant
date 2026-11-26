@@ -106,3 +106,36 @@ func TestDispatcher_RuntimeReportMarksTheRuntimeUnreachableForTheSession(t *test
 	sessions.Close(agentID, "stream_ended")
 	assert.False(t, sessions.RuntimeUnreachable(agentID))
 }
+
+func TestDispatcher_RuntimeReportAnnouncesAChangeOfReachability(t *testing.T) {
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	agents := store.NewAgentStore(storetest.Open(t, logger))
+	insertActiveAgents(t, agents, 1)
+	agentID := "00000000-0000-0000-0000-000000000001"
+
+	sink := &recordingBroadcaster{}
+	sessions := NewSessions(logger, nil)
+	d := NewDispatcher(DispatchDeps{Runtime: runtimeRecorder{store: agents, broadcaster: sink, sessions: sessions}})
+	report := func(unreachable bool) {
+		t.Helper()
+		require.NoError(t, d.Dispatch(ctx, agentID, &agentpb.AgentEvent{AgentId: agentID, Body: &agentpb.AgentEvent_Runtime{
+			Runtime: &agentpb.RuntimeMsg{Kind: agentpb.Runtime_RUNTIME_DOCKER, Unreachable: unreachable},
+		}}))
+	}
+	announced := func(unreachable bool) []broadcast {
+		return []broadcast{{event.AgentUpdated, map[string]any{"agent_id": agentID, "runtime_unreachable": unreachable}}}
+	}
+
+	sessions.Open(agentID, func(error) {}, "1.2.3.4:1", nil, nil)
+	report(false)
+	assert.Empty(t, sink.take(), "a reachable runtime on a new stream is no change")
+
+	report(true)
+	assert.Equal(t, announced(true), sink.take())
+	report(true)
+	assert.Empty(t, sink.take(), "the same state restated is not announced again")
+
+	report(false)
+	assert.Equal(t, announced(false), sink.take())
+}

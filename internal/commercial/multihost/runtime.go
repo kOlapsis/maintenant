@@ -27,7 +27,12 @@ func (r runtimeRecorder) HandleAgentRuntime(ctx context.Context, agentID string,
 	default:
 		return fmt.Errorf("agent %s reported an unknown runtime %d", agentID, ev.GetKind())
 	}
-	r.sessions.SetRuntimeUnreachable(agentID, ev.GetUnreachable())
+	if r.sessions.SetRuntimeUnreachable(agentID, ev.GetUnreachable()) {
+		r.broadcaster.BroadcastEvent(event.AgentUpdated, map[string]any{
+			"agent_id":            agentID,
+			"runtime_unreachable": ev.GetUnreachable(),
+		})
+	}
 	runtime := protoRuntimeToString(ev.GetKind())
 	changed, err := r.store.UpdateDetectedRuntime(ctx, agentID, runtime)
 	if err != nil {

@@ -934,7 +934,7 @@ The SSE `event:` field is the event type, and `data:` holds the JSON payload onl
 | `kubernetes.pod_changed` | An alert of a pod of the server's own cluster is raised or resolved | `namespace`, `name` |
 | `kubernetes.node_changed` | An alert of a node of the server's own cluster is raised or resolved | `name` |
 | `agent.created` | An agent enrols | `agent_id`, `hostname`, `label`, `runtime`, `status` |
-| `agent.updated` | An agent's label or host OS changes | `agent_id`, `label` for a label change, the agent object for a host OS change |
+| `agent.updated` | An agent's label, host OS or runtime changes, or its container runtime stops or resumes answering | `agent_id`, `label` for a label change, the agent object for a host OS change, `detected_runtime` for a runtime change, `runtime_unreachable` when the runtime stops or resumes answering |
 | `agent.revoked`, `agent.deleted` | An agent is revoked or deleted | `agent_id` |
 | `agent.connected`, `agent.disconnected` | An agent stream opens or closes (or goes stale) | `agent_id` |
 

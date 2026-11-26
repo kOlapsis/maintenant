@@ -85,7 +85,7 @@ describe('SSE handlers shared between the header and a page', () => {
 })
 
 describe('agent connectivity events', () => {
-  it.each(['agent.connected', 'agent.disconnected'])('reloads containers and endpoints on %s', (name) => {
+  it.each(['agent.connected', 'agent.disconnected', 'agent.updated'])('reloads containers and endpoints on %s', (name) => {
     useDashboardStore().connectAllSSE()
     api.listContainers.mockClear()
     api.listEndpoints.mockClear()
