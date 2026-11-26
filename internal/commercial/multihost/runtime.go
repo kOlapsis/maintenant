@@ -33,6 +33,9 @@ func (r runtimeRecorder) HandleAgentRuntime(ctx context.Context, agentID string,
 			"runtime_unreachable": ev.GetUnreachable(),
 		})
 	}
+	if ev.GetUnreachable() {
+		return nil
+	}
 	runtime := protoRuntimeToString(ev.GetKind())
 	changed, err := r.store.UpdateDetectedRuntime(ctx, agentID, runtime)
 	if err != nil {

@@ -228,7 +228,7 @@ Pick the tab matching the host environment. Replace `grpcs://agents.example.com`
 
 What happens on first boot:
 
-1. The agent detects the local runtime (Docker, Swarm, or Kubernetes). If the runtime does not answer, the agent logs `container runtime unreachable, reporting host metrics only until it answers` and retries in the background with a delay from 1 second to 1 minute. It logs `container runtime reachable, container monitoring started` once it answers.
+1. The agent detects the local runtime (Docker, Swarm, or Kubernetes). If the runtime does not answer, the agent logs `container runtime unreachable, reporting host metrics only until it answers` and retries in the background with a delay from 1 second to 1 minute. After three failed attempts it tells the server, which shows the containers it still holds for this host as stale, with the cause "runtime unreachable". It logs `container runtime reachable, container monitoring started` once it answers.
 2. It generates an Ed25519 keypair and persists it to `identity.json` (mode `0600`) in its data dir.
 3. It calls `RegisterAgent` with the token + public key, then enters the streaming loop.
 

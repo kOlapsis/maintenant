@@ -256,11 +256,14 @@ type runtimeLink struct {
 	inSwarm func(context.Context) (bool, error) // nil when Swarm membership is not followed
 	ready   chan struct{}
 	label   string // set before ready closes
+
+	failures int
+	lost     chan struct{} // closed once unreachableAfter attempts failed
 }
 
 // newRuntimeLink follows the Swarm membership of a Docker host, unless the operator forced the label.
 func newRuntimeLink(rt runtime.Runtime, kind string) *runtimeLink {
-	l := &runtimeLink{rt: rt, kind: kind, ready: make(chan struct{})}
+	l := &runtimeLink{rt: rt, kind: kind, ready: make(chan struct{}), lost: make(chan struct{})}
 	if dr, ok := rt.(*docker.Runtime); ok && kind == RuntimeDocker {
 		l.inSwarm = func(ctx context.Context) (bool, error) {
 			info, err := dr.Client().Info(ctx)
@@ -273,6 +276,10 @@ func newRuntimeLink(rt runtime.Runtime, kind string) *runtimeLink {
 // attach makes one bounded attempt at the runtime and, when it answers, hands it to the collector under its final label.
 func (l *runtimeLink) attach(ctx context.Context) (string, error) {
 	if err := l.rt.TryConnect(ctx); err != nil {
+		l.failures++
+		if l.failures == unreachableAfter {
+			close(l.lost)
+		}
 		return l.kind, err
 	}
 	l.label = l.kind
@@ -308,8 +315,21 @@ func (l *runtimeLink) keepTrying(ctx context.Context, lastErr error, backoff *re
 	}
 }
 
-// wait blocks until the runtime answers, reporting false when ctx ends first.
-func (l *runtimeLink) wait(ctx context.Context) bool {
+// wait blocks until the runtime answers, reporting false when ctx ends first; onLost runs once if the runtime is given up as unreachable before it answers.
+func (l *runtimeLink) wait(ctx context.Context, onLost func()) bool {
+	select {
+	case <-l.ready:
+		return true
+	default:
+	}
+	select {
+	case <-l.ready:
+		return true
+	case <-ctx.Done():
+		return false
+	case <-l.lost:
+		onLost()
+	}
 	select {
 	case <-l.ready:
 		return true

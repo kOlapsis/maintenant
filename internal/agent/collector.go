@@ -47,7 +47,10 @@ func runCollector(ctx context.Context, id *Identity, link *runtimeLink, nodeName
 		g.Go(func() error { return streamHostOS(gCtx, id, hoststat.ReadOSRelease, spool, logger) })
 	}
 	g.Go(func() error {
-		if !link.wait(gCtx) {
+		answered := link.wait(gCtx, func() {
+			(&runtimeWatch{agentID: id.AgentID, label: link.kind, spool: spool, logger: logger}).report(true)
+		})
+		if !answered {
 			return nil
 		}
 		label := link.label

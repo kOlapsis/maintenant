@@ -232,14 +232,17 @@ func TestRunCollector_ReportsTheHostUntilTheRuntimeAnswers(t *testing.T) {
 	}, 5*time.Second, 5*time.Millisecond, "the host must be reported while the runtime keeps being retried")
 	_, _, inventory := seen()
 	assert.False(t, inventory, "no container inventory before the runtime answers")
-	assert.Empty(t, reportedRuntimes(sink), "no runtime is reported before it answers")
+	docker := agentpb.Runtime_RUNTIME_DOCKER
+	require.Eventually(t, func() bool { return len(runtimeReports(sink)) == 1 }, 5*time.Second, 5*time.Millisecond)
+	assert.Equal(t, []runtimeReport{{docker, true}}, runtimeReports(sink),
+		"a runtime that never answered since the agent started is reported unreachable")
 
 	rt.up.Store(true)
 	require.Eventually(t, func() bool {
 		_, _, inventory := seen()
 		return inventory
 	}, 5*time.Second, 5*time.Millisecond, "container monitoring must start as soon as the runtime answers")
-	assert.Equal(t, []agentpb.Runtime{agentpb.Runtime_RUNTIME_DOCKER}, reportedRuntimes(sink),
+	assert.Equal(t, []runtimeReport{{docker, true}, {docker, false}}, runtimeReports(sink),
 		"the runtime that answered is reported, since enrollment may have happened before")
 
 	cancel()
@@ -546,4 +549,29 @@ func TestStreamInventory_ReportsARuntimeThatStopsAnswering(t *testing.T) {
 
 	cancel()
 	require.NoError(t, <-done)
+}
+
+func TestRuntimeLink_IsLostAfterThreeFailedAttempts(t *testing.T) {
+	link := newRuntimeLink(&lateRuntime{}, RuntimeDocker)
+	lost := func() bool {
+		select {
+		case <-link.lost:
+			return true
+		default:
+			return false
+		}
+	}
+
+	for range 2 {
+		_, err := link.attach(context.Background())
+		require.Error(t, err)
+	}
+	assert.False(t, lost(), "two failed attempts are not a lost runtime")
+
+	_, err := link.attach(context.Background())
+	require.Error(t, err)
+	assert.True(t, lost())
+
+	_, err = link.attach(context.Background())
+	require.Error(t, err, "further failures change nothing")
 }

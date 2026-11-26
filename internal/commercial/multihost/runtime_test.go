@@ -139,3 +139,31 @@ func TestDispatcher_RuntimeReportAnnouncesAChangeOfReachability(t *testing.T) {
 	report(false)
 	assert.Equal(t, announced(false), sink.take())
 }
+
+func TestDispatcher_AnUnreachableRuntimeReportLeavesTheStoredKindAlone(t *testing.T) {
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	agents := store.NewAgentStore(storetest.Open(t, logger))
+	insertActiveAgents(t, agents, 1)
+	agentID := "00000000-0000-0000-0000-000000000001"
+
+	sessions := NewSessions(logger, nil)
+	d := NewDispatcher(DispatchDeps{Runtime: runtimeRecorder{store: agents, broadcaster: &recordingBroadcaster{}, sessions: sessions}})
+	report := func(msg *agentpb.RuntimeMsg) {
+		t.Helper()
+		require.NoError(t, d.Dispatch(ctx, agentID, &agentpb.AgentEvent{AgentId: agentID, Body: &agentpb.AgentEvent_Runtime{Runtime: msg}}))
+	}
+	stored := func() string {
+		a, err := agents.Get(ctx, agentID)
+		require.NoError(t, err)
+		return a.DetectedRuntime
+	}
+
+	sessions.Open(agentID, func(error) {}, "1.2.3.4:1", nil, nil)
+	report(&agentpb.RuntimeMsg{Kind: agentpb.Runtime_RUNTIME_SWARM})
+	require.Equal(t, "swarm", stored())
+
+	report(&agentpb.RuntimeMsg{Kind: agentpb.Runtime_RUNTIME_DOCKER, Unreachable: true})
+	assert.True(t, sessions.RuntimeUnreachable(agentID))
+	assert.Equal(t, "swarm", stored(), "an agent that cannot reach its runtime does not know whether the host is in a Swarm")
+}
