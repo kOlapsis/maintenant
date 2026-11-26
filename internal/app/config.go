@@ -91,6 +91,8 @@ type Config struct {
 	InvalidSettings []InvalidSetting
 	// MistypedBooleans lists the boolean variables read as false because their value is not a boolean.
 	MistypedBooleans []InvalidSetting
+	// RefusedBooleans lists the mistyped booleans whose true value restricts what the product does.
+	RefusedBooleans []InvalidSetting
 
 	// Dev
 	AllowPrivateWebhooks bool
@@ -329,6 +331,19 @@ func (c Config) ValidateAgentSpool() error {
 // ErrMode refuses a mode the binary does not know.
 var ErrMode = errors.New("MAINTENANT_MODE is not a known mode: use embedded, server or agent")
 
+// ErrRestrictingBoolean refuses a mistyped boolean that would leave a restriction off.
+var ErrRestrictingBoolean = errors.New(
+	"boolean setting is not a recognised value, and reading it as false would leave off a restriction you asked for: use true or false")
+
+// ValidateBooleans refuses a mistyped value on a boolean that closes an access or a network call.
+func (c Config) ValidateBooleans() error {
+	var errs []error
+	for _, s := range c.RefusedBooleans {
+		errs = append(errs, fmt.Errorf("%w (%s=%q)", ErrRestrictingBoolean, s.Name, s.Raw))
+	}
+	return errors.Join(errs...)
+}
+
 // ValidateMode refuses an unknown mode.
 func (c Config) ValidateMode() error {
 	switch c.Mode {
@@ -385,7 +400,7 @@ const DefaultAddr = "127.0.0.1:8080"
 // ConfigFromEnv reads configuration from environment variables.
 func ConfigFromEnv() Config {
 	addr := envOr("MAINTENANT_ADDR", DefaultAddr)
-	var mistyped []InvalidSetting
+	var mistyped, refused []InvalidSetting
 	cfg := Config{
 		Addr:        addr,
 		BaseURL:     envOr("MAINTENANT_BASE_URL", "http://"+addr),
@@ -410,7 +425,7 @@ func ConfigFromEnv() Config {
 			ClientSecret:         os.Getenv("MAINTENANT_MCP_CLIENT_SECRET"),
 			AllowedRedirectURIs:  os.Getenv("MAINTENANT_MCP_ALLOWED_REDIRECT_URIS"),
 			AllowUnauthenticated: envBool("MAINTENANT_MCP_ALLOW_UNAUTHENTICATED", &mistyped),
-			ReadOnly:             envBool("MAINTENANT_MCP_READ_ONLY", &mistyped),
+			ReadOnly:             envBool("MAINTENANT_MCP_READ_ONLY", &refused),
 			Socket:               envBool("MAINTENANT_MCP_SOCKET", &mistyped),
 		},
 
@@ -448,8 +463,8 @@ func ConfigFromEnv() Config {
 	cfg.ContainerDownAfter, cfg.ContainerDownAfterInvalid = envOptionalDuration("MAINTENANT_CONTAINER_DOWN_AFTER")
 	cfg.MaxBodySize, cfg.MaxBodySizeInvalid = envBodySize("MAINTENANT_MAX_BODY_SIZE", 1048576)
 
-	cfg.DisableTelemetry = envBool("MAINTENANT_DISABLE_TELEMETRY", &mistyped)
-	cfg.DisableOSEOLRefresh = envBool("MAINTENANT_DISABLE_OS_EOL_REFRESH", &mistyped)
+	cfg.DisableTelemetry = envBool("MAINTENANT_DISABLE_TELEMETRY", &refused)
+	cfg.DisableOSEOLRefresh = envBool("MAINTENANT_DISABLE_OS_EOL_REFRESH", &refused)
 	cfg.ProxyLabels = envBool("MAINTENANT_PROXY_LABELS", &mistyped)
 	cfg.AllowPrivateWebhooks = envBool("MAINTENANT_ALLOW_PRIVATE_WEBHOOKS", &mistyped)
 
@@ -485,6 +500,7 @@ func ConfigFromEnv() Config {
 		"MAINTENANT_AGENT_SPOOL_MAX_AGE_SECONDS", DefaultAgentSpoolMaxAgeSeconds, &invalidSpool)
 	cfg.MultiHost.InvalidSpoolSettings = invalidSpool
 	cfg.MistypedBooleans = mistyped
+	cfg.RefusedBooleans = refused
 
 	return cfg
 }

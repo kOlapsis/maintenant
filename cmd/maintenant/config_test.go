@@ -29,7 +29,7 @@ func TestWarnIgnoredSettings_NamesTheVariableTheValueAndTheDefault(t *testing.T)
 }
 
 func TestWarnMistypedBooleans_NamesEachVariableOnce(t *testing.T) {
-	t.Setenv("MAINTENANT_DISABLE_TELEMETRY", "ture")
+	t.Setenv("MAINTENANT_EMBEDDED_AGENT", "ture")
 	t.Setenv("MAINTENANT_MCP", "treu")
 	t.Setenv("MAINTENANT_PROXY_LABELS", "yes")
 	var out bytes.Buffer
@@ -39,7 +39,7 @@ func TestWarnMistypedBooleans_NamesEachVariableOnce(t *testing.T) {
 
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	require.Len(t, lines, 2)
-	assert.Equal(t, 1, strings.Count(out.String(), `"variable":"MAINTENANT_DISABLE_TELEMETRY","value":"ture"`))
+	assert.Equal(t, 1, strings.Count(out.String(), `"variable":"MAINTENANT_EMBEDDED_AGENT","value":"ture"`))
 	assert.Equal(t, 1, strings.Count(out.String(), `"variable":"MAINTENANT_MCP","value":"treu"`))
 	assert.Contains(t, lines[0], `"level":"WARN"`)
 }

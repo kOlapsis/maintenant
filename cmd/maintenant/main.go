@@ -222,6 +222,11 @@ func validateStartup(cfg app.Config, logger *slog.Logger) {
 		os.Exit(1)
 	}
 
+	if err := cfg.ValidateBooleans(); err != nil {
+		logger.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
+
 	if err := cfg.ValidateMode(); err != nil {
 		logger.Error("invalid configuration", "error", err)
 		os.Exit(1)
