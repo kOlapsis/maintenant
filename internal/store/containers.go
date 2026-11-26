@@ -199,12 +199,22 @@ func deleteContainerRows(ctx context.Context, tx *Tx, id, agentID, externalID st
 	return nil
 }
 
+// CountAgentContainers returns how many containers agentID has, archived ones included.
+func (s *ContainerStore) CountAgentContainers(ctx context.Context, agentID string) (int, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM containers WHERE agent_id = ?`, agentID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count agent containers: %w", err)
+	}
+	return count, nil
+}
+
 // DeleteOldestArchivedContainers removes up to limit archived containers of agentID, the longest archived first, with the rows that depend on them.
 func (s *ContainerStore) DeleteOldestArchivedContainers(ctx context.Context, agentID string, limit int) (int64, error) {
 	var deleted int64
 	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
 		rows, err := tx.QueryContext(ctx,
-			`SELECT id, external_id FROM containers WHERE agent_id = ? AND archived = 1 ORDER BY archived_at ASC, id ASC LIMIT ?`,
+			`SELECT id, external_id FROM containers WHERE agent_id = ? AND archived = 1 AND archived_at IS NOT NULL
+			ORDER BY archived_at, id LIMIT ?`,
 			agentID, limit)
 		if err != nil {
 			return fmt.Errorf("select oldest archived containers: %w", err)

@@ -179,6 +179,9 @@ func (m *mockContainerStore) DeleteContainerByID(_ context.Context, _ string) er
 func (m *mockContainerStore) DeleteOldestArchivedContainers(context.Context, string, int) (int64, error) {
 	return 0, nil
 }
+func (m *mockContainerStore) CountAgentContainers(context.Context, string) (int, error) {
+	return 0, nil
+}
 func (m *mockContainerStore) InsertTransition(_ context.Context, _ *container.StateTransition) (string, error) {
 	return "", nil
 }

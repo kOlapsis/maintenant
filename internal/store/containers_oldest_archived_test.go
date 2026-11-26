@@ -35,11 +35,19 @@ func TestContainerStore_DeleteOldestArchivedContainersOfOneAgent(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	stagingUndated := seedHostedContainer(t, cs, "agent-staging", "undated", "undated", "app:1")
+	_, err = db.db.Exec(db.dialect.Rebind(`UPDATE containers SET archived=1, archived_at=NULL WHERE id=?`), stagingUndated)
+	require.NoError(t, err)
+
+	held, err := cs.CountAgentContainers(ctx, "agent-staging")
+	require.NoError(t, err)
+	assert.Equal(t, 5, held, "archived containers count, those of another agent do not")
+
 	deleted, err := cs.DeleteOldestArchivedContainers(ctx, "agent-staging", 2)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), deleted)
 
-	for id, kept := range map[string]bool{stagingOldest: false, stagingOld: false, stagingRecent: true, stagingLive: true, prod: true} {
+	for id, kept := range map[string]bool{stagingOldest: false, stagingOld: false, stagingRecent: true, stagingLive: true, stagingUndated: true, prod: true} {
 		c, err := cs.GetContainerByID(ctx, id)
 		require.NoError(t, err)
 		assert.Equal(t, kept, c != nil, id)

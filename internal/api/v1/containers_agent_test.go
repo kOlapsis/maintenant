@@ -48,6 +48,7 @@ func (s *agentEnrichStore) DeleteContainerByID(context.Context, string) error   
 func (s *agentEnrichStore) DeleteOldestArchivedContainers(context.Context, string, int) (int64, error) {
 	return 0, nil
 }
+func (s *agentEnrichStore) CountAgentContainers(context.Context, string) (int, error) { return 0, nil }
 func (s *agentEnrichStore) InsertTransition(context.Context, *container.StateTransition) (string, error) {
 	return "", nil
 }

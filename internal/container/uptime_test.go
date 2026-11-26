@@ -228,6 +228,7 @@ func (m *uptimeStore) DeleteContainerByID(_ context.Context, _ string) error    
 func (m *uptimeStore) DeleteOldestArchivedContainers(context.Context, string, int) (int64, error) {
 	return 0, nil
 }
+func (m *uptimeStore) CountAgentContainers(context.Context, string) (int, error) { return 0, nil }
 func (m *uptimeStore) InsertTransition(_ context.Context, _ *StateTransition) (string, error) {
 	return "", nil
 }

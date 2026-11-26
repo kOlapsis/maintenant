@@ -63,27 +63,42 @@ func (b *AgentRowBudget) Reserve(ctx context.Context, agentID, kind string, limi
 	defer b.mu.Unlock()
 
 	st := b.agents[agentID]
-	if st == nil || time.Since(st.countedAt) >= agentRowRecount {
+	if st == nil {
+		st = &agentRowCount{}
+		if b.agents == nil {
+			b.agents = make(map[string]*agentRowCount)
+		}
+		b.agents[agentID] = st
+	}
+	recount := func() error {
 		rows, err := count(ctx)
 		if err != nil {
 			return err
 		}
-		if st == nil {
-			st = &agentRowCount{}
-			if b.agents == nil {
-				b.agents = make(map[string]*agentRowCount)
-			}
-			b.agents[agentID] = st
-		}
 		st.rows, st.countedAt = rows, time.Now()
+		return nil
 	}
 
-	if st.rows >= limit && makeRoom != nil {
-		freed, err := makeRoom(ctx)
-		if err != nil {
+	fresh := time.Since(st.countedAt) >= agentRowRecount
+	if fresh {
+		if err := recount(); err != nil {
 			return err
 		}
-		st.rows -= freed
+	}
+
+	if st.rows >= limit && makeRoom != nil && (fresh || !st.refused) {
+		if !fresh {
+			if err := recount(); err != nil {
+				return err
+			}
+		}
+		if st.rows >= limit {
+			freed, err := makeRoom(ctx)
+			if err != nil {
+				return err
+			}
+			st.rows -= freed
+		}
 	}
 
 	if st.rows < limit {
@@ -100,11 +115,11 @@ func (b *AgentRowBudget) Reserve(ctx context.Context, agentID, kind string, limi
 
 func (s *Service) reserveAgentContainer(ctx context.Context, agentID string) error {
 	count := func(ctx context.Context) (int, error) {
-		held, err := s.store.ListContainers(ctx, ListContainersOpts{IncludeArchived: true, IncludeIgnored: true, AgentFilter: &agentID})
+		held, err := s.store.CountAgentContainers(ctx, agentID)
 		if err != nil {
 			return 0, fmt.Errorf("agent event: count containers: %w", err)
 		}
-		return len(held), nil
+		return held, nil
 	}
 	makeRoom := func(ctx context.Context) (int, error) {
 		deleted, err := s.store.DeleteOldestArchivedContainers(ctx, agentID, max(1, maxAgentContainers/10))
@@ -133,6 +148,11 @@ func checkLabelCount(ev *agentpb.ContainerEvent) error {
 // reports it (attributed via agent_id), then routes subsequent state changes
 // through the normal pipeline for updates.
 func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.ContainerEvent, meta agentevent.Meta) error {
+	return s.handleAgentEvent(ctx, agentID, ev, meta, nil)
+}
+
+// handleAgentEvent appends a container the server does not hold to unknown instead of adding it, when unknown is set.
+func (s *Service) handleAgentEvent(ctx context.Context, agentID string, ev *agentpb.ContainerEvent, meta agentevent.Meta, unknown *[]*agentpb.ContainerEvent) error {
 	externalID := ev.GetContainerId()
 	if externalID == "" {
 		return nil
@@ -170,14 +190,11 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	}
 
 	if c == nil {
-		if err := s.insertAgentContainer(ctx, agentID, ev, meta); err != nil {
-			s.forgetAgentDetails(agentID, externalID)
-			return err
+		if unknown != nil {
+			*unknown = append(*unknown, ev)
+			return nil
 		}
-		if !meta.Replayed {
-			WarnUnknownLabels(externalID, ev.GetLabels(), s.logger)
-		}
-		return nil
+		return s.addAgentContainer(ctx, agentID, ev, meta)
 	}
 	WarnUnknownLabels(externalID, ev.GetLabels(), s.logger)
 
@@ -208,6 +225,17 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		st.ExitCode = ev.GetStatusMessage()
 		st.OOMKilled = ev.GetOomKilled()
 		return s.processEvent(ctx, st)
+	}
+	return nil
+}
+
+func (s *Service) addAgentContainer(ctx context.Context, agentID string, ev *agentpb.ContainerEvent, meta agentevent.Meta) error {
+	if err := s.insertAgentContainer(ctx, agentID, ev, meta); err != nil {
+		s.forgetAgentDetails(agentID, ev.GetContainerId())
+		return err
+	}
+	if !meta.Replayed {
+		WarnUnknownLabels(ev.GetContainerId(), ev.GetLabels(), s.logger)
 	}
 	return nil
 }
@@ -262,15 +290,26 @@ func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *
 		}
 	}
 
-	var refused error
+	var unknown []*agentpb.ContainerEvent
 	live := make(map[string]struct{}, len(reported))
 	for _, c := range reported {
 		externalID := c.GetContainerId()
 		if externalID == "" {
 			continue
 		}
+		if _, seen := live[externalID]; seen {
+			continue
+		}
 		live[externalID] = struct{}{}
-		err := s.HandleAgentEvent(ctx, agentID, c, meta)
+		if err := s.handleAgentEvent(ctx, agentID, c, meta, &unknown); err != nil {
+			return err
+		}
+	}
+
+	// New containers go last: making room for one must not delete an archived container this inventory brings back.
+	var refused error
+	for _, c := range unknown {
+		err := s.addAgentContainer(ctx, agentID, c, meta)
 		if errors.Is(err, errAgentRowCeiling) {
 			refused = err
 			continue

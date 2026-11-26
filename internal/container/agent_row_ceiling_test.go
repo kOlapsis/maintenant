@@ -6,6 +6,7 @@ package container_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -193,4 +194,83 @@ func TestHandleAgentInventory_AcceptsNewContainersAtTheCeilingWhenArchivedOnesCa
 	}, meta), "an inventory that succeeds is followed by the label sync of its containers")
 	live, _ := b.rows(agentA)
 	assert.Equal(t, 2, live)
+}
+
+func (b *ceilingBench) fill(agentID string, n int) []string {
+	b.t.Helper()
+	ids := make([]string, 0, n)
+	for i := range n {
+		id := fmt.Sprintf("c%02d", i+1)
+		require.NoError(b.t, b.report(agentID, running(id)))
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func (b *ceilingBench) held(agentID, externalID string) *container.Container {
+	b.t.Helper()
+	c, err := b.st.GetContainerByExternalID(b.ctx, agentID, externalID)
+	require.NoError(b.t, err)
+	return c
+}
+
+func (b *ceilingBench) archive(agentID, externalID string, ago time.Duration) {
+	b.t.Helper()
+	require.NoError(b.t, b.st.ArchiveContainer(b.ctx, b.held(agentID, externalID).ID, time.Now().Add(-ago)))
+}
+
+func TestHandleAgentEvent_DoesNotEvictWhenRowsWereDeletedSinceTheLastCount(t *testing.T) {
+	const agentA = "00000000-0000-0000-0000-0000000000a7"
+	container.SetMaxAgentContainers(t, 30)
+	b := newCeilingBench(t, agentA)
+
+	ids := b.fill(agentA, 30)
+	for i, id := range ids[:20] {
+		b.archive(agentA, id, time.Duration(i+1)*time.Hour)
+	}
+	for _, id := range ids[25:] {
+		require.NoError(t, b.svc.DeleteContainer(b.ctx, b.held(agentA, id).ID))
+	}
+
+	require.NoError(t, b.report(agentA, running("new-1")))
+	live, archived := b.rows(agentA)
+	assert.Equal(t, 20, archived, "there was room, no archived container had to go")
+	assert.Equal(t, 6, live)
+}
+
+func TestHandleAgentInventory_KeepsAnArchivedContainerItBringsBack(t *testing.T) {
+	const agentA = "00000000-0000-0000-0000-0000000000a8"
+	container.SetMaxAgentContainers(t, 30)
+	b := newCeilingBench(t, agentA)
+
+	ids := b.fill(agentA, 30)
+	b.archive(agentA, "c01", 72*time.Hour)
+	b.archive(agentA, "c02", 48*time.Hour)
+	b.archive(agentA, "c03", 24*time.Hour)
+	b.archive(agentA, "c04", time.Hour)
+	revived := b.held(agentA, "c01").ID
+	_, err := b.st.InsertTransition(b.ctx, &container.StateTransition{
+		ContainerID: revived, PreviousState: container.StateRunning, NewState: container.StateExited,
+		Timestamp: time.Now().Add(-100 * time.Hour),
+	})
+	require.NoError(t, err)
+	_, before, err := b.st.ListTransitionsByContainer(b.ctx, revived, container.ListTransitionsOpts{Limit: 10})
+	require.NoError(t, err)
+
+	inv := &agentpb.ContainerInventory{Complete: true, Containers: []*agentpb.ContainerEvent{running("new-1"), running("c01")}}
+	for _, id := range ids[4:] {
+		inv.Containers = append(inv.Containers, running(id))
+	}
+	require.NoError(t, b.svc.HandleAgentInventory(b.ctx, agentA, inv, agentevent.Meta{ObservedAt: time.Now()}))
+
+	back := b.held(agentA, "c01")
+	require.NotNil(t, back)
+	_, after, err := b.st.ListTransitionsByContainer(b.ctx, back.ID, container.ListTransitionsOpts{Limit: 10})
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, after, before, "a container the inventory brings back keeps its history")
+	assert.False(t, back.Archived)
+	assert.NotNil(t, b.held(agentA, "new-1"))
+	for _, id := range []string{"c02", "c03", "c04"} {
+		assert.Nil(t, b.held(agentA, id), "%s made room", id)
+	}
 }

@@ -19,6 +19,7 @@ type ContainerStore interface {
 	ArchiveContainer(ctx context.Context, id string, archivedAt time.Time) error
 	DeleteContainerByID(ctx context.Context, id string) error
 	DeleteOldestArchivedContainers(ctx context.Context, agentID string, limit int) (int64, error)
+	CountAgentContainers(ctx context.Context, agentID string) (int, error)
 
 	// State transitions
 	InsertTransition(ctx context.Context, t *StateTransition) (string, error)
