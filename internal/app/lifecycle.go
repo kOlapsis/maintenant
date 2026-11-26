@@ -48,7 +48,7 @@ func (a *App) pruneOrphanAlerts(ctx context.Context) {
 		switch al.EntityType {
 		case "container":
 			c, err := a.containerSvc.GetContainer(ctx, al.EntityID)
-			orphan = err != nil || c == nil
+			orphan = err == nil && c == nil
 		case "agent":
 			_, err := a.agentStore.Get(ctx, al.EntityID)
 			orphan = errors.Is(err, agent.ErrAgentNotFound)
