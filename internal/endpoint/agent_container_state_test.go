@@ -96,7 +96,30 @@ func TestRetireAgentContainers_DeactivatesTheEndpointsOfAVanishedContainer(t *te
 	require.Len(t, e.endpoints(), 2)
 
 	e.svc.RetireAgentContainers(e.ctx, stateAgent, map[string]struct{}{"ext-2": {}})
+	e.svc.RetireAgentContainers(e.ctx, stateAgent, map[string]struct{}{"ext-2": {}})
 
 	left := e.only()
-	assert.Equal(t, "ext-2", left.ExternalID, "only the endpoints of containers the inventory still lists stay")
+	assert.Equal(t, "ext-2", left.ExternalID, "only the endpoints of containers two inventories in a row still list stay")
+}
+
+func TestRetireAgentContainers_OneInventoryThatCrossedAnEventRetiresNothing(t *testing.T) {
+	e := newAgentEndpointEnv(t)
+	for range 3 {
+		e.probe(agentpb.EndpointStatus_ENDPOINT_STATUS_DOWN)
+	}
+	before := e.only()
+	require.Equal(t, 3, before.ConsecutiveFailures)
+
+	e.svc.RetireAgentContainers(e.ctx, stateAgent, map[string]struct{}{})
+	after := e.only()
+	assert.Equal(t, before.ID, after.ID)
+	assert.Equal(t, 3, after.ConsecutiveFailures, "an inventory built before the container started leaves its endpoints and their counters alone")
+	assert.Equal(t, before.AlertState, after.AlertState)
+
+	e.svc.HandleAgentContainerState(e.ctx, stateAgent, e.container(agentpb.ContainerState_CONTAINER_STATE_RUNNING))
+	e.svc.RetireAgentContainers(e.ctx, stateAgent, map[string]struct{}{})
+	assert.Len(t, e.endpoints(), 1, "a container seen again in between starts from a clean slate")
+
+	e.svc.RetireAgentContainers(e.ctx, stateAgent, map[string]struct{}{})
+	assert.Empty(t, e.endpoints(), "a container two inventories in a row do not list is gone")
 }

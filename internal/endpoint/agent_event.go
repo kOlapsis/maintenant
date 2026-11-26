@@ -61,6 +61,7 @@ type agentContainerKey struct {
 // HandleAgentContainerState sets the endpoints of an agent's container to unknown when it stops, until it runs again.
 func (s *Service) HandleAgentContainerState(ctx context.Context, agentID string, ev *agentpb.ContainerEvent) {
 	key := agentContainerKey{agentID, ev.GetContainerId()}
+	s.agentStopped.Delete(agentAbsentKey(key))
 	switch ev.GetState() {
 	case agentpb.ContainerState_CONTAINER_STATE_RUNNING:
 		s.agentStopped.Delete(key)
@@ -88,7 +89,10 @@ func (s *Service) HandleAgentContainerState(ctx context.Context, agentID string,
 	}
 }
 
-// RetireAgentContainers deactivates the label endpoints of the agent's containers that its inventory no longer lists.
+// agentAbsentKey marks, in agentStopped, a container that the last inventory of its agent did not list.
+type agentAbsentKey agentContainerKey
+
+// RetireAgentContainers deactivates the label endpoints of the agent's containers that two inventories in a row did not list.
 func (s *Service) RetireAgentContainers(ctx context.Context, agentID string, live map[string]struct{}) {
 	endpoints, err := s.store.ListEndpoints(ctx, ListEndpointsOpts{Source: string(SourceLabel), AgentFilter: &agentID})
 	if err != nil {
@@ -102,7 +106,13 @@ func (s *Service) RetireAgentContainers(ctx context.Context, agentID string, liv
 		}
 	}
 	for externalID, containerName := range gone {
-		s.agentStopped.Delete(agentContainerKey{agentID, externalID})
+		key := agentContainerKey{agentID, externalID}
+		// One inventory can be older than the event that created the container.
+		if _, absent := s.agentStopped.LoadOrStore(agentAbsentKey(key), struct{}{}); !absent {
+			continue
+		}
+		s.agentStopped.Delete(agentAbsentKey(key))
+		s.agentStopped.Delete(key)
 		s.SyncAgentEndpoints(ctx, agentID, containerName, externalID, nil)
 	}
 }
