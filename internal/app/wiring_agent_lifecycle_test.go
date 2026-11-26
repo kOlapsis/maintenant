@@ -73,7 +73,8 @@ func TestAgentAlertEvents(t *testing.T) {
 		{"runtime stops answering", "runtime_unreachable", true, []want{{"runtime_unreachable", alert.SeverityWarning, false}}},
 		{"runtime answers again", "runtime_reachable", true, []want{{"runtime_unreachable", alert.SeverityInfo, true}}},
 		{"connect clears the disconnection only", "", true, []want{{"disconnected", alert.SeverityInfo, true}}},
-		{"stream drop leaves the runtime alert alone", "stream_ended", false, []want{{"disconnected", alert.SeverityWarning, false}}},
+		{"stream drop resolves the runtime alert", "stream_ended", false, []want{{"disconnected", alert.SeverityWarning, false}, {"runtime_unreachable", alert.SeverityInfo, true}}},
+		{"stale liveness resolves the runtime alert", "stale", false, []want{{"disconnected", alert.SeverityWarning, false}, {"runtime_unreachable", alert.SeverityInfo, true}}},
 		{"revoked clears both", "revoked", false, []want{{"disconnected", alert.SeverityInfo, true}, {"runtime_unreachable", alert.SeverityInfo, true}}},
 		{"deleted clears both", "deleted", false, []want{{"disconnected", alert.SeverityInfo, true}, {"runtime_unreachable", alert.SeverityInfo, true}}},
 	}

@@ -828,12 +828,14 @@ func agentAlertEvents(agentID, name, reason string, connected bool) []alert.Even
 		return []alert.Event{agentRuntimeEvent(agentID, name, true)}
 	case "runtime_reachable":
 		return []alert.Event{agentRuntimeEvent(agentID, name, false)}
-	case "revoked", "deleted":
-		gone := agentRuntimeEvent(agentID, name, false)
-		gone.Message = fmt.Sprintf("Agent %s %s", name, reason)
-		return []alert.Event{agentLifecycleEvent(agentID, name, reason, connected), gone}
 	}
-	return []alert.Event{agentLifecycleEvent(agentID, name, reason, connected)}
+	lifecycle := agentLifecycleEvent(agentID, name, reason, connected)
+	if connected {
+		return []alert.Event{lifecycle}
+	}
+	gone := agentRuntimeEvent(agentID, name, false)
+	gone.Message = lifecycle.Message
+	return []alert.Event{lifecycle, gone}
 }
 
 // wireAgentLifecycleAlerts raises a Warning alert when a remote agent's stream

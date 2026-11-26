@@ -22,7 +22,7 @@ maintenant raises alerts from every monitoring subsystem. An alert is identified
 | `resource` | `cpu_threshold`, `memory_threshold` | `container` | Warning | The metric is back under its threshold |
 | `update` | `update_available` | `container` | Info, Warning or Critical by the risk score of the update | A scan no longer finds the update |
 | `agent` | `disconnected` | `agent` | Warning | The agent reconnects; revoking or deleting it clears the alert |
-| `agent` | `runtime_unreachable` | `agent` | Warning | The agent reports that its runtime answers again; revoking or deleting it clears the alert |
+| `agent` | `runtime_unreachable` | `agent` | Warning | The agent reports that its runtime answers again, or disconnects; revoking or deleting it clears the alert |
 | `host` | `os_eol` | `agent` | Warning, then Critical | The host reports a supported version |
 | `security` | `dangerous_configuration` | `container` | Critical, Warning or Info, by the worst insight | The container has no insight left |
 | `security` | `posture_threshold` (Personal) | `infrastructure` | Warning, Critical more than 20 points under the threshold | The score is back at or above the threshold |
@@ -67,7 +67,7 @@ CPU and memory are independent alerts, `cpu_threshold` and `memory_threshold`, a
 
 An agent alert fires when a remote agent stops reporting, whether its stream dropped or it stopped sending for longer than `MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS` (60 seconds by default), and resolves on reconnection. Revoking or deleting an agent clears it instead of raising one, and nothing fires while the server itself shuts down.
 
-A second agent alert, `runtime_unreachable`, fires when an agent that is still connected reports that its container runtime stopped answering. It resolves when the agent reports that the runtime answers again, which it also states each time it connects, and revoking or deleting the agent clears it. An agent that disconnects while this alert is active keeps it until it comes back and states its runtime.
+A second agent alert, `runtime_unreachable`, fires when an agent that is still connected reports that its container runtime stopped answering. It resolves when the agent reports that the runtime answers again, which it also states each time it connects, and revoking or deleting the agent clears it. It also resolves when the agent disconnects, since the `disconnected` alert then says what is known; the agent states its runtime again when it reconnects, and the alert is raised again if the runtime still does not answer.
 
 A host alert fires when the operating system of a monitored host reaches the end of its free security support: warning 30 days before, escalated in place to critical the day after the date, and resolved once the host reports a newer version. See [Host OS End-of-Support](host-os.md).
 

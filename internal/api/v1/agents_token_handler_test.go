@@ -154,12 +154,15 @@ func TestRevokeAgent_ASecondRevocationChangesNothing(t *testing.T) {
 		return rec
 	}
 
-	require.Equal(t, http.StatusOK, revoke("web-01").Code)
+	first := revoke("web-01")
+	require.Equal(t, http.StatusOK, first.Code)
+	assert.Contains(t, first.Body.String(), `"runtime_unreachable":false`)
 	require.Len(t, events, 1)
 
 	second := revoke("web-01")
 	assert.Equal(t, http.StatusOK, second.Code, second.Body.String())
 	assert.Contains(t, second.Body.String(), `"status":"revoked"`)
+	assert.Contains(t, second.Body.String(), `"runtime_unreachable":false`)
 	assert.Len(t, events, 1, "nothing is announced twice")
 
 	assert.Equal(t, http.StatusNotFound, revoke(uid.LocalAgent).Code)
