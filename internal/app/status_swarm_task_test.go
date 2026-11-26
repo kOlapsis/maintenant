@@ -18,6 +18,7 @@ import (
 func TestStatusProvider_ReplacedSwarmTaskLeavesTheMatchAllPopulation(t *testing.T) {
 	ctx := context.Background()
 	a, _ := newTestApp(t, nil)
+	a.rt = answeringRuntime{a.rt}
 	addTask := func(name string, state container.ContainerState) {
 		_, err := a.containerStore.InsertContainer(ctx, &container.Container{
 			ExternalID: name, Name: name, State: state, AlertSeverity: container.SeverityWarning, RuntimeType: "docker",

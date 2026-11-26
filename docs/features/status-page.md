@@ -136,10 +136,12 @@ Each monitor is first mapped to a status:
 
 | Monitor | Operational | Degraded | Major Outage |
 |---------|-------------|----------|--------------|
-| Container | `running` and not `unhealthy`, or `completed` | running but `unhealthy` | any other state (`exited`, `restarting`, `paused`, `created`, `dead`) |
+| Container | `running` and not `unhealthy`, `completed`, or `created` for less than 5 minutes (starting) | running but `unhealthy` | `exited`, `restarting`, `paused`, `dead`, `created` for 5 minutes or more, or any state while its runtime does not answer or its agent is offline |
 | Endpoint | `up`, or not checked yet | `degraded` (served over a certificate that is not trusted) | `down`, or `unknown` after a check (its container is stopped) |
 | Heartbeat | `up`, `started`, `new`, `paused` | never | `down` |
 | Certificate | `valid`, or not checked yet | `expiring` | `expired`, `error`, or `unknown` after a check |
+
+A container counts as up only while maintenant can see it run. Its agent is offline when it has no live connection and was last seen longer ago than `MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS` (60 seconds by default); the local runtime does not answer when the Docker daemon or the Kubernetes API server is lost. A Kubernetes workload is `created` while none of its replicas is ready, and a pod while it is pending.
 
 A monitor that no longer exists counts as operational, and so does an endpoint or a certificate that is no longer monitored (its label was removed or its container deleted). An endpoint or a certificate left unmonitored by the Community quota counts as operational too. A match-all container component leaves out the stopped container of a Swarm task that failed while a task container of the same service runs: Swarm keeps it in the task history after replacing it.
 

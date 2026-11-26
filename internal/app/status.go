@@ -6,16 +6,24 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
+	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/status"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
-// ContainerStatus derives the status page status for a container.
-func ContainerStatus(c *container.Container) string {
+const containerStartGrace = 5 * time.Minute
+
+// ContainerStatus derives the status page status for a container, a major outage when stale says nothing vouches for its last known state.
+func ContainerStatus(c *container.Container, stale bool, now time.Time) string {
+	if stale {
+		return status.StatusMajorOutage
+	}
 	switch c.State {
 	case container.StateRunning:
 		if c.HealthStatus != nil && *c.HealthStatus == container.HealthUnhealthy {
@@ -24,9 +32,33 @@ func ContainerStatus(c *container.Container) string {
 		return status.StatusOperational
 	case container.StateCompleted:
 		return status.StatusOperational
+	case container.StateCreated:
+		if now.Sub(c.LastStateChangeAt) < containerStartGrace {
+			return status.StatusOperational
+		}
+		return status.StatusMajorOutage
 	default:
 		return status.StatusMajorOutage
 	}
+}
+
+// containerStale reports whether the runtime or the agent behind agentID is gone: the local runtime does not answer, the agent is disconnected past the stale threshold, or its runtime is unreachable.
+func (a *App) containerStale(ctx context.Context, agentID string) bool {
+	if uid.Agent(agentID) == uid.LocalAgent {
+		return a.rt == nil || !a.rt.IsConnected()
+	}
+	if a.agentSessions != nil && a.agentSessions.IsConnected(agentID) {
+		return a.agentSessions.RuntimeUnreachable(agentID)
+	}
+	ag, err := a.agentStore.Get(ctx, agentID)
+	if err != nil {
+		return true
+	}
+	stale := time.Duration(a.cfg.MultiHost.AgentStaleThresholdSeconds) * time.Second
+	if stale == 0 {
+		stale = 60 * time.Second
+	}
+	return v1.ConnectionState(a.agentSessions, stale, agentID, ag.LastSeenAt) == "disconnected"
 }
 
 // EndpointStatus derives the status page status for an endpoint.
@@ -81,7 +113,7 @@ func (a *App) wireStatusProvider() {
 			if err != nil || c == nil {
 				return status.StatusOperational
 			}
-			return ContainerStatus(c)
+			return ContainerStatus(c, a.containerStale(ctx, c.AgentID), time.Now())
 		case "endpoint":
 			ep, err := a.endpointSvc.GetEndpoint(ctx, monitorID)
 			if err != nil || ep == nil || ep.Limited || !ep.Active {
