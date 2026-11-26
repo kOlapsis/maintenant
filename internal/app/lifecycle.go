@@ -77,14 +77,13 @@ func (a *App) seedRestartAlertTracking(ctx context.Context) {
 		a.logger.Error("seed restart alert tracking", "error", err)
 		return
 	}
-	posture, _ := a.scorer.(interface{ ResumeBelowThreshold() })
 	var ids []string
 	for _, al := range activeAlerts {
 		if al.EntityType == "container" && al.AlertType == restartLoopAlertType {
 			ids = append(ids, al.EntityID)
 		}
-		if posture != nil && al.AlertType == alert.AlertTypePostureThreshold {
-			posture.ResumeBelowThreshold()
+		if a.scorer != nil && al.AlertType == alert.AlertTypePostureThreshold {
+			a.scorer.ResumeBelowThreshold()
 		}
 	}
 	a.containerSvc.TrackRestartAlerts(ids)

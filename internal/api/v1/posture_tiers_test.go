@@ -43,6 +43,7 @@ func (stubPostureScorer) InvalidateCache(string)                                
 func (stubPostureScorer) Threshold() int                                        { return 0 }
 func (stubPostureScorer) SetPostureAlertCallback(security.PostureAlertCallback) {}
 func (stubPostureScorer) SetPostureEventCallback(security.PostureEventCallback) {}
+func (stubPostureScorer) ResumeBelowThreshold()                                 {}
 
 func TestPostureRoutes_PerEdition(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))

@@ -109,4 +109,5 @@ type PostureScorer interface {
 	Threshold() int
 	SetPostureAlertCallback(cb PostureAlertCallback)
 	SetPostureEventCallback(cb PostureEventCallback)
+	ResumeBelowThreshold()
 }
