@@ -220,13 +220,17 @@ func (h *KubernetesHandler) HandleGetWorkload(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	pods, err := h.store.ListPods(r.Context(), agentID, []string{wl.Namespace}, kubernetes.PodFilters{Workload: id})
+	pods, err := h.store.ListPods(r.Context(), uid.Agent(agentID), []string{wl.Namespace}, kubernetes.PodFilters{Workload: id})
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "K8S_ERROR", "Failed to list workload pods")
 		return
 	}
 	podList := make([]map[string]interface{}, 0, len(pods))
 	for _, p := range pods {
+		// The store filter is a prefix match, which also returns the pods of web-api for web.
+		if p.WorkloadRef != id {
+			continue
+		}
 		pm := podToJSON(p)
 		h.markLiveness(pm, p.AgentID)
 		podList = append(podList, pm)
