@@ -4,6 +4,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -321,6 +322,11 @@ func (s *AgentStore) enrollTx(ctx context.Context, limit int, tokenCleartext str
 		if err := tx.Serialize(ctx, "agents"); err != nil {
 			return err
 		}
+		// The client sends the cleartext; the row is found by its hash.
+		tokenHash := agent.HashToken(tokenCleartext)
+		if enrolled, err := alreadyEnrolled(ctx, tx, tokenHash, a); err != nil || enrolled {
+			return err
+		}
 		if limit >= 0 {
 			var active int
 			if err := tx.QueryRowContext(ctx,
@@ -334,8 +340,6 @@ func (s *AgentStore) enrollTx(ctx context.Context, limit int, tokenCleartext str
 		}
 
 		now := time.Now().Unix()
-		// The client sends the cleartext; the row is found by its hash.
-		tokenHash := agent.HashToken(tokenCleartext)
 		res, err := tx.ExecContext(ctx,
 			`UPDATE enrollment_tokens
 			SET consumed_at = ?, consumed_by_agent_id = ?
@@ -364,6 +368,23 @@ func (s *AgentStore) enrollTx(ctx context.Context, limit int, tokenCleartext str
 		}
 		return nil
 	})
+}
+
+// alreadyEnrolled reports whether this token was consumed by this same agent with this same public key.
+func alreadyEnrolled(ctx context.Context, tx *Tx, tokenHash string, a *agent.Agent) (bool, error) {
+	var storedKey []byte
+	err := tx.QueryRowContext(ctx,
+		`SELECT a.public_key FROM enrollment_tokens t
+		JOIN agents a ON a.id = t.consumed_by_agent_id
+		WHERE t.token_hash = ? AND t.consumed_by_agent_id = ?`, tokenHash, a.AgentID,
+	).Scan(&storedKey)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check previous enrollment: %w", err)
+	}
+	return len(storedKey) > 0 && bytes.Equal(storedKey, a.PublicKey), nil
 }
 
 // classifyTokenFailure determines why a token UPDATE matched no rows.

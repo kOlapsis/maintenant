@@ -116,6 +116,28 @@ func TestRegisterAgent_HostLimit_RejectedAtCap(t *testing.T) {
 	assert.Nil(t, gotTok.ConsumedAt, "rejected enrollment must not consume the token")
 }
 
+func TestRegisterAgent_RetryAfterALostAnswerSucceedsAtTheCap(t *testing.T) {
+	orig := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return extension.Personal }
+	t.Cleanup(func() { extension.CurrentEdition = orig })
+
+	impl, store := newHostLimitTestImpl(t)
+	ctx := context.Background()
+	insertActiveAgents(t, store, extension.Limit(extension.ResourceAgentHosts)-1)
+
+	tok := insertToken(t, store, "tok-retry", "mnt_enr_retrytoken000001")
+	req := registerReq("33333333-3333-3333-3333-333333333333", tok, "last-slot")
+	_, err := impl.RegisterAgent(ctx, req)
+	require.NoError(t, err)
+
+	_, err = impl.RegisterAgent(ctx, req)
+	require.NoError(t, err, "the same agent and key repeat the enrollment whose answer was lost")
+
+	other := registerReq("44444444-4444-4444-4444-444444444444", tok, "intruder")
+	_, err = impl.RegisterAgent(ctx, other)
+	assert.Equal(t, codes.ResourceExhausted, grpcstatus.Code(err), "%v", err)
+}
+
 // Under the cap, enrollment succeeds and the agent is persisted as active.
 func TestRegisterAgent_HostLimit_UnderCapSucceeds(t *testing.T) {
 	orig := extension.CurrentEdition

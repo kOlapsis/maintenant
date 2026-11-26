@@ -166,6 +166,42 @@ func TestEnrollAtomic_TokenExpired(t *testing.T) {
 	assert.ErrorIs(t, err, agent.ErrTokenExpired)
 }
 
+func TestEnrollAtomic_SameAgentAndKeyMayRepeatItsEnrollment(t *testing.T) {
+	store := NewAgentStore(openTestDB(t))
+	ctx := context.Background()
+
+	const cleartext = "mnt_enr_lostanswer"
+	require.NoError(t, store.InsertToken(ctx,
+		tokenFor(cleartext, time.Now().UTC(), time.Now().UTC().Add(time.Hour))))
+	require.NoError(t, store.EnrollAtomic(ctx, 1, cleartext, enrollAgentRecord("agent-retry")))
+
+	require.NoError(t, store.EnrollAtomic(ctx, 1, cleartext, enrollAgentRecord("agent-retry")),
+		"the agent whose answer was lost enrols again, even with the cap it filled itself")
+
+	active, _, err := store.CountByStatus(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, active)
+}
+
+func TestEnrollAtomic_ConsumedTokenStaysRefusedForAnotherKeyOrAgent(t *testing.T) {
+	store := NewAgentStore(openTestDB(t))
+	ctx := context.Background()
+
+	const cleartext = "mnt_enr_replayed"
+	require.NoError(t, store.InsertToken(ctx,
+		tokenFor(cleartext, time.Now().UTC(), time.Now().UTC().Add(time.Hour))))
+	require.NoError(t, store.EnrollAtomic(ctx, -1, cleartext, enrollAgentRecord("agent-first")))
+
+	otherKey := enrollAgentRecord("agent-first")
+	otherKey.PublicKey = []byte("anotherkeyplaceholder1234567890")
+	assert.ErrorIs(t, store.EnrollAtomic(ctx, -1, cleartext, otherKey), agent.ErrTokenAlreadyConsumed)
+	assert.ErrorIs(t, store.EnrollAtomic(ctx, -1, cleartext, enrollAgentRecord("agent-second")), agent.ErrTokenAlreadyConsumed)
+
+	stored, err := store.Get(ctx, "agent-first")
+	require.NoError(t, err)
+	assert.Equal(t, enrollAgentRecord("agent-first").PublicKey, stored.PublicKey)
+}
+
 func TestAgentStore_Delete_CascadePurge(t *testing.T) {
 	db := openTestDB(t)
 	store := NewAgentStore(db)
