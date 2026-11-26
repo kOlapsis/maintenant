@@ -396,6 +396,28 @@ func (r *Runtime) listPodEvents(ctx context.Context, ns, name string) ([]K8sEven
 
 const maxSnapshotEvents = 200
 
+func eventLastSeen(e *corev1.Event) time.Time {
+	switch {
+	case !e.LastTimestamp.IsZero():
+		return e.LastTimestamp.Time
+	case e.Series != nil && !e.Series.LastObservedTime.IsZero():
+		return e.Series.LastObservedTime.Time
+	case !e.EventTime.IsZero():
+		return e.EventTime.Time
+	}
+	return e.CreationTimestamp.Time
+}
+
+func eventFirstSeen(e *corev1.Event) time.Time {
+	switch {
+	case !e.FirstTimestamp.IsZero():
+		return e.FirstTimestamp.Time
+	case !e.EventTime.IsZero():
+		return e.EventTime.Time
+	}
+	return e.CreationTimestamp.Time
+}
+
 // ListAllEvents returns the most recent events across all allowed namespaces,
 // newest first, each tagged with the object it concerns.
 func (r *Runtime) ListAllEvents(ctx context.Context) ([]K8sEventRef, error) {
@@ -424,8 +446,8 @@ func (r *Runtime) ListAllEvents(ctx context.Context) ([]K8sEventRef, error) {
 				Reason:    e.Reason,
 				Message:   e.Message,
 				Source:    source,
-				FirstSeen: e.FirstTimestamp.Time,
-				LastSeen:  e.LastTimestamp.Time,
+				FirstSeen: eventFirstSeen(e),
+				LastSeen:  eventLastSeen(e),
 				Count:     e.Count,
 			},
 			InvolvedKind:      e.InvolvedObject.Kind,
@@ -467,8 +489,8 @@ func (r *Runtime) fetchEvents(ctx context.Context, ns, fieldSelector string) ([]
 			Reason:    e.Reason,
 			Message:   e.Message,
 			Source:    source,
-			FirstSeen: e.FirstTimestamp.Time,
-			LastSeen:  e.LastTimestamp.Time,
+			FirstSeen: eventFirstSeen(e),
+			LastSeen:  eventLastSeen(e),
 			Count:     e.Count,
 		})
 	}
