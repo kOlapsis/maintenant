@@ -315,27 +315,22 @@ func TestManager_TheClockKeepsRunningOffline(t *testing.T) {
 func TestManager_OfflineWithoutAWindowIsUnchanged(t *testing.T) {
 	pub, priv := generateTestKeyPair(t)
 
-	online := true
-	handler := func(w http.ResponseWriter, r *http.Request) {
-		if !online {
-			http.Error(w, "gone", http.StatusBadGateway)
-			return
-		}
-		signed := signPayload(t, priv, map[string]any{
-			"status":      "active",
-			"edition":     "pro",
-			"plan":        "pro",
-			"expires_at":  time.Now().Add(365 * 24 * time.Hour).UTC().Format(time.RFC3339),
-			"verified_at": time.Now().Add(-10 * 24 * time.Hour).UTC().Format(time.RFC3339),
-		})
-		_ = json.NewEncoder(w).Encode(signed)
+	handler := func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "gone", http.StatusBadGateway)
 	}
 
 	m := withBuildDate(t, testManager(t, pub, handler), buildOutside)
-	m.check(context.Background())
+	signed := signPayload(t, priv, map[string]any{
+		"status":      "active",
+		"edition":     "pro",
+		"plan":        "pro",
+		"expires_at":  time.Now().Add(365 * 24 * time.Hour).UTC().Format(time.RFC3339),
+		"verified_at": time.Now().Add(-10 * 24 * time.Hour).UTC().Format(time.RFC3339),
+	})
+	require.NoError(t, writeCache(m.dataDir, &signed))
+	m.loadCache(context.Background())
 	require.Equal(t, extension.Pro, m.State().Edition)
 
-	online = false
 	m.check(context.Background())
 
 	state := m.State()

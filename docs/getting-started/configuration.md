@@ -294,6 +294,8 @@ The key is verified against the license server at startup and then every 24 hour
 
 A key the server refuses is dropped at once: `expired`, `revoked` or `unknown` (key not recognized) leaves the instance on Community.
 
+Keep the host's clock synchronized. An answer dated more than a day away from the host's clock is not accepted, and the check counts as failed (the log says `license answer ignored, check this host's clock`).
+
 A Personal license also bounds the versions it covers. A build released after the update window closed keeps its edition for a 30-day grace period and then falls back to Community; the versions released inside the window stay licensed. `GET /api/v1/license/status` shows `status`, `edition`, `plan`, `verified_at`, `expires_at`, `updates_until` and `update_grace_until`. `status` is one of `active`, `grace` (still granted, renewal due), `expired`, `revoked`, `unknown`, `unreachable`, `update_window_grace`, `update_window_ended`, or `inactive` when no key is set.
 
 ```

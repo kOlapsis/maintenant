@@ -722,28 +722,21 @@ func TestManager_HTTP403NotifiesTheTransition(t *testing.T) {
 }
 
 func TestManager_NetworkDegradationBeyondSixtyDaysNotifies(t *testing.T) {
-	pub, priv := generateTestKeyPair(t)
+	pub, _ := generateTestKeyPair(t)
 
-	down := false
 	handler := func(w http.ResponseWriter, _ *http.Request) {
-		if down {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		payload := proPayload()
-		// Verified long enough ago that the next failure crosses the 60-day line.
-		payload.VerifiedAt = time.Now().Add(-61 * 24 * time.Hour)
-		signed := signPayload(t, priv, payload)
-		_ = json.NewEncoder(w).Encode(signed)
+		w.WriteHeader(http.StatusInternalServerError)
 	}
 
 	m := testManager(t, pub, handler)
 	seen := editionCallbackRecorder(t, m)
 
-	m.check(context.Background())
+	payload := proPayload()
+	// Verified long enough ago that the next failure crosses the 60-day line.
+	payload.VerifiedAt = time.Now().Add(-61 * 24 * time.Hour)
+	m.applyPayload(context.Background(), &payload)
 	require.Equal(t, extension.Pro, m.Edition())
 
-	down = true
 	m.check(context.Background())
 	require.Eventually(t, func() bool {
 		return len(seen()) == 1

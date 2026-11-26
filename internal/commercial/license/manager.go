@@ -27,6 +27,8 @@ const (
 	graceDegradationWarn     = 7 * 24 * time.Hour  // 7 days
 	graceDegradationError    = 30 * 24 * time.Hour // 30 days
 	graceDegradationDisabled = 60 * 24 * time.Hour // 60 days
+
+	maxClockSkew = 24 * time.Hour
 )
 
 var (
@@ -57,6 +59,9 @@ type Manager struct {
 	// update window is then never enforced.
 	buildDate      time.Time
 	buildDateKnown bool
+
+	signedTime     time.Time
+	signedTimeSeen time.Time
 
 	callbacksMu sync.Mutex
 	callbacks   []EditionChangeCallback
@@ -121,7 +126,8 @@ func (m *Manager) loadCache(ctx context.Context) {
 	if err != nil || cached == nil {
 		return
 	}
-	if fallback := offlineFallback(cached.VerifiedAt, cached.ExpiresAt, time.Now()); fallback != nil {
+	m.recordSignedTime(cached.VerifiedAt)
+	if fallback := offlineFallback(cached.VerifiedAt, cached.ExpiresAt, m.now()); fallback != nil {
 		m.logger.Warn("cached license no longer grants an edition",
 			"status", fallback.Status,
 			"verified_at", cached.VerifiedAt,
@@ -250,6 +256,14 @@ func (m *Manager) check(ctx context.Context) bool {
 		return false
 	}
 
+	skew := m.now().Sub(payload.VerifiedAt)
+	if (payload.Status == "active" || payload.Status == "grace") && (skew > maxClockSkew || skew < -maxClockSkew) {
+		err := fmt.Errorf("license answer verified at %s is more than a day away from this host's clock", payload.VerifiedAt.Format(time.RFC3339))
+		m.logger.Error("license answer ignored, check this host's clock", "error", err)
+		m.handleNetworkError(ctx, err)
+		return false
+	}
+
 	switch payload.Status {
 	case "active":
 		m.applyPayload(ctx, payload)
@@ -350,8 +364,28 @@ func (m *Manager) applyPayload(ctx context.Context, payload *LicensePayload) {
 		VerifiedAt: payload.VerifiedAt,
 		ExpiresAt:  payload.ExpiresAt,
 	}
-	m.enforceUpdateWindow(state, payload, time.Now())
+	m.recordSignedTime(payload.VerifiedAt)
+	m.enforceUpdateWindow(state, payload, m.now())
 	m.setStateAndNotify(ctx, state)
+}
+
+// recordSignedTime keeps the latest server time a verified payload carried, with the local monotonic reading taken when it was seen.
+func (m *Manager) recordSignedTime(t time.Time) {
+	if m.signedTimeSeen.IsZero() || t.After(m.signedTime.Add(time.Since(m.signedTimeSeen))) {
+		m.signedTime, m.signedTimeSeen = t, time.Now()
+	}
+}
+
+// now reads the wall clock, but never earlier than the latest signed server time plus the monotonic time elapsed since it was seen.
+func (m *Manager) now() time.Time {
+	now := time.Now()
+	if m.signedTimeSeen.IsZero() {
+		return now
+	}
+	if floor := m.signedTime.Add(time.Since(m.signedTimeSeen)); floor.After(now) {
+		return floor
+	}
+	return now
 }
 
 // enforceUpdateWindow bridles state when the running build was released after
@@ -432,7 +466,8 @@ func (m *Manager) handleNetworkError(ctx context.Context, err error) {
 	}
 
 	// The cache stays: only the server can tell a renewal from an end.
-	if fallback := offlineFallback(current.VerifiedAt, current.ExpiresAt, time.Now()); fallback != nil {
+	now := m.now()
+	if fallback := offlineFallback(current.VerifiedAt, current.ExpiresAt, now); fallback != nil {
 		m.logger.Error("license server unreachable and the cached license no longer grants an edition",
 			"error", err,
 			"status", fallback.Status,
@@ -443,7 +478,7 @@ func (m *Manager) handleNetworkError(ctx context.Context, err error) {
 		return
 	}
 
-	age := time.Since(current.VerifiedAt)
+	age := now.Sub(current.VerifiedAt)
 
 	switch {
 	case age > graceDegradationError:
@@ -493,7 +528,7 @@ func (m *Manager) replayUpdateWindow(state *State) {
 	if err != nil || cached == nil {
 		return
 	}
-	m.enforceUpdateWindow(state, cached, time.Now())
+	m.enforceUpdateWindow(state, cached, m.now())
 }
 
 // offlineFallback returns the Community state a cached license falls to at now, or nil while it still grants its edition.
