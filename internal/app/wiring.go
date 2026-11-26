@@ -647,13 +647,11 @@ func updateResolvedAlert(m map[string]any) alert.Event {
 
 // wireUpdateCallback wires the update service event callback.
 func (a *App) wireUpdateCallback() {
-	alertCh := a.alertEngine.EventChannel()
 	ctx := context.Background()
 
 	sendAlert := func(evt alert.Event) {
 		evt.Timestamp = time.Now()
-		alertCh <- evt
-		a.statusSvc.HandleAlertEvent(ctx, evt)
+		a.emitAlert(evt)
 	}
 
 	a.updateSvc.SetEventCallback(func(eventType string, data any) {
@@ -701,14 +699,6 @@ func (a *App) agentName(ctx context.Context, agentID string) string {
 
 // wirePostureCallbacks wires the security posture scoring callbacks.
 func (a *App) wirePostureCallbacks() {
-	alertCh := a.alertEngine.EventChannel()
-	ctx := context.Background()
-
-	sendAlert := func(evt alert.Event) {
-		alertCh <- evt
-		a.statusSvc.HandleAlertEvent(ctx, evt)
-	}
-
 	a.scorer.SetPostureAlertCallback(func(score int, previousScore int, color string, isBreach bool) {
 		severity := alert.SeverityWarning
 		if score < a.scorer.Threshold()-20 {
@@ -719,7 +709,7 @@ func (a *App) wirePostureCallbacks() {
 			severity = alert.SeverityInfo
 			msg = fmt.Sprintf("Infrastructure security score recovered to %d (threshold: %d)", score, a.scorer.Threshold())
 		}
-		sendAlert(alert.Event{
+		a.emitAlert(alert.Event{
 			Source:     alert.SourceSecurity,
 			AlertType:  alert.AlertTypePostureThreshold,
 			Severity:   severity,
@@ -816,7 +806,6 @@ func (a *App) wireAgentLifecycleAlerts() {
 		return
 	}
 	ctx := context.Background()
-	alertCh := a.alertEngine.EventChannel()
 
 	a.agentSessions.SetLifecycleAlertHook(func(agentID, reason string, connected bool) {
 		// Suppress the disconnect storm when the whole server is going down.
@@ -826,15 +815,17 @@ func (a *App) wireAgentLifecycleAlerts() {
 
 		evt := agentLifecycleEvent(agentID, a.agentName(ctx, agentID), reason, connected)
 		evt.Timestamp = time.Now()
-
-		alertCh <- evt
-		a.statusSvc.HandleAlertEvent(ctx, evt)
+		a.emitAlert(evt)
 	})
 }
 
-// emitAlert pushes an event into the alert engine and the status page.
+// emitAlert pushes an event into the alert engine and the status page, and drops it once the app has stopped.
 func (a *App) emitAlert(evt alert.Event) {
-	a.alertEngine.EventChannel() <- evt
+	select {
+	case a.alertEngine.EventChannel() <- evt:
+	case <-a.stopped:
+		return
+	}
 	a.statusSvc.HandleAlertEvent(context.Background(), evt)
 }
 

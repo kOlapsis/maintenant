@@ -85,6 +85,7 @@ type App struct {
 	escalationStore *store.EscalationStore
 	escalationSvc   escalation.Service
 	escalationRun   func(context.Context)
+	stopped         <-chan struct{}
 
 	// HTTP
 	broker          *v1.SSEBroker
@@ -909,6 +910,7 @@ func (a *App) Start(ctx context.Context) error {
 	// the caller's own context is cancelled.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	a.stopped = ctx.Done()
 
 	// Outlives ctx: Shutdown stops it only once the agent streams can no longer write.
 	writerCtx, stopWriter := context.WithCancel(context.WithoutCancel(ctx))
