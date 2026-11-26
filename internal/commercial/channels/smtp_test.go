@@ -341,6 +341,61 @@ func TestSMTPSender_LocalRelayWithAnUntrustedCertificateGetsTheMail(t *testing.T
 	}
 }
 
+// hangingUpOnQuitRelay accepts messages in clear and closes the connection without answering QUIT.
+func hangingUpOnQuitRelay(t *testing.T) (host, port string, accepted chan struct{}) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+	accepted = make(chan struct{}, 10)
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer func() { _ = conn.Close() }()
+				r := bufio.NewReader(conn)
+				reply := func(line string) { _, _ = fmt.Fprintf(conn, "%s\r\n", line) }
+				reply("220 relay ready")
+				inData := false
+				for {
+					line, err := r.ReadString('\n')
+					if err != nil {
+						return
+					}
+					cmd := strings.ToUpper(strings.TrimSpace(line))
+					switch {
+					case inData && cmd == ".":
+						inData = false
+						accepted <- struct{}{}
+						reply("250 queued")
+					case inData:
+					case cmd == "DATA":
+						inData = true
+						reply("354 end with .")
+					case cmd == "QUIT":
+						return
+					default:
+						reply("250 ok")
+					}
+				}
+			}()
+		}
+	}()
+	host, port, _ = net.SplitHostPort(ln.Addr().String())
+	return host, port, accepted
+}
+
+func TestSMTPSender_AnAcceptedMailIsSentWhateverQuitAnswers(t *testing.T) {
+	host, port, accepted := hangingUpOnQuitRelay(t)
+	sender := NewSMTPSender(SMTPConfig{Host: host, Port: port, From: "maintenant@example.com", AllowPlaintext: true})
+
+	require.NoError(t, sender.Send(context.Background(), "ops@example.com", "disk full", "the disk is full"))
+	assert.Len(t, accepted, 1)
+}
+
 func TestLocalHost(t *testing.T) {
 	for host, want := range map[string]bool{
 		"smtp-relay":       true,

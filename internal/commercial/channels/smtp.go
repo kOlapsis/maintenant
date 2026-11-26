@@ -117,7 +117,8 @@ func (s *SMTPSender) Send(ctx context.Context, to, subject, textBody string) err
 		return fmt.Errorf("smtp close data: %w", err)
 	}
 
-	return c.Quit()
+	_ = c.Quit()
+	return nil
 }
 
 func localHost(host string) bool {
