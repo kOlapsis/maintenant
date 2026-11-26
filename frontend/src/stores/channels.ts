@@ -32,7 +32,7 @@ export const useChannelsStore = defineStore('channels', () => {
     } catch {
       return
     }
-    channels.value = [...channels.value, channel]
+    channels.value = [...channels.value.filter((c) => c.id !== channel.id), channel]
   }
 
   function onChannelUpdated(e: MessageEvent) {

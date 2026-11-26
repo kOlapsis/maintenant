@@ -53,4 +53,15 @@ describe('channels store', () => {
     expect(bus.connect).toHaveBeenCalledTimes(1)
     expect(bus.disconnect).toHaveBeenCalledTimes(1)
   })
+
+  it('lists a created channel once', () => {
+    const store = useChannelsStore()
+    store.connectSSE()
+    store.channels = [{ id: 'c1', name: 'ops' }] as never
+    const created = (name: string) => new MessageEvent('channel.created', { data: JSON.stringify({ id: 'c1', name }) })
+
+    bus.handlers.get('channel.created')!(created('ops renamed'))
+
+    expect(store.channels.map((c) => [c.id, c.name])).toEqual([['c1', 'ops renamed']])
+  })
 })
