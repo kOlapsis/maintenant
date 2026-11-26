@@ -13,6 +13,9 @@ import (
 
 // DialInspectControl completes a TLS handshake that accepts any certificate and returns the connection state, without sending a single application byte; control, when set, runs at dial time.
 func DialInspectControl(ctx context.Context, addr, serverName string, timeout time.Duration, control func(network, address string, c syscall.RawConn) error) (tls.ConnectionState, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	dialer := &net.Dialer{Timeout: timeout, Control: control}
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
