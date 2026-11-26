@@ -139,7 +139,7 @@ Each monitor is first mapped to a status:
 | Container | `running` and not `unhealthy`, or `completed` | running but `unhealthy` | any other state (`exited`, `restarting`, `paused`, `created`, `dead`) |
 | Endpoint | `up`, or not checked yet | `degraded` (served over a certificate that is not trusted) | `down`, or `unknown` after a check (its container is stopped) |
 | Heartbeat | `up`, `started`, `new`, `paused` | never | `down` |
-| Certificate | `valid` | `expiring` | `expired`, `error`, `unknown` |
+| Certificate | `valid`, or not checked yet | `expiring` | `expired`, `error`, or `unknown` after a check |
 
 A monitor that no longer exists counts as operational, and so does an endpoint or a certificate that is no longer monitored (its label was removed or its container deleted).
 

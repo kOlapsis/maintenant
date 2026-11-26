@@ -62,6 +62,11 @@ func CertificateStatus(cert *certificate.CertMonitor) string {
 		return status.StatusOperational
 	case certificate.StatusExpiring:
 		return status.StatusDegraded
+	case certificate.StatusUnknown:
+		if cert.LastCheckAt == nil && cert.LastError == "" {
+			return status.StatusOperational
+		}
+		return status.StatusMajorOutage
 	default:
 		return status.StatusMajorOutage
 	}
