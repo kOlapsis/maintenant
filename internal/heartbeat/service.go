@@ -267,7 +267,11 @@ func (s *Service) DeleteHeartbeat(ctx context.Context, id string) error {
 
 // --- Ping Processing ---
 
+const pingTimeout = 5 * time.Second
+
 func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpMethod string, payload *string, agentID *string) (*Heartbeat, error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pingTimeout)
+	defer cancel()
 	h, err := s.store.GetHeartbeatByPingToken(ctx, token)
 	if err != nil {
 		return nil, err
@@ -315,9 +319,6 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 	if err != nil {
 		return nil, err
 	}
-
-	// The state is committed: the rows that describe it no longer depend on the request.
-	ctx = context.WithoutCancel(ctx)
 
 	// Record ping
 	ping := &HeartbeatPing{
@@ -389,6 +390,8 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 }
 
 func (s *Service) ProcessStartPing(ctx context.Context, token string, sourceIP, httpMethod string) (*Heartbeat, error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pingTimeout)
+	defer cancel()
 	h, err := s.store.GetHeartbeatByPingToken(ctx, token)
 	if err != nil {
 		return nil, err
@@ -424,8 +427,6 @@ func (s *Service) ProcessStartPing(ctx context.Context, token string, sourceIP, 
 	if err != nil {
 		return nil, err
 	}
-
-	ctx = context.WithoutCancel(ctx)
 
 	// Close any in-progress execution as timeout
 	currentExec, err := s.store.GetCurrentExecution(ctx, h.ID)
@@ -466,6 +467,8 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCod
 	if exitCode < 0 || exitCode > 255 {
 		return nil, ErrInvalidExitCode
 	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pingTimeout)
+	defer cancel()
 
 	h, err := s.store.GetHeartbeatByPingToken(ctx, token)
 	if err != nil {
@@ -537,8 +540,6 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCod
 	if err != nil {
 		return nil, err
 	}
-
-	ctx = context.WithoutCancel(ctx)
 
 	// Update or create execution record
 	currentExec, _ := s.store.GetCurrentExecution(ctx, h.ID)
