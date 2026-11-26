@@ -22,3 +22,11 @@ func (r agentRuntimeResolver) DetectedRuntime(ctx context.Context, agentID strin
 	}
 	return a.DetectedRuntime, nil
 }
+
+func (r agentRuntimeResolver) AgentPlatform(ctx context.Context, agentID string) (string, error) {
+	a, err := r.store.Get(ctx, agentID)
+	if err != nil {
+		return "", err
+	}
+	return a.OSArch, nil
+}

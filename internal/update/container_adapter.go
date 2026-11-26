@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"runtime"
 
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/uid"
@@ -25,11 +26,17 @@ type DetailsFetcher interface {
 	FetchDetails(ctx context.Context) (map[string]RuntimeDetails, error)
 }
 
+// AgentPlatformResolver returns the "os/arch" an agent runs on.
+type AgentPlatformResolver interface {
+	AgentPlatform(ctx context.Context, agentID string) (string, error)
+}
+
 // ContainerServiceAdapter adapts container.Service to the ContainerLister interface.
 type ContainerServiceAdapter struct {
-	svc     *container.Service
-	details DetailsFetcher // optional, nil when the local runtime reports nothing beyond the stored fields
-	logger  *slog.Logger
+	svc       *container.Service
+	details   DetailsFetcher        // optional, nil when the local runtime reports nothing beyond the stored fields
+	platforms AgentPlatformResolver // optional, nil leaves the platform of agent containers unknown
+	logger    *slog.Logger
 }
 
 // NewContainerServiceAdapter creates a new adapter.
@@ -43,6 +50,12 @@ func (a *ContainerServiceAdapter) WithDetailsFetcher(df DetailsFetcher) *Contain
 	return a
 }
 
+// WithAgentPlatforms attaches the source of the platform each agent runs on.
+func (a *ContainerServiceAdapter) WithAgentPlatforms(r AgentPlatformResolver) *ContainerServiceAdapter {
+	a.platforms = r
+	return a
+}
+
 // ListContainerInfos returns container info for the running containers, leaving out those whose runtime has not reported their labels.
 func (a *ContainerServiceAdapter) ListContainerInfos(ctx context.Context) ([]ContainerInfo, error) {
 	containers, err := a.svc.ListContainers(ctx, container.ListContainersOpts{
@@ -53,6 +66,7 @@ func (a *ContainerServiceAdapter) ListContainerInfos(ctx context.Context) ([]Con
 	}
 
 	local := a.localDetails(ctx)
+	platforms := map[string]string{}
 	infos := make([]ContainerInfo, 0, len(containers))
 	for _, c := range containers {
 		if c.IsIgnored || c.Archived {
@@ -62,7 +76,7 @@ func (a *ContainerServiceAdapter) ListContainerInfos(ctx context.Context) ([]Con
 		if !ok {
 			continue
 		}
-		infos = append(infos, newContainerInfo(c, d))
+		infos = append(infos, newContainerInfo(c, d, a.platformOf(ctx, c.AgentID, platforms)))
 	}
 	return infos, nil
 }
@@ -83,7 +97,7 @@ func (a *ContainerServiceAdapter) GetContainerInfo(ctx context.Context, agentID,
 			local = a.localDetails(ctx)
 		}
 		d, _ := a.detailsFor(c, local)
-		return newContainerInfo(c, d), nil
+		return newContainerInfo(c, d, a.platformOf(ctx, c.AgentID, map[string]string{})), nil
 	}
 	return ContainerInfo{}, fmt.Errorf("container not found: %s", externalID)
 }
@@ -113,7 +127,26 @@ func (a *ContainerServiceAdapter) detailsFor(c *container.Container, local map[s
 	return d, ok
 }
 
-func newContainerInfo(c *container.Container, d RuntimeDetails) ContainerInfo {
+func (a *ContainerServiceAdapter) platformOf(ctx context.Context, agentID string, known map[string]string) string {
+	if uid.Agent(agentID) == uid.LocalAgent {
+		return runtime.GOOS + "/" + runtime.GOARCH
+	}
+	if a.platforms == nil {
+		return ""
+	}
+	platform, ok := known[agentID]
+	if !ok {
+		var err error
+		if platform, err = a.platforms.AgentPlatform(ctx, agentID); err != nil {
+			a.logger.Debug("update: agent platform unavailable", "agent", agentID, "error", err)
+			platform = ""
+		}
+		known[agentID] = platform
+	}
+	return platform
+}
+
+func newContainerInfo(c *container.Container, d RuntimeDetails, platform string) ContainerInfo {
 	return ContainerInfo{
 		UID:                c.ID,
 		AgentID:            uid.Agent(c.AgentID),
@@ -130,5 +163,6 @@ func newContainerInfo(c *container.Container, d RuntimeDetails) ContainerInfo {
 		LocallyBuilt:       d.DigestsKnown && len(d.RepoDigests) == 0,
 		PodContainer:       d.PodContainer,
 		SwarmService:       c.SwarmServiceName,
+		Platform:           platform,
 	}
 }

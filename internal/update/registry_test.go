@@ -50,7 +50,7 @@ func TestRegistryClient_ResolveDigests(t *testing.T) {
 	require.NoError(t, err)
 	index := mutate.AppendManifests(empty.Index,
 		mutate.IndexAddendum{Add: amd64, Descriptor: v1.Descriptor{Platform: &v1.Platform{OS: "linux", Architecture: "amd64"}}},
-		mutate.IndexAddendum{Add: arm64, Descriptor: v1.Descriptor{Platform: &v1.Platform{OS: "linux", Architecture: "arm64"}}},
+		mutate.IndexAddendum{Add: arm64, Descriptor: v1.Descriptor{Platform: &v1.Platform{OS: "linux", Architecture: "arm64", Variant: "v8"}}},
 	)
 	multi, err := name.ParseReference(host + "/acme/web:latest")
 	require.NoError(t, err)
@@ -69,7 +69,7 @@ func TestRegistryClient_ResolveDigests(t *testing.T) {
 	got, err := rc.ResolveDigests(context.Background(), host+"/acme/web:latest")
 	require.NoError(t, err)
 	assert.Equal(t, digestOf(index), got.Digest, "runtimes record the index digest of a multi-platform tag")
-	assert.ElementsMatch(t, []string{digestOf(amd64), digestOf(arm64)}, got.Platforms)
+	assert.Equal(t, map[string]string{digestOf(amd64): "linux/amd64", digestOf(arm64): "linux/arm64/v8"}, got.Platforms)
 	assert.True(t, got.Contains(digestOf(arm64)))
 	assert.False(t, got.Contains("sha256:other"))
 

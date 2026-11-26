@@ -178,3 +178,50 @@ func TestScanner_DigestPinnedInTheReferenceIsTheRunningOne(t *testing.T) {
 	require.Len(t, results, 1)
 	assert.Equal(t, "sha256:old", results[0].CurrentDigest)
 }
+
+func republishedIndex(amd64After string) *stubRegistry {
+	return &stubRegistry{tags: floatingTags, byRef: map[string]RemoteDigests{
+		"library/nginx@sha256:index1": {Digest: "sha256:index1", Platforms: map[string]string{
+			"sha256:amd64-1": "linux/amd64", "sha256:riscv64-1": "linux/riscv64", "sha256:att-1": "unknown/unknown",
+		}},
+		"library/nginx:latest": {Digest: "sha256:index2", Platforms: map[string]string{
+			amd64After: "linux/amd64", "sha256:riscv64-2": "linux/riscv64", "sha256:att-2": "unknown/unknown",
+		}},
+	}}
+}
+
+func TestScanner_RepublishedIndex_OnlyTheHostPlatformCounts(t *testing.T) {
+	onOldIndex := ContainerInfo{
+		ExternalID: "ctr1", Name: "web", Image: "nginx:latest", Platform: "linux/amd64",
+		RepoDigests: []string{"nginx@sha256:index1"},
+	}
+
+	results, errs := newTestScanner(republishedIndex("sha256:amd64-1"), &stubStore{}).
+		Scan(context.Background(), []ContainerInfo{onOldIndex})
+	require.Empty(t, errs)
+	assert.Empty(t, results, "only another architecture was rebuilt")
+
+	results, errs = newTestScanner(republishedIndex("sha256:amd64-2"), &stubStore{}).
+		Scan(context.Background(), []ContainerInfo{onOldIndex})
+	require.Empty(t, errs)
+	require.Len(t, results, 1)
+	assert.Equal(t, "sha256:index1", results[0].CurrentDigest)
+	assert.Equal(t, "sha256:index2", results[0].LatestDigest)
+
+	onOldIndex.Platform = ""
+	results, errs = newTestScanner(republishedIndex("sha256:amd64-1"), &stubStore{}).
+		Scan(context.Background(), []ContainerInfo{onOldIndex})
+	require.Empty(t, errs)
+	assert.Len(t, results, 1, "an unknown platform cannot rule the update out")
+}
+
+func TestScanner_RepublishedIndex_UnreportedDigestComparesTheBaselineIndex(t *testing.T) {
+	store := &stubStore{baseline: &DigestBaseline{ContainerID: "ctr1", Tag: "latest", RemoteDigest: "sha256:index1"}}
+	sc := newTestScanner(republishedIndex("sha256:amd64-1"), store)
+
+	results, errs := sc.Scan(context.Background(), []ContainerInfo{{
+		ExternalID: "ctr1", Name: "web", Image: "nginx:latest", Platform: "linux/amd64",
+	}})
+	require.Empty(t, errs)
+	assert.Empty(t, results)
+}

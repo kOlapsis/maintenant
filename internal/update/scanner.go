@@ -33,6 +33,7 @@ type ContainerInfo struct {
 	LocallyBuilt       bool     // the runtime reports an image never pulled from nor pushed to a registry
 	PodContainer       string   // Kubernetes: the pod container that runs Image
 	SwarmService       string   // Swarm: the service the task belongs to
+	Platform           string   // "os/arch" of the host running the container, empty when unknown
 }
 
 const scanImageTimeout = 2 * time.Minute
@@ -339,7 +340,7 @@ func (sc *Scanner) checkDigest(ctx context.Context, t scanTarget) (*UpdateResult
 	if err != nil {
 		return nil, err
 	}
-	if current == "" || remote.Contains(current) {
+	if current == "" || remote.Contains(current) || sc.samePlatformImages(ctx, t, current, remote) {
 		return nil, nil
 	}
 
@@ -363,6 +364,33 @@ func (sc *Scanner) checkDigest(ctx context.Context, t scanTarget) (*UpdateResult
 		HasUpdate:      true,
 		AlertOn:        t.alertOn,
 	}, nil
+}
+
+// samePlatformImages reports whether the index the container runs and the one its tag points at now list the same images for the container's platform.
+func (sc *Scanner) samePlatformImages(ctx context.Context, t scanTarget, current string, remote RemoteDigests) bool {
+	platform := t.container.Platform
+	if platform == "" {
+		return false
+	}
+	previous, err := sc.registry.ResolveDigests(ctx, t.fullRef+"@"+current)
+	if err != nil {
+		sc.logger.Debug("scanner: running index unavailable, cannot compare its platform images",
+			"container", t.container.Name, "digest", shortDigest(current), "error", err)
+		return false
+	}
+	running := platformDigests(previous, platform)
+	return len(running) > 0 && slices.Equal(running, platformDigests(remote, platform))
+}
+
+func platformDigests(d RemoteDigests, platform string) []string {
+	var digests []string
+	for digest, p := range d.Platforms {
+		if p == platform || strings.HasPrefix(p, platform+"/") {
+			digests = append(digests, digest)
+		}
+	}
+	slices.Sort(digests)
+	return digests
 }
 
 // currentDigest returns the digest the container runs and records it as the container's baseline,
