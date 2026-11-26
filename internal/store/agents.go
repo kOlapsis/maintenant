@@ -96,7 +96,7 @@ func (s *AgentStore) UpdateLabel(ctx context.Context, agentID, label string) err
 		return agent.ErrLabelTooLong
 	}
 	res, err := s.writer.Exec(ctx,
-		`UPDATE agents SET label = ? WHERE id = ?`, label, agentID)
+		`UPDATE agents SET label = ? WHERE id = ? AND id != ?`, label, agentID, uid.LocalAgent)
 	if err != nil {
 		return fmt.Errorf("update agent label: %w", err)
 	}
@@ -200,7 +200,7 @@ func (s *AgentStore) ListAgentsForEOL(ctx context.Context) ([]agent.Agent, error
 func (s *AgentStore) Revoke(ctx context.Context, agentID, revokedBy string) error {
 	res, err := s.writer.Exec(ctx,
 		`UPDATE agents SET status = 'revoked', revoked_at = ?, revoked_by = ?
-		WHERE id = ?`, time.Now().Unix(), revokedBy, agentID)
+		WHERE id = ? AND id != ?`, time.Now().Unix(), revokedBy, agentID, uid.LocalAgent)
 	if err != nil {
 		return fmt.Errorf("revoke agent: %w", err)
 	}
@@ -212,7 +212,7 @@ func (s *AgentStore) Revoke(ctx context.Context, agentID, revokedBy string) erro
 
 // Delete hard-deletes an agent and all its events via FK ON DELETE CASCADE.
 func (s *AgentStore) Delete(ctx context.Context, agentID string) error {
-	res, err := s.writer.Exec(ctx, `DELETE FROM agents WHERE id = ?`, agentID)
+	res, err := s.writer.Exec(ctx, `DELETE FROM agents WHERE id = ? AND id != ?`, agentID, uid.LocalAgent)
 	if err != nil {
 		return fmt.Errorf("delete agent: %w", err)
 	}
