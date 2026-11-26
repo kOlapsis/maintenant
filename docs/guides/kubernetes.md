@@ -375,6 +375,8 @@ helm install maintenant ./deploy/helm/maintenant \
   --set ingress.className=nginx
 ```
 
+With the Ingress enabled, the chart sets `MAINTENANT_BASE_URL` to `https://<ingress.host>` when `ingress.tls` has an entry and to `http://<ingress.host>` otherwise. The dashboard answers on that host, and the heartbeat URLs and the links in mails are built from it. If TLS ends before the Ingress, or the public URL differs, set `MAINTENANT_BASE_URL` yourself in `extraEnv`: the chart then leaves it alone.
+
 ### With TLS
 
 ```yaml

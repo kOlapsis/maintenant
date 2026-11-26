@@ -25,6 +25,10 @@ services:
     environment:
       MAINTENANT_ADDR: "0.0.0.0:8080"
       MAINTENANT_DB: "/data/maintenant.db"
+      # The URL you open the dashboard at. Needed to reach it by a host name
+      # (an IP address always works) and to get working links in mails and
+      # heartbeat snippets.
+      # MAINTENANT_BASE_URL: "https://maintenant.example.com"
     restart: unless-stopped
 
 volumes:

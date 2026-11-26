@@ -69,6 +69,14 @@ spec:
                   name: {{ .Values.database.existingSecret }}
                   key: {{ .Values.database.urlKey }}
             {{- end }}
+            {{- $baseURLSet := false }}
+            {{- range .Values.extraEnv }}
+            {{- if eq .name "MAINTENANT_BASE_URL" }}{{ $baseURLSet = true }}{{ end }}
+            {{- end }}
+            {{- if and .Values.ingress.enabled (not $baseURLSet) }}
+            - name: MAINTENANT_BASE_URL
+              value: {{ printf "%s://%s" (ternary "https" "http" (not (empty .Values.ingress.tls))) .Values.ingress.host | quote }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

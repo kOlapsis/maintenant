@@ -40,6 +40,9 @@ service:
   type: ClusterIP
   port: 80
 
+## When enabled, MAINTENANT_BASE_URL is set to https://<host> (http://<host>
+## without a tls entry): the dashboard answers on that host and builds its links
+## from it. If TLS ends before the ingress, set MAINTENANT_BASE_URL in extraEnv.
 ingress:
   enabled: false
   className: ""
