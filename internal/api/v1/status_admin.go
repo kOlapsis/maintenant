@@ -467,6 +467,7 @@ func (h *StatusAdminHandler) HandleUpdateIncident(w http.ResponseWriter, r *http
 		writeStoreError(w, err, "internal", "Failed to update incident")
 		return
 	}
+	h.statusSvc.InvalidatePublicSnapshot()
 	updated, _ := h.incidents.GetIncident(r.Context(), id)
 	if updated != nil {
 		inc = updated
@@ -484,6 +485,7 @@ func (h *StatusAdminHandler) HandleDeleteIncident(w http.ResponseWriter, r *http
 		writeStoreError(w, err, "internal", "Failed to delete incident")
 		return
 	}
+	h.statusSvc.InvalidatePublicSnapshot()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -547,6 +549,7 @@ func (h *StatusAdminHandler) HandleCreateMaintenance(w http.ResponseWriter, r *h
 		writeStoreError(w, err, "internal", "Failed to create maintenance window")
 		return
 	}
+	h.statusSvc.InvalidatePublicSnapshot()
 	created, _ := h.maintenance.GetMaintenance(r.Context(), id)
 	if created != nil {
 		mw = created
@@ -617,6 +620,7 @@ func (h *StatusAdminHandler) HandleUpdateMaintenance(w http.ResponseWriter, r *h
 		writeStoreError(w, err, "internal", "Failed to update maintenance window")
 		return
 	}
+	h.statusSvc.InvalidatePublicSnapshot()
 	updated, _ := h.maintenance.GetMaintenance(r.Context(), id)
 	if updated != nil {
 		existing = updated
@@ -640,6 +644,7 @@ func (h *StatusAdminHandler) HandleDeleteMaintenance(w http.ResponseWriter, r *h
 		writeStoreError(w, err, "internal", "Failed to delete maintenance window")
 		return
 	}
+	h.statusSvc.InvalidatePublicSnapshot()
 	w.WriteHeader(http.StatusNoContent)
 }
 

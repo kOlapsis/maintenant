@@ -361,6 +361,11 @@ func StatusLabel(s string) string {
 	}
 }
 
+// InvalidatePublicSnapshot makes the next public reader recompute the page data and the feed.
+func (s *Service) InvalidatePublicSnapshot() {
+	s.publicGen.Add(1)
+}
+
 // PublicPageData returns the page data shared by the public visitors, at most publicCacheTTL old.
 func (s *Service) PublicPageData(ctx context.Context) (*PageData, error) {
 	return s.page.get(ctx, &s.publicGen, s.GetPageData)
