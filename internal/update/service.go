@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -354,29 +355,27 @@ func unsafeFields(c ContainerInfo) bool {
 	return slices.ContainsFunc([]string{c.Name, c.OrchestrationUnit, c.OrchestrationGroup, c.SwarmService, c.PodContainer, c.ControllerKind}, hasControl)
 }
 
-// GenerateFixCommand produces a shell command to update a container to a specific CVE fix version.
-// Returns empty string if fixedInVersion is not a valid semver or is <= currentTag (prevents downgrades).
+var plainRelease = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*$`)
+
+// GenerateFixCommand produces a shell command to update a container to the release that fixes a CVE, or "" when fixedInVersion is not a plain release above currentTag.
 func (s *Service) GenerateFixCommand(c ContainerInfo, currentTag, fixedInVersion string) string {
-	if fixedInVersion == "" {
+	fixed := strings.TrimPrefix(fixedInVersion, "v")
+	if !plainRelease.MatchString(fixed) {
 		return ""
 	}
-
-	fixVer, err := ParseTag(fixedInVersion)
+	versionPart, variant := splitVariant(currentTag)
+	fixVer, err := ParseTag(fixed)
 	if err != nil {
 		return ""
 	}
-
-	currentVer, err := ParseTag(currentTag)
-	if err != nil {
+	currentVer, err := ParseTag(versionPart)
+	if err != nil || !fixVer.GreaterThan(currentVer) {
 		return ""
 	}
-
-	// Prevent downgrades: only generate a command if a fix version > current
-	if !fixVer.GreaterThan(currentVer) {
-		return ""
+	if hasVPrefix(versionPart) {
+		fixed = "v" + fixed
 	}
-
-	return s.GenerateUpdateCommand(c, fixedInVersion, "")
+	return s.GenerateUpdateCommand(c, fixed+variant, "")
 }
 
 // IsFixedByUpdate returns true when the latest available tag already covers the CVE fix version.
@@ -385,7 +384,8 @@ func IsFixedByUpdate(latestTag, fixedInVersion string) bool {
 		return false
 	}
 
-	latestVer, err := ParseTag(latestTag)
+	versionPart, _ := splitVariant(latestTag)
+	latestVer, err := ParseTag(versionPart)
 	if err != nil {
 		return false
 	}

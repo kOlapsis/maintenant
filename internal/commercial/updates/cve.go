@@ -377,14 +377,31 @@ func cvssV3Vector(rec *osvVulnRecord) (string, bool) {
 	return "", false
 }
 
+// fixedInFor returns the fix of the affected range the queried version sits in.
 func fixedInFor(q ImageCVEQuery, rec *osvVulnRecord) string {
+	current, err := update.ParseTag(q.Version)
+	if err != nil {
+		return ""
+	}
 	for _, a := range rec.Affected {
 		if a.Package.Ecosystem != q.Ecosystem || !strings.EqualFold(a.Package.Name, q.PackageName) {
 			continue
 		}
 		for _, r := range a.Ranges {
+			if r.Type != "SEMVER" && r.Type != "ECOSYSTEM" {
+				continue
+			}
+			inRange := false
 			for _, e := range r.Events {
-				if e.Fixed != "" {
+				if e.Introduced != "" {
+					v, err := update.ParseTag(e.Introduced)
+					inRange = err == nil && !current.LessThan(v)
+					continue
+				}
+				if e.Fixed == "" || !inRange {
+					continue
+				}
+				if v, err := update.ParseTag(e.Fixed); err == nil && current.LessThan(v) {
 					return e.Fixed
 				}
 			}
