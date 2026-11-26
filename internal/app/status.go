@@ -117,8 +117,12 @@ func (a *App) wireMonitorPopulationProvider() {
 			if err != nil {
 				return nil
 			}
+			replaced := container.ReplacedSwarmTasks(containers)
 			refs := make([]status.MonitorRef, 0, len(containers))
 			for _, c := range containers {
+				if replaced[c.ID] {
+					continue
+				}
 				refs = append(refs, status.MonitorRef{Type: "container", ID: c.ID, Name: c.Name})
 			}
 			return refs

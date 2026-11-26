@@ -70,11 +70,12 @@ func (d *DownDetector) Check(ctx context.Context) error {
 	}
 
 	now := time.Now()
+	replaced := container.ReplacedSwarmTasks(containers)
 	down := make(map[string]*container.Container, len(containers))
 	known := make(map[string]*container.Container, len(containers))
 	for _, c := range containers {
 		known[c.ID] = c
-		if isDown(c.State) && now.Sub(c.LastStateChangeAt) >= d.after {
+		if isDown(c.State) && !replaced[c.ID] && now.Sub(c.LastStateChangeAt) >= d.after {
 			down[c.ID] = c
 		}
 	}
@@ -122,13 +123,17 @@ func (d *DownDetector) Check(ctx context.Context) error {
 		if c, ok := known[id]; ok {
 			name = c.Name
 		}
+		msg := fmt.Sprintf("Container %s is running again", name)
+		if replaced[id] {
+			msg = fmt.Sprintf("Container %s was replaced by a running task of its Swarm service", name)
+		}
 		d.logger.Info("container back up", "container_id", id, "name", name)
 		d.send(Event{
 			Source:     SourceContainer,
 			AlertType:  AlertTypeContainerDown,
 			Severity:   SeverityInfo,
 			IsRecover:  true,
-			Message:    fmt.Sprintf("Container %s is running again", name),
+			Message:    msg,
 			EntityType: "container",
 			EntityID:   id,
 			EntityName: name,

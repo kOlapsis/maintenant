@@ -36,6 +36,23 @@ func (c *Container) ApplySwarmTaskLabels(labels map[string]string) {
 	}
 }
 
+// ReplacedSwarmTasks returns the IDs of the exited or dead Swarm task containers whose service still runs a task container.
+func ReplacedSwarmTasks(cs []*Container) map[string]bool {
+	running := make(map[string]bool)
+	for _, c := range cs {
+		if c.ControllerKind == ControllerSwarmService && c.State == StateRunning {
+			running[c.SwarmServiceID] = true
+		}
+	}
+	replaced := make(map[string]bool)
+	for _, c := range cs {
+		if c.ControllerKind == ControllerSwarmService && (c.State == StateExited || c.State == StateDead) && running[c.SwarmServiceID] {
+			replaced[c.ID] = true
+		}
+	}
+	return replaced
+}
+
 // swarmTaskSlot reads the slot from a task name, <service>.<slot>.<task id>;
 // a global service puts its node ID there and has no slot.
 func swarmTaskSlot(labels map[string]string) int {

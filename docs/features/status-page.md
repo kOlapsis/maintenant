@@ -141,7 +141,7 @@ Each monitor is first mapped to a status:
 | Heartbeat | `up`, `started`, `new`, `paused` | never | `down` |
 | Certificate | `valid`, or not checked yet | `expiring` | `expired`, `error`, or `unknown` after a check |
 
-A monitor that no longer exists counts as operational, and so does an endpoint or a certificate that is no longer monitored (its label was removed or its container deleted). An endpoint or a certificate left unmonitored by the Community quota counts as operational too.
+A monitor that no longer exists counts as operational, and so does an endpoint or a certificate that is no longer monitored (its label was removed or its container deleted). An endpoint or a certificate left unmonitored by the Community quota counts as operational too. A match-all container component leaves out the stopped container of a Swarm task that failed while a task container of the same service runs: Swarm keeps it in the task history after replacing it.
 
 A component with several monitors (or a match-all component) combines them:
 
