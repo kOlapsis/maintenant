@@ -5,7 +5,11 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"testing"
+
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // fakeSnapshotSource is a static SnapshotSource for exercising
@@ -14,6 +18,9 @@ type fakeSnapshotSource struct {
 	namespaces []string
 	pods       []K8sPod
 	nodes      []K8sNode
+	events     []K8sEventRef
+	nodesErr   error
+	eventsErr  error
 }
 
 func (f fakeSnapshotSource) ListNamespaces(context.Context) ([]string, error) {
@@ -25,9 +32,11 @@ func (f fakeSnapshotSource) ListWorkloads(context.Context, []string) ([]K8sWorkl
 func (f fakeSnapshotSource) ListPods(context.Context, []string, PodFilters) ([]K8sPod, error) {
 	return f.pods, nil
 }
-func (f fakeSnapshotSource) ListNodes(context.Context) ([]K8sNode, error) { return f.nodes, nil }
+func (f fakeSnapshotSource) ListNodes(context.Context) ([]K8sNode, error) {
+	return f.nodes, f.nodesErr
+}
 func (f fakeSnapshotSource) ListAllEvents(context.Context) ([]K8sEventRef, error) {
-	return nil, nil
+	return f.events, f.eventsErr
 }
 
 // TestSnapshotFromRuntime_TalliesRunningPodsPerNode verifies that the snapshot
@@ -62,5 +71,42 @@ func TestSnapshotFromRuntime_TalliesRunningPodsPerNode(t *testing.T) {
 		if n.RunningPods != want[n.Name] {
 			t.Errorf("node %q: RunningPods = %d, want %d", n.Name, n.RunningPods, want[n.Name])
 		}
+	}
+}
+
+func TestSnapshotFromRuntime_ListErrors(t *testing.T) {
+	forbidden := func(resource string) error {
+		return k8serrors.NewForbidden(schema.GroupResource{Resource: resource}, "", errors.New("denied"))
+	}
+	throttled := k8serrors.NewTooManyRequests("slow down", 1)
+
+	tests := []struct {
+		name      string
+		nodesErr  error
+		eventsErr error
+		wantErr   bool
+	}{
+		{name: "nodes forbidden", nodesErr: forbidden("nodes")},
+		{name: "events forbidden", eventsErr: forbidden("events")},
+		{name: "nodes throttled", nodesErr: throttled, wantErr: true},
+		{name: "events throttled", eventsErr: throttled, wantErr: true},
+		{name: "nodes timeout", nodesErr: context.DeadlineExceeded, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := fakeSnapshotSource{
+				namespaces: []string{"demo"},
+				pods:       []K8sPod{{Name: "a"}},
+				nodesErr:   tt.nodesErr,
+				eventsErr:  tt.eventsErr,
+			}
+			snap, err := SnapshotFromRuntime(context.Background(), src)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && len(snap.Pods) != 1 {
+				t.Fatalf("got %d pods, want 1", len(snap.Pods))
+			}
+		})
 	}
 }
