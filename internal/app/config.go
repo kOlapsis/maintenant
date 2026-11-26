@@ -87,6 +87,8 @@ type Config struct {
 	Mode      string // "embedded" | "server" | "agent"
 	MultiHost MultiHostConfig
 
+	InvalidSettings []InvalidSetting
+
 	// Dev
 	AllowPrivateWebhooks bool
 
@@ -320,6 +322,27 @@ func (c Config) ValidateAgentSpool() error {
 	return errors.Join(errs...)
 }
 
+// ErrInvalidSetting refuses a duration or a count that does not parse or is not positive.
+var ErrInvalidSetting = errors.New(
+	"setting is not valid: a duration is a positive Go duration such as 30m or 48h (there is no day unit), a count is a positive whole number")
+
+// ErrMode refuses a mode the binary does not know.
+var ErrMode = errors.New("MAINTENANT_MODE is not a known mode: use embedded, server or agent")
+
+// ValidateSettings refuses a setting that would silently be replaced by its default, and an unknown mode.
+func (c Config) ValidateSettings() error {
+	var errs []error
+	for _, s := range c.InvalidSettings {
+		errs = append(errs, fmt.Errorf("%w (%s=%q)", ErrInvalidSetting, s.Name, s.Raw))
+	}
+	switch c.Mode {
+	case "embedded", "server", "agent":
+	default:
+		errs = append(errs, fmt.Errorf("%w (got %q)", ErrMode, c.Mode))
+	}
+	return errors.Join(errs...)
+}
+
 // ValidateHTTP rejects a configuration that must not be served over HTTP.
 func (c Config) ValidateHTTP() error {
 	if c.MCP.Enabled && !c.MCP.AllowUnauthenticated &&
@@ -417,11 +440,14 @@ func ConfigFromEnv() Config {
 		cfg.SecurityScoreThreshold = n
 	}
 
+	invalid := &cfg.InvalidSettings
 	cfg.Retention = RetentionConfig{
-		Snapshots: envDurationOr("MAINTENANT_RETENTION_SNAPSHOTS", resource.DefaultSnapshotRetention),
-		Interval:  envDurationOr("MAINTENANT_RETENTION_INTERVAL", time.Hour),
-		BatchSize: envIntOr("MAINTENANT_RETENTION_BATCH_SIZE", 1000),
+		Snapshots: envDurationOr("MAINTENANT_RETENTION_SNAPSHOTS", resource.DefaultSnapshotRetention, invalid),
+		Interval:  envDurationOr("MAINTENANT_RETENTION_INTERVAL", time.Hour, invalid),
+		BatchSize: envIntOr("MAINTENANT_RETENTION_BATCH_SIZE", 1000, invalid),
 	}
+	// Read by internal/update from the environment: only checked here.
+	envDurationOr("MAINTENANT_UPDATE_INTERVAL", 24*time.Hour, invalid)
 
 	cfg.ContainerDownAfter, cfg.ContainerDownAfterInvalid = envOptionalDuration("MAINTENANT_CONTAINER_DOWN_AFTER")
 	cfg.MaxBodySize, cfg.MaxBodySizeInvalid = envBodySize("MAINTENANT_MAX_BODY_SIZE", 1048576)
@@ -436,8 +462,8 @@ func ConfigFromEnv() Config {
 	cfg.MultiHost = MultiHostConfig{
 		GRPCPublicURL:              os.Getenv("MAINTENANT_GRPC_URL"),
 		GRPCListen:                 envOr("MAINTENANT_GRPC_LISTEN", "127.0.0.1:8443"),
-		AgentRateLimitPerSecond:    envIntOr("MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND", 1000),
-		AgentStaleThresholdSeconds: envIntOr("MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS", 60),
+		AgentRateLimitPerSecond:    envIntOr("MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND", 1000, invalid),
+		AgentStaleThresholdSeconds: envIntOr("MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS", 60, invalid),
 		TLSCertFile:                os.Getenv("MAINTENANT_GRPC_TLS_CERT"),
 		TLSKeyFile:                 os.Getenv("MAINTENANT_GRPC_TLS_KEY"),
 		InsecureGRPC:               parseTruthy(os.Getenv("MAINTENANT_GRPC_TLS_INSECURE")),
@@ -492,13 +518,17 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-func envIntOr(key string, fallback int) int {
-	if v := os.Getenv(key); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
+func envIntOr(key string, fallback int, invalid *[]InvalidSetting) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
 	}
-	return fallback
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		*invalid = append(*invalid, InvalidSetting{Name: key, Raw: v})
+		return fallback
+	}
+	return n
 }
 
 // envOptionalDuration parses a duration whose absence is meaningful. It returns
@@ -516,13 +546,17 @@ func envOptionalDuration(key string) (time.Duration, string) {
 	return d, ""
 }
 
-func envDurationOr(key string, fallback time.Duration) time.Duration {
-	if v := os.Getenv(key); v != "" {
-		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			return d
-		}
+func envDurationOr(key string, fallback time.Duration, invalid *[]InvalidSetting) time.Duration {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
 	}
-	return fallback
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		*invalid = append(*invalid, InvalidSetting{Name: key, Raw: v})
+		return fallback
+	}
+	return d
 }
 
 // ErrStatusURL refuses a status page URL whose host name cannot be read.

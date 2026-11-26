@@ -119,7 +119,16 @@ func loadConfig(args []string) (app.Config, map[string]string) {
 		os.Exit(2)
 	}
 
-	// Environment first, CLI second: flags win, as the help text promises.
+	// A flag replaces its variable before the environment is read, so one parser judges both.
+	for _, spec := range app.Registry {
+		if v, ok := visited[spec.FlagName]; ok && !spec.NoEnv {
+			if err := os.Setenv(spec.EnvName, v); err != nil {
+				fmt.Fprintf(os.Stderr, "error: flag --%s: %v\n", spec.FlagName, err)
+				os.Exit(2)
+			}
+		}
+	}
+
 	cfg := app.ConfigFromEnv()
 	cfg.Version = version
 	cfg.Commit = commit
@@ -190,6 +199,11 @@ func validateStartup(cfg app.Config, logger *slog.Logger) {
 	// would leave the operator believing the check runs.
 	if err := cfg.ValidateAlerting(); err != nil {
 		logger.Error("invalid alerting configuration", "error", err)
+		os.Exit(1)
+	}
+
+	if err := cfg.ValidateSettings(); err != nil {
+		logger.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}
 
