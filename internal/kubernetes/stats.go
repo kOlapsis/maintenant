@@ -11,7 +11,6 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/runtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 )
 
 // statsSnapshot queries metrics-server for a workload's CPU and memory.
@@ -154,33 +153,38 @@ func (r *Runtime) controllerSelector(ctx context.Context, ns, kind, name string)
 	if err != nil {
 		return "", err
 	}
+	var selector *metav1.LabelSelector
 	switch kind {
 	case "Deployment":
 		dep, err := cs.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return "", fmt.Errorf("get deployment %s/%s: %w", ns, name, err)
 		}
-		if dep.Spec.Selector != nil {
-			return labels.Set(dep.Spec.Selector.MatchLabels).String(), nil
-		}
+		selector = dep.Spec.Selector
 	case "StatefulSet":
 		ss, err := cs.AppsV1().StatefulSets(ns).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return "", fmt.Errorf("get statefulset %s/%s: %w", ns, name, err)
 		}
-		if ss.Spec.Selector != nil {
-			return labels.Set(ss.Spec.Selector.MatchLabels).String(), nil
-		}
+		selector = ss.Spec.Selector
 	case "DaemonSet":
 		ds, err := cs.AppsV1().DaemonSets(ns).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return "", fmt.Errorf("get daemonset %s/%s: %w", ns, name, err)
 		}
-		if ds.Spec.Selector != nil {
-			return labels.Set(ds.Spec.Selector.MatchLabels).String(), nil
-		}
+		selector = ds.Spec.Selector
+	default:
+		return "", fmt.Errorf("unsupported controller kind: %s", kind)
 	}
-	return "", fmt.Errorf("unsupported controller kind: %s", kind)
+	sel, err := metav1.LabelSelectorAsSelector(selector)
+	if err != nil {
+		return "", fmt.Errorf("selector of %s %s/%s: %w", kind, ns, name, err)
+	}
+	// An empty string lists every pod of the namespace, and a nil selector renders as one.
+	if sel.String() == "" {
+		return "", fmt.Errorf("%s %s/%s has no pod selector", kind, ns, name)
+	}
+	return sel.String(), nil
 }
 
 // parseExternalID splits an externalID into namespace, kind, and name.
