@@ -63,6 +63,8 @@ type Service struct {
 
 const publicCacheTTL = 2 * time.Second
 
+var publicLoadTimeout = 5 * time.Second
+
 // cached keeps one computed value for publicCacheTTL, or until gen moves; concurrent callers wait for a single computation.
 type cached[T any] struct {
 	mu  sync.Mutex
@@ -82,9 +84,16 @@ func (c *cached[T]) get(ctx context.Context, gen *atomic.Uint64, load func(conte
 		var zero T
 		return zero, err
 	}
-	v, err := load(ctx)
+	// A load on a context that ended yields a degraded value without an error: it runs detached and is never kept.
+	loadCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), publicLoadTimeout)
+	defer cancel()
+	v, err := load(loadCtx)
+	if err == nil {
+		err = loadCtx.Err()
+	}
 	if err != nil {
-		return v, err
+		var zero T
+		return zero, err
 	}
 	c.val, c.at, c.gen = v, time.Now(), g
 	return v, nil

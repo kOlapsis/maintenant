@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
 )
@@ -93,5 +94,60 @@ func TestAtomFeed_VisitorsShareOneIncidentList(t *testing.T) {
 	hit(t, h.HandleAtomFeed, "/status/feed.atom")
 	if got := incidents.recent.Load(); got != 2 {
 		t.Fatalf("%d loads after a public event, want 2", got)
+	}
+}
+
+type cancellingIncidentStore struct {
+	IncidentStore
+	cancel context.CancelFunc
+	wait   bool
+	calls  atomic.Int64
+}
+
+func (s *cancellingIncidentStore) ListActiveIncidents(ctx context.Context) ([]Incident, error) {
+	s.calls.Add(1)
+	s.cancel()
+	if s.wait {
+		<-ctx.Done()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return []Incident{{ID: "ongoing"}}, nil
+}
+
+func cancellingService(incidents IncidentStore) *Service {
+	return NewService(Deps{Components: emptyComponentStore{}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Incidents: incidents})
+}
+
+func TestPublicPageData_ACancelledVisitorDoesNotDegradeTheSharedSnapshot(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	svc := cancellingService(&cancellingIncidentStore{cancel: cancel})
+
+	_, _ = svc.PublicPageData(ctx)
+
+	next, err := svc.PublicPageData(context.Background())
+	if err != nil {
+		t.Fatalf("next visitor: %v", err)
+	}
+	if len(next.ActiveIncidents) != 1 {
+		t.Fatalf("the next visitor got %d incidents, want the ongoing one", len(next.ActiveIncidents))
+	}
+}
+
+func TestPublicPageData_ALoadThatRanOutOfTimeIsNotKept(t *testing.T) {
+	prev := publicLoadTimeout
+	publicLoadTimeout = 10 * time.Millisecond
+	t.Cleanup(func() { publicLoadTimeout = prev })
+
+	incidents := &cancellingIncidentStore{cancel: func() {}, wait: true}
+	svc := cancellingService(incidents)
+
+	if got, err := svc.PublicPageData(context.Background()); err == nil {
+		t.Fatalf("got %+v from a load that ran out of time, want an error", got)
+	}
+	_, _ = svc.PublicPageData(context.Background())
+	if got := incidents.calls.Load(); got != 2 {
+		t.Fatalf("%d loads, want 2: the first one must not have been kept", got)
 	}
 }
