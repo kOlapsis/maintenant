@@ -13,7 +13,6 @@ import AlertBanner from '@/components/ui/AlertBanner.vue'
 import SuspendedChannelsBanner from '@/components/SuspendedChannelsBanner.vue'
 import DetailSlideOver from '@/components/DetailSlideOver.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import ToastContainer from '@/components/ToastContainer.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import { useAppVersion } from '@/composables/useAppVersion'
 import { useStorageStore } from '@/stores/storage'
@@ -449,9 +448,6 @@ watch(
 
     <!-- Global confirm dialog -->
     <ConfirmDialog :state="confirmState" />
-
-    <!-- Toast notifications -->
-    <ToastContainer />
   </div>
 </template>
 
