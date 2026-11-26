@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agent"
+	"github.com/kolapsis/maintenant/internal/alert"
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/docker"
@@ -69,17 +70,21 @@ func (a *App) pruneOrphanAlerts(ctx context.Context) {
 	}
 }
 
-// seedRestartAlertTracking hands the containers with an open restart_loop alert to the recovery loop.
+// seedRestartAlertTracking hands the containers with an open restart_loop alert to the recovery loop, and an open posture alert to the scorer.
 func (a *App) seedRestartAlertTracking(ctx context.Context) {
 	activeAlerts, err := a.alertStore.ListActiveAlerts(ctx)
 	if err != nil {
 		a.logger.Error("seed restart alert tracking", "error", err)
 		return
 	}
+	posture, _ := a.scorer.(interface{ ResumeBelowThreshold() })
 	var ids []string
 	for _, al := range activeAlerts {
 		if al.EntityType == "container" && al.AlertType == restartLoopAlertType {
 			ids = append(ids, al.EntityID)
+		}
+		if posture != nil && al.AlertType == alert.AlertTypePostureThreshold {
+			posture.ResumeBelowThreshold()
 		}
 	}
 	a.containerSvc.TrackRestartAlerts(ids)

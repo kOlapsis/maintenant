@@ -53,6 +53,32 @@ func TestScoreInfrastructure_EvaluatesTheThreshold(t *testing.T) {
 	assert.Equal(t, []thresholdCall{{low, true}, {posture.Score, false}}, calls)
 }
 
+func TestScoreInfrastructure_ResolvesTheAlertLeftActiveByThePreviousRun(t *testing.T) {
+	ctx := context.Background()
+	secSvc := newTestService()
+	secSvc.UpdateContainer("c1", "web", nil)
+	var calls []thresholdCall
+	scorer := NewScorer(ScorerDeps{
+		Insights:  secSvc,
+		Acks:      &mockAckStore{},
+		Threshold: 80,
+		PostureAlertCallback: func(score, _ int, _ string, breach bool) {
+			calls = append(calls, thresholdCall{score, breach})
+		},
+	})
+	containers := []security.ContainerInfo{{ID: "c1", ExternalID: "ext-1", Name: "web"}}
+	scorer.ResumeBelowThreshold()
+
+	posture, err := scorer.ScoreInfrastructure(ctx, containers)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, posture.Score, 80)
+	assert.Equal(t, []thresholdCall{{posture.Score, false}}, calls)
+
+	_, err = scorer.ScoreInfrastructure(ctx, containers)
+	require.NoError(t, err)
+	assert.Len(t, calls, 1, "the recovery is emitted once")
+}
+
 func TestScoreInfrastructure_NothingScoredRaisesNothing(t *testing.T) {
 	called := false
 	scorer := NewScorer(ScorerDeps{
