@@ -67,3 +67,38 @@ func TestHandleAgentEvent_RefusesNewMonitorsOnceTheAgentHoldsTheCeiling(t *testi
 	require.NoError(t, scan(agentB, "c.example.com"), "another agent is not affected")
 	assert.Equal(t, 1, count(agentB))
 }
+
+func TestSyncAgentCerts_StopsCreatingMonitorsAtTheCeiling(t *testing.T) {
+	const agentA = "00000000-0000-0000-0000-0000000000c3"
+	pinEdition(t, extension.Pro)
+	certificate.SetMaxAgentLabelMonitors(t, 2)
+
+	ctx := context.Background()
+	db := storetest.Open(t, nil)
+	require.NoError(t, store.NewAgentStore(db).Insert(ctx, &agent.Agent{
+		AgentID: agentA, Hostname: agentA, Label: agentA, OSArch: "linux/amd64",
+		AgentVersion: "1.0.0", DetectedRuntime: "docker", Status: "active", CreatedAt: time.Now().UTC(),
+	}))
+	st := store.NewCertificateStore(db)
+	logs := &bytes.Buffer{}
+	svc := certificate.NewService(certificate.Deps{Store: st, Logger: slog.New(slog.NewTextHandler(logs, nil))})
+	count := func() int {
+		monitors, err := st.ListMonitors(ctx, certificate.ListCertificatesOpts{AgentFilter: ptr(agentA), IncludeInactive: true})
+		require.NoError(t, err)
+		return len(monitors)
+	}
+
+	svc.SyncAgentCerts(ctx, agentA, "c1", map[string]string{
+		"maintenant.tls.certificates": "a.example.com,b.example.com,c.example.com,d.example.com",
+	})
+	assert.Equal(t, 2, count(), "label sync stops at the ceiling")
+
+	svc.SyncAgentCerts(ctx, agentA, "c2", map[string]string{"maintenant.tls.certificates": "e.example.com"})
+	assert.Equal(t, 2, count())
+	assert.Equal(t, 1, strings.Count(logs.String(), "certificate monitor ceiling"), "the refusal is logged once per agent")
+
+	svc.SyncAgentCerts(ctx, agentA, "c1", map[string]string{"maintenant.tls.certificates": "a.example.com"})
+	assert.Equal(t, 1, count(), "a host removed from the label still frees its monitor")
+}
+
+func ptr[T any](v T) *T { return &v }

@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/agentevent"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
@@ -473,6 +474,12 @@ func (s *Service) SyncAgentCerts(ctx context.Context, agentID, containerExternal
 			continue
 		}
 		if existing != nil {
+			continue
+		}
+		if err := s.reserveAgentLabelMonitor(ctx, agentID); err != nil {
+			if !errors.Is(err, agentevent.ErrInvalid) {
+				s.logger.Error("count agent cert monitors", "error", err, "agent_id", agentID)
+			}
 			continue
 		}
 
