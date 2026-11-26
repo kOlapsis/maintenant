@@ -6,10 +6,16 @@ package kubernetes
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 // fakeSnapshotSource is a static SnapshotSource for exercising
@@ -71,6 +77,31 @@ func TestSnapshotFromRuntime_TalliesRunningPodsPerNode(t *testing.T) {
 		if n.RunningPods != want[n.Name] {
 			t.Errorf("node %q: RunningPods = %d, want %d", n.Name, n.RunningPods, want[n.Name])
 		}
+	}
+}
+
+func TestListAllEvents_KeepsTheMostRecent(t *testing.T) {
+	base := time.Unix(1_700_000_000, 0)
+	objs := make([]kruntime.Object, 0, 250)
+	for i := range 250 {
+		objs = append(objs, &corev1.Event{
+			ObjectMeta:     metav1.ObjectMeta{Name: fmt.Sprintf("e%03d", i), Namespace: "default"},
+			InvolvedObject: corev1.ObjectReference{Kind: "Pod", Namespace: "default", Name: "web"},
+			Reason:         fmt.Sprintf("r%03d", i),
+			LastTimestamp:  metav1.NewTime(base.Add(time.Duration(i) * time.Second)),
+		})
+	}
+	r := newStreamRuntime(t, fake.NewClientset(objs...))
+
+	events, err := r.ListAllEvents(context.Background())
+	if err != nil {
+		t.Fatalf("ListAllEvents: %v", err)
+	}
+	if len(events) != 200 {
+		t.Fatalf("got %d events, want 200", len(events))
+	}
+	if events[0].Reason != "r249" || events[len(events)-1].Reason != "r050" {
+		t.Fatalf("kept %s..%s, want r249..r050", events[0].Reason, events[len(events)-1].Reason)
 	}
 }
 

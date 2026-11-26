@@ -394,9 +394,10 @@ func (r *Runtime) listPodEvents(ctx context.Context, ns, name string) ([]K8sEven
 	return r.fetchEvents(ctx, ns, fieldSelector)
 }
 
-// ListAllEvents returns recent events across all allowed namespaces, each tagged
-// with the object it concerns, so the server can persist them per-agent and
-// serve them back on workload/pod detail views.
+const maxSnapshotEvents = 200
+
+// ListAllEvents returns the most recent events across all allowed namespaces,
+// newest first, each tagged with the object it concerns.
 func (r *Runtime) ListAllEvents(ctx context.Context) ([]K8sEventRef, error) {
 	cs, err := r.client()
 	if err != nil {
@@ -431,6 +432,13 @@ func (r *Runtime) ListAllEvents(ctx context.Context) ([]K8sEventRef, error) {
 			InvolvedNamespace: e.InvolvedObject.Namespace,
 			InvolvedName:      e.InvolvedObject.Name,
 		})
+	}
+
+	sort.SliceStable(result, func(i, j int) bool {
+		return result[i].LastSeen.After(result[j].LastSeen)
+	})
+	if len(result) > maxSnapshotEvents {
+		result = result[:maxSnapshotEvents]
 	}
 	return result, nil
 }
