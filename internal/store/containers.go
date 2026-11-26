@@ -210,35 +210,40 @@ func (s *ContainerStore) CountAgentContainers(ctx context.Context, agentID strin
 
 // DeleteOldestArchivedContainers removes up to limit archived containers of agentID, the longest archived first, with the rows that depend on them.
 func (s *ContainerStore) DeleteOldestArchivedContainers(ctx context.Context, agentID string, limit int) (int64, error) {
+	return s.deleteArchivedBatch(ctx, limit, `agent_id = ?`, agentID)
+}
+
+// deleteArchivedBatch removes, in one transaction, up to limit dated archived containers matching where, the longest archived first, with the rows that depend on them.
+func (s *ContainerStore) deleteArchivedBatch(ctx context.Context, limit int, where string, arg interface{}) (int64, error) {
 	var deleted int64
 	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
 		rows, err := tx.QueryContext(ctx,
-			`SELECT id, external_id FROM containers WHERE agent_id = ? AND archived = 1 AND archived_at IS NOT NULL
+			`SELECT id, agent_id, external_id FROM containers WHERE archived = 1 AND archived_at IS NOT NULL AND `+where+`
 			ORDER BY archived_at, id LIMIT ?`,
-			agentID, limit)
+			arg, limit)
 		if err != nil {
-			return fmt.Errorf("select oldest archived containers: %w", err)
+			return fmt.Errorf("select archived containers: %w", err)
 		}
-		type target struct{ id, externalID string }
+		type target struct{ id, agentID, externalID string }
 		var targets []target
 		for rows.Next() {
 			var t target
-			if err := rows.Scan(&t.id, &t.externalID); err != nil {
+			if err := rows.Scan(&t.id, &t.agentID, &t.externalID); err != nil {
 				_ = rows.Close()
-				return fmt.Errorf("scan oldest archived container: %w", err)
+				return fmt.Errorf("scan archived container: %w", err)
 			}
 			targets = append(targets, t)
 		}
 		if err := rows.Close(); err != nil {
-			return fmt.Errorf("select oldest archived containers: %w", err)
+			return fmt.Errorf("select archived containers: %w", err)
 		}
 		if err := rows.Err(); err != nil {
-			return fmt.Errorf("select oldest archived containers: %w", err)
+			return fmt.Errorf("select archived containers: %w", err)
 		}
 
 		deleted = 0
 		for _, t := range targets {
-			if err := deleteContainerRows(ctx, tx, t.id, agentID, t.externalID); err != nil {
+			if err := deleteContainerRows(ctx, tx, t.id, t.agentID, t.externalID); err != nil {
 				return err
 			}
 			deleted++
@@ -371,36 +376,15 @@ func (s *ContainerStore) deleteTransitionsBefore(ctx context.Context, before tim
 		before.Unix())
 }
 
+var archivedPurgeBatch = 100
+
+// DeleteArchivedContainersBefore removes the containers archived before the cutoff with the rows that depend on them, a bounded number per transaction.
 func (s *ContainerStore) DeleteArchivedContainersBefore(ctx context.Context, before time.Time) (int64, error) {
 	cutoff := before.Unix()
-
-	// Tables keyed by external_id have no FK to cascade through, so they must go
-	// first: once the container row is gone, nothing ties them back to anything
-	// and they stay in the database for good.
-	var deleted int64
-	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
-		for _, ref := range containerSoftRefs {
-			if _, err := tx.ExecContext(ctx, `DELETE FROM `+ref.table+` WHERE EXISTS (SELECT 1 FROM containers c
-				WHERE c.agent_id = `+ref.table+`.agent_id AND c.external_id = `+ref.table+`.`+ref.column+`
-				AND c.archived=1 AND c.archived_at<? AND c.archived_at IS NOT NULL)`, cutoff); err != nil {
-				return fmt.Errorf("delete archived containers %s: %w", ref.table, err)
-			}
-		}
-
-		res, err := tx.ExecContext(ctx,
-			`DELETE FROM containers WHERE archived=1 AND archived_at<? AND archived_at IS NOT NULL`,
-			cutoff,
-		)
-		if err != nil {
-			return fmt.Errorf("delete archived containers: %w", err)
-		}
-		deleted, err = res.RowsAffected()
-		return err
+	deleted, _, err := runBatchedDelete(ctx, batchOpts{batchSize: archivedPurgeBatch}, func(ctx context.Context, batchSize int) (int64, error) {
+		return s.deleteArchivedBatch(ctx, batchSize, `archived_at < ?`, cutoff)
 	})
-	if err != nil {
-		return 0, err
-	}
-	return deleted, nil
+	return deleted, err
 }
 
 // --- Column lists and scanners ---
