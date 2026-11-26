@@ -122,11 +122,11 @@ When a container goes from `healthy` to `unhealthy`, maintenant raises a `health
 
 ## Restart Loop Detection
 
-maintenant counts how many times a container came back to `running` after being `exited` or `restarting` during the last 10 minutes. When that count reaches the restart threshold, a `restart_loop` alert is raised.
+maintenant counts how many times a container came back to `running` after being `exited`, `completed` or `restarting` during the last 10 minutes, so a container that exits cleanly and is started again in a loop counts too. When that count reaches the restart threshold, a `restart_loop` alert is raised.
 
 - **Threshold**: 3 restarts by default. Set it per container with `maintenant.alert.restart_threshold` (a positive integer; anything else is ignored).
 - **Severity**: Warning. The alert escalates in place to Critical when the count reaches three times the threshold (9 restarts with the default). `maintenant.alert.severity` has no effect on it.
-- **Not counted**: restarts that follow a `completed` state, such as `docker restart` or a clean stop followed by a start. Only crashes count.
+- **Counted**: every return to `running` after a stop, whatever the exit code: a `restart: always` container that exits with code 0 in a loop raises the alert, and so do three `docker restart` within 10 minutes. The first start of a container is not a restart.
 - **Resolution**: automatic. A start that finds the count below the threshold resolves the alert, and while the alert is open maintenant re-checks the running container every minute, so it resolves on its own once the 10-minute window no longer holds enough restarts. A container that is stopped or archived is not re-checked.
 
 ```yaml

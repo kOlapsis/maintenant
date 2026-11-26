@@ -342,10 +342,10 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 	}
 
 	// Check restart threshold (T030)
-	// Trigger on any transition back to running from a crash state.
+	// Trigger on any transition back to running from a stopped state, a clean exit included.
 	// Docker emits die→start (exited→running) during crash-loops; the
 	// "restarting" state only appears in static discovery snapshots.
-	if newState == StateRunning && (previousState == StateRestarting || previousState == StateExited) && s.restartChecker != nil {
+	if newState == StateRunning && (previousState == StateRestarting || previousState == StateExited || previousState == StateCompleted) && s.restartChecker != nil {
 		result, err := s.restartChecker.Check(ctx, c)
 		if err != nil {
 			s.logger.Error("restart check", "container_id", c.ID, "error", err)
