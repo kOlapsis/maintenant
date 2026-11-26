@@ -210,7 +210,7 @@ func (s *Service) ListImageUpdates(ctx context.Context, opts ListImageUpdatesOpt
 
 // GenerateUpdateCommand produces a shell command to update a container to latestTag, whose manifest is latestDigest.
 func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag, latestDigest string) string {
-	if unsafeFields(c) {
+	if unsafeFields(c, latestTag, latestDigest) {
 		return ""
 	}
 	repo, currentTag, _ := ParseImageRef(c.Image)
@@ -247,7 +247,7 @@ func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag, latestDigest
 
 // GenerateRollbackCommand produces a shell command that puts a container back on the image it ran before the update, or "" when that image cannot be named.
 func (s *Service) GenerateRollbackCommand(c ContainerInfo, u *ImageUpdate) string {
-	if unsafeFields(c) {
+	if unsafeFields(c, u.Image, u.CurrentTag, u.PreviousDigest) {
 		return ""
 	}
 	ref := previousImageRef(u.Image, u.CurrentTag, u.PreviousDigest)
@@ -329,7 +329,7 @@ func isCompose(c ContainerInfo) bool {
 
 func composeDir(c ContainerInfo) string {
 	d := c.ComposeWorkingDir
-	if d == "" || !filepath.IsAbs(d) || filepath.Clean(d) != d || hasControl(d) {
+	if d == "" || !filepath.IsAbs(d) || filepath.Clean(d) != d || unquotable(d) {
 		return "<compose-project-dir>"
 	}
 	return shellQuote(d)
@@ -346,13 +346,13 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-func hasControl(s string) bool {
-	return strings.ContainsFunc(s, unicode.IsControl)
+func unquotable(s string) bool {
+	return strings.ContainsFunc(s, unicode.IsControl) || strings.Contains(s, "```")
 }
 
-// unsafeFields reports a control character in a value written into a command, which quoting cannot neutralise.
-func unsafeFields(c ContainerInfo) bool {
-	return slices.ContainsFunc([]string{c.Name, c.OrchestrationUnit, c.OrchestrationGroup, c.SwarmService, c.PodContainer, c.ControllerKind}, hasControl)
+// unsafeFields reports a control character or a code fence in a value written into a command, which quoting cannot neutralise.
+func unsafeFields(c ContainerInfo, others ...string) bool {
+	return slices.ContainsFunc(append(others, c.Name, c.Image, c.OrchestrationUnit, c.OrchestrationGroup, c.SwarmService, c.PodContainer, c.ControllerKind), unquotable)
 }
 
 var plainRelease = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*$`)

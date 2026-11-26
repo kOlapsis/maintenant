@@ -275,7 +275,7 @@ The regex pattern has a syntax error. Check for unbalanced brackets or other Go 
 
 ## Update and Rollback Commands
 
-For every update, maintenant writes the command that applies it and the command that puts the previous image back. They are shown in the detail panel of the Updates page, returned as `update_command` and `rollback_command` by `GET /api/v1/updates/container/{container_id}`, and, with Personal, carried by the `update_available` alert so that the Discord, Slack, Teams and email notifications include them. maintenant never runs them: it observes, you decide.
+For every update, maintenant writes the command that applies it and the command that puts the previous image back. They are shown in the detail panel of the Updates page, returned as `update_command` and `rollback_command` by `GET /api/v1/updates/container/{container_id}`, and, with Personal, carried by the `update_available` alert so that the Discord, Slack, Teams and email notifications include them. maintenant never runs them: it observes, you decide. Every value is quoted for a POSIX shell, and no command is written when a name, the image reference, a tag or a digest contains a control character or three backticks in a row.
 
 **Docker Compose.** A container with the Compose project and service labels gets commands that start with `cd` to the project's `com.docker.compose.project.working_dir` (`<compose-project-dir>` when the label is missing). There is no `--project-directory` flag. Compose pulls the tag written in the compose file, so when the update changes the tag, the command tells you to edit the file first:
 
