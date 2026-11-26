@@ -18,6 +18,7 @@ const (
 	defaultBaseURL   = "https://endoflife.date"
 	defaultUserAgent = "maintenant/1.0 (+https://maintenant.dev)"
 	fetchTimeout     = 15 * time.Second
+	maxProductBody   = 4 << 20
 )
 
 // Fetcher downloads the support cycles from the endoflife.date API.
@@ -83,7 +84,7 @@ func (f *Fetcher) fetchProduct(ctx context.Context, product string) ([]Cycle, er
 	}
 
 	var payload apiResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxProductBody)).Decode(&payload); err != nil {
 		return nil, fmt.Errorf("product %s: decode response: %w", product, err)
 	}
 	if len(payload.Result.Releases) == 0 {

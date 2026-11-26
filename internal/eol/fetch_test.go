@@ -111,6 +111,11 @@ func TestFetchRejectsPartialTable(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"result":{"releases":[]}}`))
 		},
+		"oversized body": func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"result":{"releases":[{"name":"16.0","eolFrom":"2026-08-31"}]` +
+				strings.Repeat(" ", maxProductBody) + `}}`))
+		},
 	}
 
 	for name, handler := range cases {
