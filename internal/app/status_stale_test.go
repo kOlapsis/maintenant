@@ -48,5 +48,23 @@ func TestStatusProvider_ContainerStatusFollowsWhatTheRuntimeVouchesFor(t *testin
 	assert.Equal(t, status.StatusMajorOutage, containerMonitorStatus(t, a, &container.Container{
 		State: container.StateCreated, LastStateChangeAt: time.Now().Add(-10 * time.Minute),
 	}), "a container that never started")
+}
+
+func TestStatusProvider_WorkloadThatLosesItsLastReadyReplicaIsAnOutageAtOnce(t *testing.T) {
+	ctx := context.Background()
+	a, _ := newTestApp(t, nil)
+	a.rt = answeringRuntime{a.rt}
+	workload := func(name string, createdAgo time.Duration) string {
+		id, err := a.containerStore.InsertContainer(ctx, &container.Container{
+			ExternalID: "shop/Deployment/" + name, Name: name, State: container.StateCreated, RuntimeType: "kubernetes",
+			ControllerKind: "Deployment", PodCount: 3, AlertSeverity: container.SeverityWarning,
+			FirstSeenAt: time.Now().Add(-createdAgo), LastStateChangeAt: time.Now(),
+		})
+		require.NoError(t, err)
+		return a.statusSvc.DeriveComponentStatus(ctx, &status.Component{Monitors: []status.MonitorRef{{Type: "container", ID: id}}})
+	}
+
+	assert.Equal(t, status.StatusMajorOutage, workload("api", 24*time.Hour), "no replica of a running workload is ready any more")
+	assert.Equal(t, status.StatusOperational, workload("new", time.Minute), "a workload created a minute ago is starting")
 
 }

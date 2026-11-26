@@ -34,7 +34,7 @@ func ContainerStatus(c *container.Container, stale bool, now time.Time) string {
 	case container.StateCompleted:
 		return status.StatusOperational
 	case container.StateCreated:
-		if now.Sub(c.LastStateChangeAt) < containerStartGrace {
+		if now.Sub(c.FirstSeenAt) < containerStartGrace {
 			return status.StatusOperational
 		}
 		return status.StatusMajorOutage
