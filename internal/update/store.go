@@ -49,6 +49,7 @@ type UpdateStore interface {
 
 	// Container CVEs
 	UpsertContainerCVE(ctx context.Context, c *ContainerCVE) error
+	ResolveContainerCVEs(ctx context.Context, agentID, containerID string, keep []string) error
 	ListContainerCVEs(ctx context.Context, agentID, containerID string) ([]*ContainerCVE, error)
 	ListAllActiveCVEs(ctx context.Context, opts ListCVEsOpts) ([]*ContainerCVE, error)
 	GetCVESummaryCounts(ctx context.Context) (map[string]int, error)

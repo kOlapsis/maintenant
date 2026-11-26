@@ -29,6 +29,7 @@ type enricherStubStore struct {
 	imageUpdate *update.ImageUpdate
 	evaluations map[string]*update.CVEEvaluation
 	cves        []*update.ContainerCVE
+	resolved    []string
 	riskRecords []*update.RiskScoreRecord
 }
 
@@ -59,6 +60,13 @@ func (s *enricherStubStore) UpsertContainerCVE(_ context.Context, c *update.Cont
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cves = append(s.cves, c)
+	return nil
+}
+
+func (s *enricherStubStore) ResolveContainerCVEs(_ context.Context, _, containerID string, keep []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.resolved = append(s.resolved, containerID+" keeps "+strings.Join(keep, ","))
 	return nil
 }
 
@@ -138,6 +146,39 @@ func TestEnrichScansContainerWithoutUpdate(t *testing.T) {
 	require.Len(t, store.storedCVEs(), 1)
 	assert.Empty(t, store.storedRiskRecords(), "risk scoring describes an update that does not exist")
 	assert.Empty(t, results[0].ChangelogURL)
+}
+
+func TestEnrich_ClosesTheCVEsAnEvaluationNoLongerReturns(t *testing.T) {
+	server := osvTestServer(t)
+	defer server.Close()
+
+	store := newEnricherStubStore()
+	enricher := newTestEnricher(store, newTestCVEClient(store, server.URL))
+	require.NoError(t, enricher.Enrich(context.Background(), []update.UpdateResult{
+		{ContainerID: "c1", Image: "traefik", CurrentTag: "v3.1.0"},
+		{ContainerID: "c2", Image: "nginx", CurrentTag: "1.27.0"},
+	}))
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	assert.Equal(t, []string{"c1 keeps CVE-2024-9999", "c2 keeps "}, store.resolved)
+}
+
+func TestEnrich_KeepsTheCVEsWhenTheLookupFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	store := newEnricherStubStore()
+	enricher := newTestEnricher(store, newTestCVEClient(store, server.URL))
+	require.NoError(t, enricher.Enrich(context.Background(), []update.UpdateResult{
+		{ContainerID: "c1", Image: "traefik", CurrentTag: "v3.1.0"},
+	}))
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	assert.Empty(t, store.resolved)
 }
 
 func TestEnrichRunsChangelogAndRiskOnlyWithUpdate(t *testing.T) {

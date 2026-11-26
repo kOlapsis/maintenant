@@ -113,6 +113,9 @@ func (s *stubStore) IsCVECacheFresh(_ context.Context, _, _, _ string) (bool, er
 	return false, nil
 }
 func (s *stubStore) UpsertContainerCVE(_ context.Context, _ *ContainerCVE) error { return nil }
+func (s *stubStore) ResolveContainerCVEs(_ context.Context, _, _ string, _ []string) error {
+	return nil
+}
 func (s *stubStore) ListContainerCVEs(_ context.Context, _, _ string) ([]*ContainerCVE, error) {
 	return nil, nil
 }

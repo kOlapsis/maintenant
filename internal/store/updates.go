@@ -434,12 +434,28 @@ func (s *UpdateStore) UpsertContainerCVE(ctx context.Context, c *update.Containe
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(agent_id, container_id, cve_id) DO UPDATE SET
 			severity=excluded.severity, cvss_score=excluded.cvss_score,
-			summary=excluded.summary, fixed_in=excluded.fixed_in`,
+			summary=excluded.summary, fixed_in=excluded.fixed_in, resolved_at=NULL`,
 		c.ID, uid.Agent(c.AgentID), c.ContainerID, c.CVEID, string(c.Severity), c.CVSSScore, c.Summary, c.FixedIn,
 		c.FirstDetectedAt.Unix(),
 	)
 	if err != nil {
 		return fmt.Errorf("upsert container cve: %w", err)
+	}
+	return nil
+}
+
+// ResolveContainerCVEs closes the active CVEs of a container that are not in keep.
+func (s *UpdateStore) ResolveContainerCVEs(ctx context.Context, agentID, containerID string, keep []string) error {
+	query := `UPDATE container_cves SET resolved_at = ? WHERE agent_id = ? AND container_id = ? AND resolved_at IS NULL`
+	args := []any{time.Now().Unix(), uid.Agent(agentID), containerID}
+	if len(keep) > 0 {
+		query += ` AND cve_id NOT IN (?` + strings.Repeat(", ?", len(keep)-1) + `)`
+		for _, id := range keep {
+			args = append(args, id)
+		}
+	}
+	if _, err := s.writer.Exec(ctx, query, args...); err != nil {
+		return fmt.Errorf("resolve container cves: %w", err)
 	}
 	return nil
 }
